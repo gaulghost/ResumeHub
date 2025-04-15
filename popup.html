@@ -85,7 +85,12 @@
             <section class="generate-section">
                 <button id="create-resume-btn" class="button button-primary">Generate Tailored Summary</button>
                 <div id="status-message" class="status-message"></div>
-                <a id="download-link" class="download-link" style="display: none;">Download Summary</a>
+                <!-- Download buttons container -->
+                <div id="download-buttons-container" style="display: none; margin-top: 10px;">
+                     <span style="margin-right: 10px;">Download Summary:</span>
+                     <button id="download-docx-btn" class="button button-secondary button-small">DOCX</button>
+                     <button id="download-pdf-btn" class="button button-secondary button-small">TXT</button>
+                </div>
             </section>
         </main>
 

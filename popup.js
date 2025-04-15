@@ -13,7 +13,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const downloadResumeBtn = document.getElementById('download-resume-btn');
     const createResumeBtn = document.getElementById('create-resume-btn');
     const statusMessageDiv = document.getElementById('status-message');
-    const downloadLink = document.getElementById('download-link');
+    const downloadButtonsContainer = document.getElementById('download-buttons-container');
+    const downloadDocxBtn = document.getElementById('download-docx-btn');
+    const downloadPdfBtn = document.getElementById('download-pdf-btn');
     const extractionMethodRadios = document.querySelectorAll('input[name="extractionMethod"]');
     const apiKeyCard = document.getElementById('api-key-card');
     const extractionCard = document.getElementById('extraction-method-card');
@@ -386,6 +388,37 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Helper function to trigger download
+    function triggerDownload(content, mimeType, extension) {
+        if (!storedResume.filename) {
+             console.error("Cannot generate filename, original resume filename missing.");
+             return;
+        }
+        try {
+            const blob = new Blob([content], { type: mimeType }); 
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            
+            const originalFilenameParts = storedResume.filename.split('.');
+            originalFilenameParts.pop(); 
+            const baseName = originalFilenameParts.join('.');
+            link.download = `${baseName}_tailored.${extension}`; 
+            
+            link.href = url;
+            document.body.appendChild(link); // Required for Firefox
+            link.click();
+            
+            // Clean up
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            console.log(`Download triggered for ${link.download}`);
+        } catch (e) {
+            console.error(`Error creating download link for .${extension}:`, e);
+            statusMessageDiv.textContent = `Success, but failed to create download link for .${extension}.`;
+            statusMessageDiv.classList.add('warning');
+        }
+    }
+
     // Create Resume Button Click 
     createResumeBtn.addEventListener('click', () => {
         if (isProcessing) return; 
@@ -393,8 +426,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clear previous status/download
         statusMessageDiv.textContent = '';
         statusMessageDiv.className = 'status-message';
-        downloadLink.style.display = 'none';
-        downloadLink.href = '#';
+        // Hide the download buttons container
+        downloadButtonsContainer.style.display = 'none'; 
         
         // --- Basic validation ---
         const apiToken = apiTokenInput.value.trim();
@@ -492,21 +525,35 @@ document.addEventListener('DOMContentLoaded', function() {
             if (response && response.success) {
                 statusMessageDiv.textContent = 'Summary generated successfully!';
                 statusMessageDiv.classList.add('success');
-                try {
-                    const blob = new Blob([response.generatedResume], { type: 'text/plain' }); 
-                    const url = URL.createObjectURL(blob);
-                    downloadLink.href = url;
-                    const originalFilenameParts = storedResume.filename.split('.');
-                    originalFilenameParts.pop(); 
-                    const baseName = originalFilenameParts.join('.');
-                    downloadLink.download = `${baseName}_tailored.txt`; 
-                    downloadLink.style.display = 'block';
-                    downloadLink.textContent = `Download: ${downloadLink.download}`;
-                } catch (e) {
-                    console.error("Error creating download link:", e);
-                    statusMessageDiv.textContent = 'Success, but failed to create download link.';
-                    statusMessageDiv.classList.add('warning');
-                }
+                
+                // Store generated content temporarily for download buttons
+                const generatedSummary = response.generatedResume;
+                
+                // Show the download buttons container
+                downloadButtonsContainer.style.display = 'block';
+                
+                // Remove previous listeners if any (to avoid duplicates if generated multiple times)
+                const newDocxBtn = downloadDocxBtn.cloneNode(true);
+                downloadDocxBtn.parentNode.replaceChild(newDocxBtn, downloadDocxBtn);
+                const newPdfBtn = downloadPdfBtn.cloneNode(true);
+                downloadPdfBtn.parentNode.replaceChild(newPdfBtn, downloadPdfBtn);
+                
+                // Add event listeners to the new buttons
+                newDocxBtn.addEventListener('click', () => {
+                    triggerDownload(
+                        generatedSummary, 
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                        'docx'
+                    );
+                });
+                newPdfBtn.addEventListener('click', () => {
+                    triggerDownload(
+                        generatedSummary, 
+                        'text/plain', 
+                        'txt'
+                    );
+                });
+                
             } else if (response && response.error) {
                 statusMessageDiv.textContent = `Error: ${response.error}`;
                 statusMessageDiv.classList.add('error');
