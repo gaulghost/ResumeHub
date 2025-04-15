@@ -121,7 +121,7 @@ async function getFullPageTextContent() {
 // Function to call Gemini API specifically for extracting the job description
 async function extractJobDescriptionViaAI(apiKey, pageTextContent) {
     console.log("Calling Google Gemini API for Job Description Extraction...");
-    const modelName = 'gemini-1.5-flash-latest'; // Use a capable model
+    const modelName = 'gemini-1.5-pro-latest'; // Use a stable, capable model
     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     // Limit input size to avoid exceeding API limits / excessive cost
@@ -197,37 +197,28 @@ ${pageTextContent}
     }
 }
 
+// === Function to call Google Gemini API for Resume Tailoring ===
+async function callGoogleGeminiAPI_TailorResume(apiKey, jobDescription, resumeData) {
+    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
+    const modelName = "gemini-1.5-pro-latest"; // Use a stable, capable model
 
-// === Summarization API Call (Remains largely the same) ===
-async function callGoogleGeminiAPI_Summarize(apiKey, jobDescription, resumeData) {
-    console.log("Calling Google Gemini API for Summarization...");
-    const modelName = 'gemini-1.5-flash-latest'; 
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    // ... (Keep job description length check) ...
-     const MAX_JD_LENGTH = 50000; 
-    if (jobDescription.length > MAX_JD_LENGTH) {
-        console.warn("Job description potentially too long for summary, truncating...");
-        jobDescription = jobDescription.substring(0, MAX_JD_LENGTH);
-    }
-
-    // ... (Keep prompt for summarization) ...
+    // Updated Prompt for generating a full tailored resume
      const prompt = `**Instruction:**
-Carefully analyze the attached resume file and the following job description. Generate a concise, tailored resume summary based *only* on the content found within the attached resume file and the job description. 
+Carefully analyze the attached resume file and the following job description. Generate a complete, tailored resume based *only* on the content found within the attached resume file, adapted for the specific requirements of the job description.
 
 **Constraints:**
-1.  Extract relevant skills and experiences from the resume file that directly match requirements listed in the job description.
-2.  **Strictly do not infer or include skills or experiences not explicitly present in the attached resume file**, even if they are typically associated with roles or are mentioned in the job description without corresponding evidence in the resume.
-3.  The output summary must be a maximum of 650 words.
-4.  The output summary must be a maximum of 4500 characters.
-5.  Format the output as plain text paragraphs suitable for a resume summary section.
+1.  Extract relevant skills, experiences, and achievements from the resume file that directly match requirements listed in the job description.
+2.  **Strictly do not add any hard skills (e.g., specific software, technical processes, certifications) not explicitly present in the attached resume file.** You may add relevant soft skills (e.g., communication, teamwork, leadership) if appropriate for the tailored resume.
+3.  The entire output resume must be a maximum of 650 words.
+4.  The entire output resume must be a maximum of 4500 characters.
+5.  Format the output as a complete resume document (plain text is acceptable), including sections like Contact Information (use placeholders if none provided in original), Summary/Objective, Experience, Skills, Education, etc., structured logically and professionally.
 
 **--- Job Description ---**
 ${jobDescription}
 
-**--- Tailored Summary Output ---**`;
+**--- Tailored Resume Output ---**`;
 
-    // ... (Keep request body construction with inline_data for resume) ...
+    // Request body construction remains similar
      const requestBody = {
         contents: [
           {
@@ -236,14 +227,14 @@ ${jobDescription}
               {
                 inline_data: {
                   mime_type: resumeData.mimeType,
-                  data: resumeData.content 
+                  data: resumeData.content
                 }
               }
             ]
           }
         ],
         generationConfig: {
-           maxOutputTokens: 1024, 
+           maxOutputTokens: 1024, // Adjust if needed, but prompt constraints are more specific
         },
          safetySettings: [
            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -253,9 +244,9 @@ ${jobDescription}
          ]
     };
 
-    // ... (Keep try/catch block for fetch call and response/constraint handling) ...
+    // Try/catch block for the fetch call
       try {
-        console.log(`Sending summarization request to ${modelName} with file ${resumeData.filename} (${resumeData.mimeType})...`);
+        console.log(`Sending resume tailoring request to ${modelName} with file ${resumeData.filename} (${resumeData.mimeType})...`);
         const response = await fetch(apiEndpoint, {
             method: 'POST',
             headers: {
@@ -264,63 +255,64 @@ ${jobDescription}
             body: JSON.stringify(requestBody),
         });
 
-        // ... (Error handling for response.ok remains the same) ...
+        // Error handling
         if (!response.ok) {
             let errorData;
             try {
                  errorData = await response.json();
-                 console.error("Summarization API Error Response:", errorData);
+                 console.error("Resume Tailoring API Error Response:", errorData);
             } catch (e) {
                  const errorText = await response.text();
-                 console.error("Summarization API Error Response (non-JSON):", errorText);
+                 console.error("Resume Tailoring API Error Response (non-JSON):", errorText);
                  errorData = { error: { message: `API request failed with status ${response.status}: ${response.statusText}. Response: ${errorText}` } };
             }
             if (errorData?.promptFeedback?.blockReason) {
-                 throw new Error(`Summarization API request blocked due to safety settings: ${errorData.promptFeedback.blockReason}`);
+                 throw new Error(`Resume Tailoring API request blocked due to safety settings: ${errorData.promptFeedback.blockReason}`);
             }
-            throw new Error(`Summarization API Error: ${errorData?.error?.message || response.statusText}`);
+            throw new Error(`Resume Tailoring API Error: ${errorData?.error?.message || response.statusText}`);
         }
 
         const responseData = await response.json();
-        console.log("Summarization API Response Received:", responseData);
+        console.log("Resume Tailoring API Response Received:", responseData);
 
         let generatedText = '';
         if (responseData.candidates && responseData.candidates[0].finishReason && responseData.candidates[0].finishReason !== 'STOP') {
-             console.warn(`Summarization API call finished with reason: ${responseData.candidates[0].finishReason}`);
+             console.warn(`Resume Tailoring API call finished with reason: ${responseData.candidates[0].finishReason}`);
              if (responseData.candidates[0].finishReason === 'SAFETY') {
-                 throw new Error("Summarization API generation stopped due to safety settings.");
+                 throw new Error("Resume Tailoring API generation stopped due to safety settings.");
              }
         }
-        
+
         if (responseData.candidates && responseData.candidates[0].content?.parts[0]?.text) {
             generatedText = responseData.candidates[0].content.parts[0].text;
         } else {
-             console.error("Could not find generated text in summarization API response structure.", responseData);
+             console.error("Could not find generated text in resume tailoring API response structure.", responseData);
              if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
-                  throw new Error("Summarization API returned a candidate but no content, potentially blocked or empty.");
+                  throw new Error("Resume Tailoring API returned a candidate but no content, potentially blocked or empty.");
              }
-             throw new Error("Summarization API response structure was unexpected. Could not extract summary.");
+             throw new Error("Resume Tailoring API response structure was unexpected. Could not extract tailored resume.");
         }
 
-        // ... (Constraint validation remains the same) ...
+        // Constraint validation
          const wordCount = generatedText.split(/\s+/).filter(Boolean).length;
         const charCount = generatedText.length;
-        console.log(`Generated summary - Words: ${wordCount}, Chars: ${charCount}`);
+        console.log(`Generated tailored resume - Words: ${wordCount}, Chars: ${charCount}`);
 
         if (wordCount > 650 || charCount > 4500) {
-            console.warn("API summary response exceeded constraints despite prompt instruction.");
-            throw new Error(`Generated summary exceeded length limits (Words: ${wordCount}/650, Chars: ${charCount}/4500).`);
+            console.warn("API tailored resume response exceeded constraints despite prompt instruction.");
+            // Consider trimming or throwing error? For now, throw error.
+            throw new Error(`Generated resume exceeded length limits (Words: ${wordCount}/650, Chars: ${charCount}/4500).`);
         }
-        
+
         if (!generatedText.trim()) {
-             throw new Error("API returned an empty summary.");
+             throw new Error("API returned an empty tailored resume.");
         }
 
         return { generatedResume: generatedText.trim() };
 
     } catch (error) {
-        console.error("Error during Google Gemini Summarization API call:", error);
-        throw new Error(`Failed to generate resume summary via API: ${error.message}`);
+        console.error("Error during Google Gemini Resume Tailoring API call:", error);
+        throw new Error(`Failed to generate tailored resume via API: ${error.message}`);
     }
 }
 
@@ -365,7 +357,7 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
     }
 }
 
-// === NEW Async Handler Function for Create Summary ===
+// === NEW Async Handler Function for Create Tailored Resume ===
 async function handleCreateTailoredResume(request, sendResponse, listenerId) {
     console.log(`[${listenerId}] Create Async Handler Started.`);
     let jobDescription = '';
@@ -387,16 +379,16 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
       }
       console.log(`[${listenerId}] Create Flow: Extracted Job Description using ${request.extractionMethod} (first 100 chars): ${jobDescription.substring(0, 100)}`);
 
-      // --- Step 2: Call Summarization API ---
-      console.log(`[${listenerId}] Create Flow: Calling Summarization API...`);
-      const apiResult = await callGoogleGeminiAPI_Summarize(request.apiToken, jobDescription, request.resumeData);
-      console.log(`[${listenerId}] Create Flow: Summarization API finished.`);
+      // --- Step 2: Call Resume Tailoring API ---
+      console.log(`[${listenerId}] Create Flow: Calling Resume Tailoring API...`);
+      const apiResult = await callGoogleGeminiAPI_TailorResume(request.apiToken, jobDescription, request.resumeData);
+      console.log(`[${listenerId}] Create Flow: Resume Tailoring API finished.`);
 
-      if (!apiResult.generatedResume) { 
-          throw new Error("Summarization API did not return generated resume content.");
+      if (!apiResult.generatedResume) {
+          throw new Error("Resume Tailoring API did not return generated resume content.");
       }
       
-      console.log(`[${listenerId}] Create Flow: Summarization API call successful, sending response to popup.`);
+      console.log(`[${listenerId}] Create Flow: Resume Tailoring API call successful, sending response to popup.`);
       // --- Step 3: Send Success Response ---
       sendResponse({ success: true, generatedResume: apiResult.generatedResume });
       console.log(`[${listenerId}] Create Flow: Success response sent.`);

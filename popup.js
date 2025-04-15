@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let isProcessing = false; // Flag to prevent multiple clicks
     let selectedExtractionMethod = 'standard'; // Default
     let isPreviewing = false; // Flag for preview loading state
+    let currentGeneratedResume = null; // Variable to hold the latest generated resume content
 
     // --- Helper Function to Apply Theme --- 
     function applyTheme(theme, isInitialLoad = false) {
@@ -492,6 +493,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // --- Start Processing --- 
         isProcessing = true;
         createResumeBtn.disabled = true;
+        createResumeBtn.classList.add('button-loading');
         createResumeBtn.textContent = 'Generating...'; 
         statusMessageDiv.textContent = `Processing (using ${methodForStatus})...`; // Use updated status
         statusMessageDiv.classList.add('processing');
@@ -511,7 +513,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Stop Processing
             isProcessing = false;
             createResumeBtn.disabled = false;
-            createResumeBtn.textContent = 'Generate Tailored Summary';
+            createResumeBtn.classList.remove('button-loading');
+            createResumeBtn.textContent = 'Generate Tailored Resume';
             statusMessageDiv.className = 'status-message';
 
             if (chrome.runtime.lastError) {
@@ -523,36 +526,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
             console.log('Response from background:', response);
             if (response && response.success) {
-                statusMessageDiv.textContent = 'Summary generated successfully!';
-                statusMessageDiv.classList.add('success');
+                // Success: Display success message and show download buttons
+                console.log("Received successful response from background script:", response);
+                statusMessageDiv.textContent = 'Tailored resume generated successfully!';
+                statusMessageDiv.className = 'status-message success'; // Use success class
+
+                // Store the latest generated resume content
+                currentGeneratedResume = response.generatedResume; 
+
+                // Re-enable the button after success
+                createResumeBtn.disabled = false;
                 
-                // Store generated content temporarily for download buttons
-                const generatedSummary = response.generatedResume;
+                // --- Debugging Download Buttons --- 
+                console.log("Success block reached. Attempting to show download buttons.");
+                console.log("Download container element:", downloadButtonsContainer);
+                console.log("Current display style:", downloadButtonsContainer ? downloadButtonsContainer.style.display : 'Container not found!');
                 
                 // Show the download buttons container
-                downloadButtonsContainer.style.display = 'block';
-                
-                // Remove previous listeners if any (to avoid duplicates if generated multiple times)
-                const newDocxBtn = downloadDocxBtn.cloneNode(true);
-                downloadDocxBtn.parentNode.replaceChild(newDocxBtn, downloadDocxBtn);
-                const newPdfBtn = downloadPdfBtn.cloneNode(true);
-                downloadPdfBtn.parentNode.replaceChild(newPdfBtn, downloadPdfBtn);
-                
-                // Add event listeners to the new buttons
-                newDocxBtn.addEventListener('click', () => {
-                    triggerDownload(
-                        generatedSummary, 
-                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
-                        'docx'
-                    );
-                });
-                newPdfBtn.addEventListener('click', () => {
-                    triggerDownload(
-                        generatedSummary, 
-                        'text/plain', 
-                        'txt'
-                    );
-                });
+                if (downloadButtonsContainer) {
+                    downloadButtonsContainer.style.display = 'block';
+                    console.log("Set display style to 'block'. New style:", downloadButtonsContainer.style.display);
+                } else {
+                     console.error("Cannot show download buttons because the container element was not found!");
+                }
+                // --- End Debugging ---
+
+                // Ensure the buttons are interactive (they might have been disabled previously)
+                if (downloadDocxBtn) downloadDocxBtn.disabled = false;
+                if (downloadPdfBtn) downloadPdfBtn.disabled = false;
                 
             } else if (response && response.error) {
                 statusMessageDiv.textContent = `Error: ${response.error}`;
@@ -562,6 +563,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 statusMessageDiv.classList.add('error');
             }
         });
+    });
+
+    // --- Download Button Listeners (Attached once) ---
+    downloadDocxBtn.addEventListener('click', () => {
+        if (currentGeneratedResume) {
+            triggerDownload(
+                currentGeneratedResume,
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'docx'
+            );
+        } else {
+            console.error("DOCX download clicked, but no generated resume content available.");
+        }
+    });
+
+    downloadPdfBtn.addEventListener('click', () => {
+        if (currentGeneratedResume) {
+            triggerDownload(
+                currentGeneratedResume,
+                'text/plain',
+                'txt'
+            );
+        } else {
+             console.error("TXT download clicked, but no generated resume content available.");
+        }
     });
 
     // Initialize the UI
