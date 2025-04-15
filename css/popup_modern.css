@@ -1,0 +1,463 @@
+:root {
+    /* Base Styles */
+    --font-family-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    --font-size-base: 14px;
+    --line-height-base: 1.5;
+
+    /* Color Tokens */
+    --color-primary: #007aff;
+    --color-secondary: #6c757d;
+    --color-success: #34c759;
+    --color-danger: #ff3b30;
+    --color-warning: #ff9500;
+
+    /* Light Theme Tokens */
+    --light-bg: #f8f9fa;
+    --light-bg-card: #ffffff;
+    --light-text: #212529;
+    --light-text-secondary: #6c757d;
+    --light-border: #dee2e6;
+    --light-input-bg: #ffffff;
+    --light-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+
+    /* Dark Theme Tokens */
+    --dark-bg: #000000;
+    --dark-bg-card: #2c2c2e;
+    --dark-text: #f2f2f7;
+    --dark-text-secondary: #8e8e93;
+    --dark-border: #3a3a3c;
+    --dark-input-bg: #3a3a3c;
+    --dark-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    --dark-primary-hover: #0056b3; /* Specific dark hover for primary */
+    --dark-secondary-hover: #5a6268; /* Specific dark hover for secondary */
+    --dark-download-hover: #5eacff;
+
+    /* Generic Variables (Default to Light Theme) */
+    --bg: var(--light-bg);
+    --bg-card: var(--light-bg-card);
+    --text: var(--light-text);
+    --text-secondary: var(--light-text-secondary);
+    --border: var(--light-border);
+    --input-bg: var(--light-input-bg);
+    --shadow: var(--light-shadow);
+    --primary-hover: #0056b3; /* Default primary hover */
+    --secondary-hover: #5a6268; /* Default secondary hover */
+    --download-hover: #0056b3; /* Default download link hover */
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-base);
+    width: 380px; /* Fixed width for the popup */
+    /* Apply theme variables directly */
+    color: var(--text);
+    background-color: var(--bg);
+    transition: background-color 0.3s ease, color 0.3s ease;
+    /* Remove theme-light class definition as :root handles defaults */
+}
+
+/* Dark Theme Overrides */
+body.theme-dark {
+    --bg: var(--dark-bg);
+    --bg-card: var(--dark-bg-card);
+    --text: var(--dark-text);
+    --text-secondary: var(--dark-text-secondary);
+    --border: var(--dark-border);
+    --input-bg: var(--dark-input-bg);
+    --shadow: var(--dark-shadow);
+    --primary-hover: var(--dark-primary-hover);
+    --secondary-hover: var(--dark-secondary-hover);
+    --download-hover: var(--dark-download-hover);
+}
+
+/* Components use generic variables */
+.container {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 300px; 
+}
+
+/* Header */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 12px;
+}
+
+.header h1 {
+    font-size: 1.4em;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Content Sections */
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.card {
+    background-color: var(--bg-card);
+    border-radius: 8px;
+    padding: 0; /* Remove padding from card itself */
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    overflow: hidden; /* Prevent content overflow when collapsed */
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px; /* Padding for header */
+    cursor: pointer;
+    border-bottom: 1px solid transparent; /* Add border only when expanded */
+    transition: border-color 0.3s ease;
+}
+
+.collapsible:not(.is-collapsed) .card-header {
+     border-bottom-color: var(--border); /* Show border when expanded */
+}
+
+.card-header h2 {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-bottom: 0; /* Remove margin from h2 */
+    color: var(--text);
+}
+
+.toggle-button {
+    background: none;
+    border: none;
+    padding: 4px;
+    margin-left: 8px;
+    font-size: 1em;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.collapsible.is-collapsed .toggle-button {
+    transform: rotate(-90deg);
+}
+
+.card-content {
+    padding: 16px; /* Padding for content */
+    /* Add padding-top and padding-bottom to the transition */
+    transition: max-height 0.3s ease-out, 
+                opacity 0.3s ease-out, 
+                visibility 0.3s ease, 
+                padding-top 0.3s ease-out, 
+                padding-bottom 0.3s ease-out;
+    max-height: 1000px; /* Set a large max-height for transition */
+    opacity: 1;
+    visibility: visible;
+    overflow: hidden;
+}
+
+.collapsible.is-collapsed .card-content {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    visibility: hidden;
+    border-top: none; /* Ensure no top border when collapsed */
+}
+
+/* Input Groups */
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.input-group input[type="password"],
+.input-group input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: var(--font-size-base);
+    background-color: var(--input-bg);
+    color: var(--text);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.25);
+}
+
+/* Radio Button Group */
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95em;
+    cursor: pointer;
+    color: var(--text);
+}
+
+.radio-group input[type="radio"] {
+    cursor: pointer;
+    /* Optional: Add custom styling for radio buttons if desired */
+     accent-color: var(--color-primary); /* Use theme color for the radio */
+}
+
+/* File Input Specifics */
+.file-input-group {
+   align-items: flex-start; 
+}
+
+.file-input {
+    display: none; 
+}
+
+.file-label {
+    display: inline-block;
+    padding: 8px 16px;
+    background-color: var(--color-secondary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease;
+    margin-bottom: 6px;
+}
+
+.file-label:hover {
+    background-color: var(--secondary-hover);
+}
+
+.status-text {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    min-height: 1.5em; 
+}
+
+.help-text {
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Buttons */
+.button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+    text-align: center;
+}
+
+.button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.button-primary {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+.button-primary:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+}
+
+.button-secondary {
+    background-color: var(--color-secondary);
+    color: white;
+}
+
+.button-secondary:hover:not(:disabled) {
+    background-color: var(--secondary-hover);
+}
+
+.button-small {
+    padding: 6px 12px;
+    font-size: 0.9em;
+}
+
+/* Generate Section */
+.generate-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.status-message {
+    font-size: 0.95em;
+    font-weight: 500;
+    text-align: center;
+    min-height: 1.5em; 
+}
+
+/* Use generic --text variable and let theme override */
+.status-message.success {
+    color: var(--color-success);
+}
+
+.status-message.error {
+    color: var(--color-danger);
+}
+
+.status-message.processing {
+    color: var(--color-warning);
+}
+
+.download-link {
+    display: inline-block;
+    color: var(--color-primary);
+    text-decoration: none;
+    font-size: 0.95em;
+    margin-top: 8px;
+    transition: color 0.2s ease;
+}
+
+.download-link:hover {
+    text-decoration: underline;
+    color: var(--download-hover);
+}
+
+/* Footer */
+.footer {
+    font-size: 0.85em;
+    text-align: center;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin-top: auto; 
+}
+
+/* Theme Switcher */
+.theme-switcher {
+    position: relative;
+}
+
+.theme-toggle-checkbox {
+    opacity: 0;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    z-index: 1;
+}
+
+.theme-toggle-label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 50px;
+    height: 26px;
+    /* Use CSS variables for background */
+    background-color: var(--input-bg); 
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    padding: 3px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.theme-toggle-label::after { /* The toggle knob */
+    content: "";
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    /* Use text color for knob in dark mode? Or keep white? Let's try bg-card */
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    top: 2px; /* Adjust for border */
+    left: 2px; /* Adjust for border */
+    transition: transform 0.3s ease, background-color 0.3s ease;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-label {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-label::after {
+    transform: translateX(24px);
+    background-color: white; /* Keep knob white when active */
+    border-color: transparent;
+}
+
+.theme-toggle-label .icon {
+    font-size: 14px;
+    transition: opacity 0.3s ease;
+}
+
+/* Control icon visibility based on checkbox state only */
+.theme-toggle-label .sun {
+    opacity: 0;
+}
+.theme-toggle-label .moon {
+    opacity: 1;
+}
+
+.theme-toggle-checkbox:checked + .theme-toggle-label .sun {
+    opacity: 1;
+}
+.theme-toggle-checkbox:checked + .theme-toggle-label .moon {
+    opacity: 0;
+}
+
+/* Remove theme-specific overrides for the switcher itself */
+/* The generic variables handled by body.theme-dark will style it */
+
+/* Preview Section */
+.preview-section .card-header {
+    /* Optional: Adjust header if needed, e.g., less padding */
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border); /* Always have border for preview */
+}
+
+.preview-section .card-header h2 {
+    font-size: 1.0em; /* Slightly smaller heading */
+}
+
+.preview-output {
+    width: 100%;
+    height: 150px; /* Adjust height as needed */
+    margin-top: 10px;
+    padding: 8px;
+    font-family: var(--font-family-sans);
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    background-color: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    resize: vertical; /* Allow vertical resizing */
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+} 

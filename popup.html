@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResumeHub</title>
+    <!-- Link to new CSS file -->
+    <link rel="stylesheet" href="css/popup_modern.css">
+</head>
+<body>
+    <div class="container theme-light" id="theme-container">
+        <header class="header">
+            <h1>ResumeHub</h1>
+            <div class="theme-switcher">
+                <input type="checkbox" id="theme-toggle" class="theme-toggle-checkbox">
+                <label for="theme-toggle" class="theme-toggle-label">
+                    <span class="icon sun">☀️</span>
+                    <span class="icon moon">🌙</span>
+                </label>
+            </div>
+        </header>
+
+        <main class="content">
+            <section class="card collapsible" id="api-key-card">
+                <div class="card-header">
+                    <h2>Google API Key</h2>
+                    <button class="toggle-button" aria-expanded="true" aria-controls="api-key-content">▼</button>
+                </div>
+                <div class="card-content" id="api-key-content">
+                    <div class="input-group">
+                        <input type="password" id="api-token" placeholder="Enter your Gemini API Key">
+                        <span id="api-token-status" class="status-text"></span>
+                    </div>
+                    <p class="help-text">Your API key is stored locally and only used to generate summaries.</p>
+                </div>
+            </section>
+
+            <section class="card collapsible is-collapsed" id="extraction-method-card">
+                 <div class="card-header">
+                    <h2>Job Description Extraction</h2>
+                     <button class="toggle-button" aria-expanded="false" aria-controls="extraction-method-content">▶</button>
+                 </div>
+                 <div class="card-content" id="extraction-method-content">
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="extractionMethod" value="standard"> 
+                            Standard (Fast, Less Accurate)
+                        </label>
+                        <label>
+                            <input type="radio" name="extractionMethod" value="ai" checked> 
+                            AI Powered (Accurate, Slower, Uses API)
+                        </label>
+                    </div>
+                    <p class="help-text">AI Powered uses an extra API call to analyze the page structure.</p>
+                </div>
+            </section>
+
+            <section class="card preview-section">
+                <div class="card-header">
+                    <h2>Preview Extracted Job Description</h2>
+                    <button id="preview-jd-btn" class="button button-secondary button-small">Preview</button>
+                </div>
+                 <textarea id="preview-jd-output" class="preview-output" readonly placeholder="Click 'Preview' to see the extracted text..."></textarea>
+            </section>
+
+            <section class="card resume-section" id="resume-card">
+                 <div class="card-header">
+                    <h2>Your Resume</h2>
+                     <button class="toggle-button" aria-expanded="true" aria-controls="resume-content">▼</button>
+                 </div>
+                 <div class="card-content" id="resume-content">
+                    <div class="input-group file-input-group">
+                        <label for="resume-upload" class="file-label">Choose File</label>
+                        <input type="file" id="resume-upload" accept=".txt,.pdf,.docx" class="file-input">
+                        <span id="resume-upload-status" class="status-text">No file selected.</span>
+                    </div>
+                    <button id="clear-resume-btn" class="button button-secondary button-small" style="display: none;">Clear Stored Resume</button>
+                </div>
+            </section>
+
+            <section class="generate-section">
+                <button id="create-resume-btn" class="button button-primary">Generate Tailored Summary</button>
+                <div id="status-message" class="status-message"></div>
+                <a id="download-link" class="download-link" style="display: none;">Download Summary</a>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Ensure the active browser tab contains the job description.</p>
+        </footer>
+    </div>
+
+    <!-- Link to existing JS, will need updates -->
+    <script src="popup.js"></script>
+</body>
+</html> 
