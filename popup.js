@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const downloadButtonsContainer = document.getElementById('download-buttons-container');
     const downloadDocxBtn = document.getElementById('download-docx-btn');
     const downloadPdfBtn = document.getElementById('download-pdf-btn');
+    const downloadTxtBtn = document.getElementById('download-txt-btn');
     const extractionMethodRadios = document.querySelectorAll('input[name="extractionMethod"]');
     const apiKeyCard = document.getElementById('api-key-card');
     const extractionCard = document.getElementById('extraction-method-card');
@@ -565,6 +566,49 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // --- PDF Generation Function (using pdfmake) ---
+    function generatePdf(resumeText, baseFilename) {
+        console.log("Generating PDF...");
+        try {
+            // --- Basic Document Definition (Template) ---
+            // This is a very simple starting point. We'll need to parse resumeText
+            // and add more structure/styling later.
+            const docDefinition = {
+                content: [
+                    { text: 'Tailored Resume', style: 'header' },
+                    { text: resumeText, style: 'body' }, 
+                ],
+                styles: {
+                    header: {
+                        fontSize: 18,
+                        bold: true,
+                        margin: [0, 0, 0, 10] // [left, top, right, bottom]
+                    },
+                    body: {
+                        fontSize: 10,
+                        margin: [0, 0, 0, 5]
+                    }
+                },
+                defaultStyle: {
+                    // font: 'Roboto' // pdfmake default
+                },
+                pageSize: 'LETTER', // or 'A4'
+                pageMargins: [ 40, 60, 40, 60 ], // [left, top, right, bottom]
+            };
+            
+            // --- TODO: Parse resumeText and structure the content array --- 
+            // Example: Look for headings like "## Experience" to create sections
+            // Example: Use columns for skills
+
+            pdfMake.createPdf(docDefinition).download(`${baseFilename}_tailored.pdf`);
+            console.log("PDF download triggered.");
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+            statusMessageDiv.textContent = 'Error generating PDF. Check console.';
+            statusMessageDiv.className = 'status-message error';
+        }
+    }
+
     // --- Download Button Listeners (Attached once) ---
     downloadDocxBtn.addEventListener('click', () => {
         if (currentGeneratedResume) {
@@ -578,7 +622,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    downloadPdfBtn.addEventListener('click', () => {
+    downloadTxtBtn.addEventListener('click', () => {
         if (currentGeneratedResume) {
             triggerDownload(
                 currentGeneratedResume,
@@ -587,6 +631,20 @@ document.addEventListener('DOMContentLoaded', function() {
             );
         } else {
              console.error("TXT download clicked, but no generated resume content available.");
+        }
+    });
+    
+    downloadPdfBtn.addEventListener('click', () => {
+        if (currentGeneratedResume && storedResume.filename) {
+             const originalFilenameParts = storedResume.filename.split('.');
+            originalFilenameParts.pop(); 
+            const baseName = originalFilenameParts.join('.');
+            generatePdf(currentGeneratedResume, baseName);
+        } else {
+            console.error("PDF download clicked, but no generated resume content or base filename available.");
+            if (!currentGeneratedResume) statusMessageDiv.textContent = 'Error: No resume content for PDF.';
+            if (!storedResume.filename) statusMessageDiv.textContent = 'Error: Original filename missing for PDF.';
+            statusMessageDiv.className = 'status-message error';
         }
     });
 
