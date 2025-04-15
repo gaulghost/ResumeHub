@@ -32,6 +32,23 @@
                         <span id="api-token-status" class="status-text"></span>
                     </div>
                     <p class="help-text">Your API key is stored locally and only used to generate summaries.</p>
+                    <a href="https://aistudio.google.com/apikey" target="_blank" class="help-text link">Get your Google API Key</a>
+                </div>
+            </section>
+
+            <section class="card resume-section collapsible" id="resume-card">
+                 <div class="card-header">
+                    <h2>Your Resume</h2>
+                     <button class="toggle-button" aria-expanded="true" aria-controls="resume-content">▼</button>
+                 </div>
+                 <div class="card-content" id="resume-content">
+                    <div class="input-group file-input-group">
+                        <label for="resume-upload" class="file-label">Choose File</label>
+                        <input type="file" id="resume-upload" accept=".txt,.pdf,.docx" class="file-input">
+                        <span id="resume-upload-status" class="status-text">No file selected.</span>
+                    </div>
+                    <button id="clear-resume-btn" class="button button-secondary button-small" style="display: none;">Clear Stored Resume</button>
+                    <button id="download-resume-btn" class="button button-secondary button-small" style="display: none;">Download Stored Resume</button>
                 </div>
             </section>
 
@@ -60,21 +77,8 @@
                     <h2>Preview Extracted Job Description</h2>
                     <button id="preview-jd-btn" class="button button-secondary button-small">Preview</button>
                 </div>
-                 <textarea id="preview-jd-output" class="preview-output" readonly placeholder="Click 'Preview' to see the extracted text..."></textarea>
-            </section>
-
-            <section class="card resume-section" id="resume-card">
-                 <div class="card-header">
-                    <h2>Your Resume</h2>
-                     <button class="toggle-button" aria-expanded="true" aria-controls="resume-content">▼</button>
-                 </div>
-                 <div class="card-content" id="resume-content">
-                    <div class="input-group file-input-group">
-                        <label for="resume-upload" class="file-label">Choose File</label>
-                        <input type="file" id="resume-upload" accept=".txt,.pdf,.docx" class="file-input">
-                        <span id="resume-upload-status" class="status-text">No file selected.</span>
-                    </div>
-                    <button id="clear-resume-btn" class="button button-secondary button-small" style="display: none;">Clear Stored Resume</button>
+                <div class="card-content">
+                    <textarea id="preview-jd-output" class="preview-output" placeholder="Click 'Preview' to see the extracted text, or paste the job description here..."></textarea>
                 </div>
             </section>
 

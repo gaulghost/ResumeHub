@@ -447,17 +447,46 @@ body.theme-dark {
     font-size: 1.0em; /* Slightly smaller heading */
 }
 
+/* Make preview card content have zero padding */
+.preview-section .card-content {
+    padding: 0;
+}
+
 .preview-output {
+    display: block; /* Ensure it takes full width */
     width: 100%;
     height: 150px; /* Adjust height as needed */
-    margin-top: 10px;
-    padding: 8px;
+    /* Remove margin-top */
+    margin: 0;
+    padding: 12px; /* Add padding inside */
     font-family: var(--font-family-sans);
     font-size: 0.9em;
-    color: var(--text-secondary);
+    color: var(--text);
     background-color: var(--input-bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    border: none; /* Remove default border */
+    border-top: 1px solid var(--border); /* Add top border to separate from header */
+    border-radius: 0 0 8px 8px; /* Match bottom corners of card */
     resize: vertical; /* Allow vertical resizing */
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+    box-shadow: none; /* Remove inner shadow */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Improved focus style for preview textarea */
+.preview-output:focus {
+    outline: none;
+    border-color: var(--color-primary); /* Use existing input focus border */
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.25); /* Use existing input focus shadow */
+    border-top-color: var(--color-primary); /* Ensure top border also changes */
+}
+
+/* Specific styling for resume section buttons */
+.resume-section .card-content > .button {
+    display: inline-block; /* Change from default block/flex */
+    margin-top: 8px; /* Add some space above the buttons */
+    margin-right: 8px; /* Add space between buttons */
+}
+
+/* Remove right margin from the last button in the group */
+.resume-section .card-content > .button:last-of-type {
+    margin-right: 0;
 } 
