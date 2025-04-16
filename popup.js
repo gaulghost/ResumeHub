@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let isProcessing = false; // Flag to prevent multiple clicks
     let selectedExtractionMethod = 'standard'; // Default
     let isPreviewing = false; // Flag for preview loading state
-    let currentGeneratedResume = null; // Variable to hold the latest generated resume content
+    let currentGeneratedResumeJSON = null; // NEW state variable for JSON data
 
     // --- Helper Function to Apply Theme --- 
     function applyTheme(theme, isInitialLoad = false) {
@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Create Resume Button Click 
+    // Create Resume Button Click (Update response handling)
     createResumeBtn.addEventListener('click', () => {
         if (isProcessing) return; 
 
@@ -506,9 +506,7 @@ document.addEventListener('DOMContentLoaded', function() {
             action: "createTailoredResume",
             resumeData: storedResume,
             apiToken: apiToken,
-            // Send the determined job description OR null if background should extract
             jobDescriptionOverride: jobDescriptionToSend, 
-            // Also send original extraction method if needed by background for AI/Standard
             extractionMethod: currentExtractionMethod 
         }, (response) => {
             // Stop Processing
@@ -522,245 +520,328 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error("Message sending failed:", chrome.runtime.lastError);
                 statusMessageDiv.textContent = `Error: ${chrome.runtime.lastError.message}`;
                 statusMessageDiv.classList.add('error');
+                // Clear potentially stale JSON data on error
+                currentGeneratedResumeJSON = null; 
                 return;
             }
 
             console.log('Response from background:', response);
-            if (response && response.success) {
+            if (response && response.success && response.tailoredResumeJSON) { // Check for JSON
                 // Success: Display success message and show download buttons
-                console.log("Received successful response from background script:", response);
+                console.log("Received successful JSON response from background script.");
                 statusMessageDiv.textContent = 'Tailored resume generated successfully!';
                 statusMessageDiv.className = 'status-message success'; // Use success class
 
-                // Store the latest generated resume content
-                currentGeneratedResume = response.generatedResume; 
+                // Store the latest generated resume JSON
+                currentGeneratedResumeJSON = response.tailoredResumeJSON;
+                console.log("Stored tailored resume JSON:", currentGeneratedResumeJSON); 
 
                 // Re-enable the button after success
                 createResumeBtn.disabled = false;
                 
-                // --- Debugging Download Buttons --- 
-                console.log("Success block reached. Attempting to show download buttons.");
-                console.log("Download container element:", downloadButtonsContainer);
-                console.log("Current display style:", downloadButtonsContainer ? downloadButtonsContainer.style.display : 'Container not found!');
-                
                 // Show the download buttons container
                 if (downloadButtonsContainer) {
                     downloadButtonsContainer.style.display = 'block';
-                    console.log("Set display style to 'block'. New style:", downloadButtonsContainer.style.display);
                 } else {
                      console.error("Cannot show download buttons because the container element was not found!");
                 }
-                // --- End Debugging ---
 
-                // Ensure the buttons are interactive (they might have been disabled previously)
+                // Ensure the buttons are interactive 
                 if (downloadDocxBtn) downloadDocxBtn.disabled = false;
                 if (downloadPdfBtn) downloadPdfBtn.disabled = false;
+                if (downloadTxtBtn) downloadTxtBtn.disabled = false; // Ensure TXT button is also enabled
                 
             } else if (response && response.error) {
                 statusMessageDiv.textContent = `Error: ${response.error}`;
                 statusMessageDiv.classList.add('error');
+                 currentGeneratedResumeJSON = null; // Clear data on error
             } else {
-                statusMessageDiv.textContent = 'Unknown error. Check console.';
+                statusMessageDiv.textContent = 'Unknown error or invalid response format. Check console.';
                 statusMessageDiv.classList.add('error');
+                 currentGeneratedResumeJSON = null; // Clear data on error
             }
         });
     });
 
-    // --- PDF Generation Function (using pdfmake) ---
-    function generatePdf(resumeText, baseFilename) {
-        console.log("Generating PDF with revised structured template...");
-        try {
-            const content = [];
-            // Split sections based on the AI's likely output format: **Heading**
-            // Use regex: split on lines starting with ** followed by non-* chars, ending with **, keep delimiters
-            const sections = resumeText.split(/^(\*\*.+?\*\*$\n?)/m).filter(Boolean); 
+    // --- NEW Helper Function to Convert JSON to Formatted Text ---
+    function convertResumeJSONToText(jsonData) {
+        if (!jsonData) return "Error: No resume data available to format.";
 
-            console.log("Raw sections split:", sections);
+        let text = "";
 
-            // --- Process Sections ---
-            for (let i = 0; i < sections.length; i += 2) { // Iterate in pairs (heading, content)
-                const headingRaw = sections[i]?.trim();
-                let sectionContent = sections[i + 1]?.trim() || '';
-
-                if (!headingRaw) continue; // Skip if heading is missing
-
-                // Clean heading: remove ** and trailing colon if present
-                const heading = headingRaw.replace(/\*\*/g, '').replace(/:$/, '').trim();
-                
-                console.log(`Processing section: "${heading}"`);
-                /* Multi-line log commented out correctly
-                 console.log(`Raw Content:
-${sectionContent}
----`);
-                */
-
-                // Add heading to PDF content
-                content.push({ text: heading, style: 'sectionHeader' });
-
-                // --- Format content based on section ---
-                if (heading === 'Summary') {
-                    content.push({ text: sectionContent, style: 'paragraph' });
-                } else if (heading === 'Experience' || heading === 'Projects') {
-                    // Parse entries (assuming potential variations in structure)
-                    // Split based on lines that likely start a new entry (e.g., start with *, -, or non-whitespace)
-                    const entries = sectionContent.split(/\n(?=\S|\*|-)/).filter(s => s.trim()); // Corrected regex (removed extra backslash before -)
-                    console.log(`  Found ${entries.length} entries.`);
-                    entries.forEach((entry, idx) => {
-                        const lines = entry.trim().split('\n').map(l => l.trim()).filter(l => l);
-                        console.log(`    Entry ${idx + 1} lines:`, lines);
-                        if (lines.length > 0) {
-                            // Assume first line is Title/Company or Project Name
-                            content.push({ text: lines[0], style: 'subHeader' });
-                            
-                            // Look for dates (heuristic: check if second line contains typical date chars)
-                            let dateLine = '';
-                            let bulletStartIndex = 1; // Where bullets start
-                            if (lines.length > 1 && /[\(\)\[\]\d{4}\-]/.test(lines[1])) {
-                                dateLine = lines[1];
-                                bulletStartIndex = 2;
-                                content.push({ text: dateLine, style: 'dateRange' });
-                            } else if (lines.length > 1) {
-                                // If second line doesn't look like a date, maybe it's a subtitle?
-                                // Let's treat it as part of the bullets for now, or adjust if needed.
-                            }
-
-                            // Process remaining lines as bullet points
-                            const bulletPoints = lines.slice(bulletStartIndex)
-                                .map(line => line.replace(/^\*\s/, '').replace(/^-s/, '')) // Simpler bullet removal regex
-                                .filter(line => line); // Remove empty lines
-                            if (bulletPoints.length > 0) {
-                                content.push({ ul: bulletPoints, style: 'list' });
-                            }
-                        }
-                    });
-                } else if (heading === 'Education') {
-                    // Similar parsing logic for Education
-                    const entries = sectionContent.split(/\n(?=\S)/).filter(s => s.trim());
-                     console.log(`  Found ${entries.length} education entries.`);
-                     entries.forEach((entry, idx) => {
-                        const lines = entry.trim().split('\n').map(l => l.trim()).filter(l => l);
-                         console.log(`    Entry ${idx + 1} lines:`, lines);
-                         if (lines.length > 0) {
-                            // Assume first line is Degree/Institution
-                            content.push({ text: lines[0], style: 'subHeader' });
-                             // Look for dates
-                            let dateLine = '';
-                            if (lines.length > 1 && /[\(\)\[\]\d{4}\-]/.test(lines[1])) {
-                                dateLine = lines[1];
-                                content.push({ text: dateLine, style: 'dateRange' });
-                            } 
-                            // Add other lines if present (e.g., GPA, details)
-                            if (lines.length > (dateLine ? 2 : 1)) {
-                                const details = lines.slice(dateLine ? 2 : 1).join('\n');
-                                content.push({ text: details, style: 'paragraph', italics: true });
-                            }
-                         }
-                     });
-                } else if (heading === 'Skills') {
-                     // Keep simple list for skills, remove category titles if present
-                    const skills = sectionContent.split('\n')
-                        .map(s => s.trim().replace(/^\*\*.+?\*\*\s?:?\s?/, '')) // Remove potential sub-headings like **Programming:**
-                        .map(s => s.replace(/^\*\s/, '').replace(/^-s/, '')) // Simpler bullet removal regex
-                        .filter(s => s);
-                     console.log(`  Found ${skills.length} skill items.`);
-                    if (skills.length > 0) {
-                         content.push({ ul: skills, style: 'list' }); // Simple list for now
+        // Contact Info
+        if (jsonData.contact) {
+            const contactParts = [
+                jsonData.contact.name,
+                jsonData.contact.email,
+                jsonData.contact.phone,
+                jsonData.contact.linkedin,
+                jsonData.contact.github,
+                jsonData.contact.portfolio
+            ].filter(Boolean); // Remove null/empty values
+            if (contactParts.length > 0) {
+                // Add name separately if exists, centered or prominent
+                if (jsonData.contact.name) {
+                    text += jsonData.contact.name + "\n";
+                    const otherContacts = contactParts.filter(p => p !== jsonData.contact.name);
+                    if (otherContacts.length > 0) {
+                         text += otherContacts.join(' | ') + "\n\n";
                     }
                 } else {
-                    // Default: treat as simple paragraph or list
-                    const lines = sectionContent.split('\n').map(l => l.trim());
-                    const bullets = lines.map(l => l.replace(/^\*\s/, '').replace(/^-s/, '')).filter(l => l); // Simpler bullet removal regex
-                    if (lines.length > 1 && lines.every(l => l.startsWith('*') || l.startsWith('-'))) {
-                        content.push({ ul: bullets, style: 'list' });
-                    } else {
-                        content.push({ text: sectionContent, style: 'paragraph' });
-                    }
+                     text += contactParts.join(' | ') + "\n\n";
                 }
-                // Add some space between sections
-                content.push({ text: ' ', margin: [0, 5] }); 
+            } 
+        }
+
+        // Summary
+        if (jsonData.summary) {
+            text += "**Summary**\n";
+            text += jsonData.summary + "\n\n";
+        }
+
+        // Experience
+        if (jsonData.experience && jsonData.experience.length > 0) {
+            text += "**Experience**\n";
+            jsonData.experience.forEach(exp => {
+                const titleLine = [exp.title, exp.company].filter(Boolean).join(' at ');
+                const locationDates = [exp.location, exp.dates].filter(Boolean).join(' | ');
+                text += titleLine + (locationDates ? ` (${locationDates})` : '') + "\n";
+                if (exp.bullets && exp.bullets.length > 0) {
+                    exp.bullets.forEach(bullet => {
+                        text += `- ${bullet}\n`;
+                    });
+                }
+                text += "\n"; // Space between entries
+            });
+        }
+
+        // Education
+        if (jsonData.education && jsonData.education.length > 0) {
+            text += "**Education**\n";
+             jsonData.education.forEach(edu => {
+                 const degreeLine = [edu.degree, edu.institution].filter(Boolean).join(', ');
+                 const locationDates = [edu.location, edu.dates].filter(Boolean).join(' | ');
+                 text += degreeLine + (locationDates ? ` (${locationDates})` : '') + "\n";
+                  if (edu.details) {
+                      text += edu.details + "\n";
+                  }
+                  text += "\n"; // Space between entries
+             });
+        }
+
+        // Skills
+        if (jsonData.skills && jsonData.skills.details) {
+            text += "**Skills**\n";
+            text += jsonData.skills.details + "\n\n"; // Assuming skills details is a string blob
+        }
+
+        // Projects
+        if (jsonData.projects && jsonData.projects.length > 0) {
+            text += "**Projects**\n";
+            jsonData.projects.forEach(proj => {
+                text += proj.name + (proj.link ? ` (${proj.link})` : '') + "\n";
+                if (proj.description) {
+                    text += proj.description + "\n";
+                }
+                if (proj.technologies && proj.technologies.length > 0) {
+                     text += `Technologies: ${proj.technologies.join(', ')}\n`;
+                }
+                 text += "\n"; // Space between entries
+            });
+        }
+
+        // Achievements
+        if (jsonData.achievements && jsonData.achievements.length > 0) {
+            text += "**Achievements**\n";
+             jsonData.achievements.forEach(ach => {
+                 text += `- ${ach}\n`;
+             });
+             text += "\n";
+        }
+
+        return text.trim();
+    }
+
+    // --- REVISED PDF Generation Function (using pdfmake with JSON input) ---
+    function generatePdf(jsonData, baseFilename) {
+        console.log("Generating PDF from JSON data...");
+        if (!jsonData) {
+            console.error("generatePdf called with no JSON data.");
+            statusMessageDiv.textContent = 'Error: No resume data for PDF generation.';
+            statusMessageDiv.className = 'status-message error';
+            return;
+        }
+
+        try {
+            const content = [];
+
+            // Contact Info (Example: Centered Header)
+            if (jsonData.contact) {
+                const contactParts = [
+                    jsonData.contact.name,
+                    jsonData.contact.email,
+                    jsonData.contact.phone,
+                    jsonData.contact.linkedin,
+                    jsonData.contact.github,
+                    jsonData.contact.portfolio
+                ].filter(Boolean);
+                if (jsonData.contact.name) {
+                     content.push({ text: jsonData.contact.name, style: 'nameHeader' });
+                }
+                 const otherContacts = contactParts.filter(p => p !== jsonData.contact.name);
+                 if (otherContacts.length > 0) {
+                     content.push({ text: otherContacts.join(' | '), style: 'contactInfo' });
+                 }
             }
+
+            // Summary
+            if (jsonData.summary) {
+                content.push({ text: 'Summary', style: 'sectionHeader' });
+                content.push({ text: jsonData.summary, style: 'paragraph' });
+                content.push({ text: ' ', margin: [0, 5] }); // Section space
+            }
+
+            // Experience
+            if (jsonData.experience && jsonData.experience.length > 0) {
+                 content.push({ text: 'Experience', style: 'sectionHeader' });
+                 jsonData.experience.forEach(exp => {
+                     const titleLine = [exp.title, exp.company].filter(Boolean).join(' at ');
+                     const locationDates = [exp.location, exp.dates].filter(Boolean).join(' | ');
+                     
+                     content.push({ text: titleLine, style: 'subHeader' });
+                      if (locationDates) {
+                         content.push({ text: locationDates, style: 'dateRange', alignment: 'left' }); // Or 'right' if preferred
+                     }
+                     if (exp.bullets && exp.bullets.length > 0) {
+                         content.push({ ul: exp.bullets, style: 'list' });
+                     }
+                      content.push({ text: ' ', margin: [0, 3] }); // Space between entries
+                 });
+                 content.push({ text: ' ', margin: [0, 5] }); // Section space
+            }
+
+            // Education
+             if (jsonData.education && jsonData.education.length > 0) {
+                 content.push({ text: 'Education', style: 'sectionHeader' });
+                  jsonData.education.forEach(edu => {
+                      const degreeLine = [edu.degree, edu.institution].filter(Boolean).join(', ');
+                      const locationDates = [edu.location, edu.dates].filter(Boolean).join(' | ');
+                      
+                      content.push({ text: degreeLine, style: 'subHeader' });
+                      if (locationDates) {
+                          content.push({ text: locationDates, style: 'dateRange', alignment: 'left' });
+                      }
+                       if (edu.details) {
+                           content.push({ text: edu.details, style: 'paragraph', italics: true });
+                       }
+                       content.push({ text: ' ', margin: [0, 3] }); // Space between entries
+                  });
+                  content.push({ text: ' ', margin: [0, 5] }); // Section space
+             }
+
+            // Skills
+            if (jsonData.skills && jsonData.skills.details) {
+                 content.push({ text: 'Skills', style: 'sectionHeader' });
+                 // Treat skills.details as a block of text for now, might need splitting
+                 content.push({ text: jsonData.skills.details, style: 'paragraph' });
+                 content.push({ text: ' ', margin: [0, 5] }); // Section space
+            }
+
+            // Projects
+             if (jsonData.projects && jsonData.projects.length > 0) {
+                 content.push({ text: 'Projects', style: 'sectionHeader' });
+                  jsonData.projects.forEach(proj => {
+                      content.push({ text: proj.name, style: 'subHeader' });
+                      if (proj.description) {
+                           content.push({ text: proj.description, style: 'paragraph' });
+                      }
+                       if (proj.technologies && proj.technologies.length > 0) {
+                            content.push({ text: `Technologies: ${proj.technologies.join(', ')}`, style: 'paragraph', italics: true });
+                       }
+                        if (proj.link) {
+                            content.push({ text: proj.link, link: proj.link, style: 'link' });
+                        }
+                        content.push({ text: ' ', margin: [0, 3] }); // Space between entries
+                  });
+                  content.push({ text: ' ', margin: [0, 5] }); // Section space
+             }
+
+            // Achievements
+             if (jsonData.achievements && jsonData.achievements.length > 0) {
+                 content.push({ text: 'Achievements', style: 'sectionHeader' });
+                 content.push({ ul: jsonData.achievements, style: 'list' });
+                  content.push({ text: ' ', margin: [0, 5] }); // Section space
+             }
 
             // --- Document Definition ---
             const docDefinition = {
                 content: content,
-                styles: {
-                    sectionHeader: {
-                        fontSize: 14,
-                        bold: true,
-                        margin: [0, 10, 0, 5], // [left, top, right, bottom]
-                        color: '#2c3e50' 
-                    },
-                     subHeader: { // For Company Name / Degree / Project
-                        fontSize: 11,
-                        bold: true,
-                        margin: [0, 5, 0, 2]
-                    },
-                     dateRange: {
-                        fontSize: 10,
-                        italics: true,
-                        color: '#7f8c8d', // Grey
-                        margin: [0, 0, 0, 5]
-                    },
-                    paragraph: {
-                        fontSize: 10,
-                        margin: [0, 0, 0, 5]
-                    },
-                    list: {
-                        fontSize: 10,
-                        margin: [10, 0, 0, 5] // Indent lists
-                    }
+                styles: { // Re-define styles as needed
+                    nameHeader: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
+                    contactInfo: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 15], color: '#34495e' },
+                    sectionHeader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5], color: '#2c3e50' },
+                    subHeader: { fontSize: 11, bold: true, margin: [0, 5, 0, 2] },
+                    dateRange: { fontSize: 10, italics: true, color: '#7f8c8d', margin: [0, 0, 0, 5] },
+                    paragraph: { fontSize: 10, margin: [0, 0, 0, 5] },
+                    list: { fontSize: 10, margin: [10, 0, 0, 5] }, // Indent lists
+                    link: { fontSize: 10, italics: true, color: 'blue', decoration: 'underline' }
                 },
-                defaultStyle: {
-                    font: 'Roboto',
-                    lineHeight: 1.2
-                },
+                defaultStyle: { font: 'Roboto', lineHeight: 1.2 },
                 pageSize: 'LETTER',
                 pageMargins: [ 40, 40, 40, 40 ],
             };
 
             pdfMake.createPdf(docDefinition).download(`${baseFilename}_tailored.pdf`);
-            console.log("Formatted PDF download triggered.");
+            console.log("PDF download triggered from JSON data.");
+
         } catch (error) {
-            console.error("Error generating formatted PDF:", error);
-            statusMessageDiv.textContent = 'Error generating formatted PDF. Check console.';
+            console.error("Error generating PDF from JSON:", error);
+            statusMessageDiv.textContent = 'Error generating PDF. Check console.';
             statusMessageDiv.className = 'status-message error';
         }
     }
 
-    // --- Download Button Listeners (Attached once) ---
+    // --- REVISED Download Button Listeners (Attached once) ---
     downloadDocxBtn.addEventListener('click', () => {
-        if (currentGeneratedResume) {
+        if (currentGeneratedResumeJSON) {
+             const resumeText = convertResumeJSONToText(currentGeneratedResumeJSON);
             triggerDownload(
-                currentGeneratedResume,
+                resumeText, // Use converted text
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'docx'
             );
         } else {
-            console.error("DOCX download clicked, but no generated resume content available.");
+            console.error("DOCX download clicked, but no generated resume JSON available.");
+             statusMessageDiv.textContent = 'Error: No resume content for DOCX.';
+             statusMessageDiv.className = 'status-message error';
         }
     });
 
     downloadTxtBtn.addEventListener('click', () => {
-        if (currentGeneratedResume) {
+        if (currentGeneratedResumeJSON) {
+             const resumeText = convertResumeJSONToText(currentGeneratedResumeJSON);
             triggerDownload(
-                currentGeneratedResume,
+                resumeText, // Use converted text
                 'text/plain',
                 'txt'
             );
         } else {
-             console.error("TXT download clicked, but no generated resume content available.");
+             console.error("TXT download clicked, but no generated resume JSON available.");
+             statusMessageDiv.textContent = 'Error: No resume content for TXT.';
+             statusMessageDiv.className = 'status-message error';
         }
     });
-    
+
     downloadPdfBtn.addEventListener('click', () => {
-        if (currentGeneratedResume && storedResume.filename) {
+        if (currentGeneratedResumeJSON && storedResume.filename) {
              const originalFilenameParts = storedResume.filename.split('.');
-            originalFilenameParts.pop(); 
+            originalFilenameParts.pop();
             const baseName = originalFilenameParts.join('.');
-            generatePdf(currentGeneratedResume, baseName);
+            // Pass the JSON data directly to generatePdf
+            generatePdf(currentGeneratedResumeJSON, baseName);
         } else {
-            console.error("PDF download clicked, but no generated resume content or base filename available.");
-            if (!currentGeneratedResume) statusMessageDiv.textContent = 'Error: No resume content for PDF.';
+            console.error("PDF download clicked, but no generated resume JSON or base filename available.");
+            if (!currentGeneratedResumeJSON) statusMessageDiv.textContent = 'Error: No resume content for PDF.';
             if (!storedResume.filename) statusMessageDiv.textContent = 'Error: Original filename missing for PDF.';
             statusMessageDiv.className = 'status-message error';
         }

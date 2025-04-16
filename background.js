@@ -90,8 +90,10 @@ function findJobDescriptionOnPage_Standard() {
 
 // === AI-Powered Extraction ===
 
-// Helper to get the full DOM text content
+// Helper to get the full DOM text content (or targeted)
 async function getFullPageTextContent() {
+     // Reverted to simpler innerText extraction as per user change. 
+     // If issues persist with dynamic pages, re-evaluate the targeted/delay logic.
      console.log("Getting full page text content for AI extraction...");
      return new Promise((resolve, reject) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -118,14 +120,16 @@ async function getFullPageTextContent() {
     });
 }
 
-// Function to call Gemini API specifically for extracting the job description
+
+// Function to call Gemini API specifically for *extracting* the job description text
+// (This is kept separate from the tailoring logic now)
 async function extractJobDescriptionViaAI(apiKey, pageTextContent) {
     console.log("Calling Google Gemini API for Job Description Extraction...");
-    const modelName = 'gemini-1.5-pro-latest'; // Use a stable, capable model
+    const modelName = 'gemini-1.5-pro-latest'; // Use a capable model for extraction
     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
-    // Limit input size to avoid exceeding API limits / excessive cost
-    const MAX_PAGE_TEXT_LENGTH = 10000; // Increased limit
+    // Limit input size (using user's last value)
+    const MAX_PAGE_TEXT_LENGTH = 10000; 
     if (pageTextContent.length > MAX_PAGE_TEXT_LENGTH) {
         console.warn(`Page text content truncated from ${pageTextContent.length} to ${MAX_PAGE_TEXT_LENGTH} characters.`);
         pageTextContent = pageTextContent.substring(0, MAX_PAGE_TEXT_LENGTH);
@@ -145,8 +149,8 @@ ${pageTextContent}
     const requestBody = {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { 
-             maxOutputTokens: 8192, // Allow potentially long descriptions
-             temperature: 0.2 // Lower temperature for more deterministic extraction
+             maxOutputTokens: 8192, 
+             temperature: 0.2 
          },
          safetySettings: [
            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -165,7 +169,6 @@ ${pageTextContent}
         });
 
         if (!response.ok) {
-             // Simplified error handling for this specific call
             const errorText = await response.text(); 
             console.error("AI Extraction API Error:", response.status, errorText);
             throw new Error(`AI extraction API request failed (${response.status}).`);
@@ -179,12 +182,18 @@ ${pageTextContent}
             extractedText = responseData.candidates[0].content.parts[0].text.trim();
         } else {
              console.error("Could not find text in AI extraction response structure.", responseData);
+              if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
+                    throw new Error("AI Extraction API returned a candidate but no content, potentially blocked.");
+              } else if (responseData.promptFeedback?.blockReason) {
+                   throw new Error(`AI Extraction API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
+              }
              throw new Error("AI extraction response structure was unexpected.");
         }
 
-        if (extractedText === "NO_JOB_DESCRIPTION_FOUND" || extractedText.length < 50) { // Basic check
+        if (extractedText === "NO_JOB_DESCRIPTION_FOUND" || extractedText.length < 50) { 
             console.warn("AI extraction did not find a job description or result was too short.");
-            throw new Error("AI could not confidently extract a job description from the page.");
+            // Return null instead of throwing error here, let the caller decide
+            return null; 
         }
         
         console.log("AI extraction successful.");
@@ -192,47 +201,39 @@ ${pageTextContent}
 
     } catch (error) {
         console.error("Error during AI job description extraction:", error);
-        // Re-throw for the main handler
+        // Re-throw for the main handler if needed, or return null
         throw new Error(`AI-powered job description extraction failed: ${error.message}`);
     }
 }
 
-// === Function to call Google Gemini API for Resume Tailoring ===
-async function callGoogleGeminiAPI_TailorResume(apiKey, jobDescription, resumeData) {
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
-    const modelName = "gemini-1.5-pro-latest"; // Use a stable, capable model
+// === NEW Function to Parse Resume to JSON ===
+async function parseResumeToJSON(apiKey, resumeData) {
+    console.log(`Attempting to parse resume ${resumeData.filename} (${resumeData.mimeType}) into JSON...`);
+    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`; // Use flash for potentially faster/cheaper parsing
+    const modelName = "gemini-1.5-flash-latest";
 
-    // Updated Prompt for generating a full tailored resume
+    // Define the target JSON structure in the prompt
+    const targetJsonStructure = `{
+  "contact": { "name": "string|null", "email": "string|null", "phone": "string|null", "linkedin": "string|null", "github": "string|null", "portfolio": "string|null" },
+  "summary": "string|null",
+  "experience": [ { "title": "string", "company": "string", "location": "string|null", "dates": "string|null", "bullets": ["string", "..."] } ],
+  "education": [ { "institution": "string", "degree": "string", "location": "string|null", "dates": "string|null", "details": "string|null" } ],
+  "skills": { "details": "string covering all skills" }, // Keep skills simpler for now
+  "projects": [ { "name": "string", "description": "string|null", "technologies": ["string", "..."], "link": "string|null" } ],
+  "achievements": [ "string", "..." ]
+}`;
+
      const prompt = `**Instruction:**
-Carefully analyze the attached resume file and the following job description. Generate a complete, tailored resume based *only* on the content found within the attached resume file, adapted for the specific requirements of the job description.
+Analyze the attached resume file content. Extract the information and structure it precisely according to the following JSON format. If a section or field is not present in the resume, represent it as 'null' (for objects/strings) or an empty array [] (for arrays like bullets/achievements). Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
 
-**Constraints:**
-1.  Extract relevant skills, experiences, and achievements from the resume file that directly match requirements listed in the job description.
-2.  **Strictly do not add any hard skills (e.g., specific software, technical processes, certifications) not explicitly present in the attached resume file.** You may add relevant soft skills (e.g., communication, teamwork, leadership) if appropriate for the tailored resume.
-3.  The entire output resume must be a maximum of 650 words.
-4.  The entire output resume must be a maximum of 4500 characters.
-5.  **Format the output in a modern, clean layout with the following structure:**
-    * **Name** - Large, centered at top
-    * **Job Title** - Centered, subtitle (e.g., "SOFTWARE DEVELOPER")
-    * **Contact Information** - Single line with email, phone, LinkedIn, GitHub, etc.
-    * **Education** - List institutions, degrees, relevant dates, and locations
-    * **Skills** - Categorized (e.g., "Programming Languages", "Web Development", "Tools")
-    * **Work Experience** - For each position include:
-        - Job Title | Company | Location (right-aligned)
-        - Dates (right-aligned)
-        - 3-4 bullet points of achievements and responsibilities relevant to the job description
-    * **Projects** (optional) - Name, brief description, technologies used
-    * **Achievements** (optional) - Competitions, awards, certifications relevant to the job
-6.  Use bullet points consistently for listing items.
-7.  Emphasize quantifiable achievements and results where available.
-8.  Format the entire output as plain text with appropriate spacing for a clean, professional look.
+**Target JSON Structure:**
+\`\`\`json
+${targetJsonStructure}
+\`\`\`
 
-**--- Job Description ---**
-${jobDescription}
+**--- Resume Content Analysis ---**
+Parse the attached file and generate the JSON output.`;
 
-**--- Tailored Resume Output ---**`;
-
-    // Request body construction remains similar
      const requestBody = {
         contents: [
           {
@@ -241,16 +242,17 @@ ${jobDescription}
               {
                 inline_data: {
                   mime_type: resumeData.mimeType,
-                  data: resumeData.content
+                  data: resumeData.content // Assuming content is Base64
                 }
               }
             ]
           }
         ],
         generationConfig: {
-           maxOutputTokens: 1024, // Adjust if needed, but prompt constraints are more specific
+           responseMimeType: "application/json", // Request JSON output directly
+           temperature: 0.1 // Low temperature for structured output
         },
-         safetySettings: [
+        safetySettings: [ /* Standard safety settings */
            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -258,79 +260,141 @@ ${jobDescription}
          ]
     };
 
-    // Try/catch block for the fetch call
       try {
-        console.log(`Sending resume tailoring request to ${modelName} with file ${resumeData.filename} (${resumeData.mimeType})...`);
+        console.log(`Sending resume parsing request to ${modelName}...`);
         const response = await fetch(apiEndpoint, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody),
         });
 
-        // Error handling
         if (!response.ok) {
-            let errorData;
-            try {
-                 errorData = await response.json();
-                 console.error("Resume Tailoring API Error Response:", errorData);
-            } catch (e) {
                  const errorText = await response.text();
-                 console.error("Resume Tailoring API Error Response (non-JSON):", errorText);
-                 errorData = { error: { message: `API request failed with status ${response.status}: ${response.statusText}. Response: ${errorText}` } };
-            }
-            if (errorData?.promptFeedback?.blockReason) {
-                 throw new Error(`Resume Tailoring API request blocked due to safety settings: ${errorData.promptFeedback.blockReason}`);
-            }
-            throw new Error(`Resume Tailoring API Error: ${errorData?.error?.message || response.statusText}`);
+             console.error("Resume Parsing API Error:", response.status, errorText);
+             throw new Error(`Resume parsing API request failed (${response.status}). Response: ${errorText}`);
         }
 
         const responseData = await response.json();
-        console.log("Resume Tailoring API Response Received:", responseData);
+        console.log("Resume Parsing Response Received.");
 
-        let generatedText = '';
-        if (responseData.candidates && responseData.candidates[0].finishReason && responseData.candidates[0].finishReason !== 'STOP') {
-             console.warn(`Resume Tailoring API call finished with reason: ${responseData.candidates[0].finishReason}`);
-             if (responseData.candidates[0].finishReason === 'SAFETY') {
-                 throw new Error("Resume Tailoring API generation stopped due to safety settings.");
-             }
-        }
-
-        if (responseData.candidates && responseData.candidates[0].content?.parts[0]?.text) {
-            generatedText = responseData.candidates[0].content.parts[0].text;
+        if (responseData.candidates && responseData.candidates[0]?.content?.parts[0]?.text) {
+            const jsonText = responseData.candidates[0].content.parts[0].text;
+            try {
+                 const parsedJson = JSON.parse(jsonText);
+                 console.log("Successfully parsed resume JSON.");
+                 return parsedJson;
+            } catch (parseError) {
+                 console.error("Failed to parse JSON response from resume parsing API:", parseError, "\nRaw Text:", jsonText);
+                 throw new Error("Failed to parse JSON response from resume parsing API.");
+            }
         } else {
-             console.error("Could not find generated text in resume tailoring API response structure.", responseData);
+             console.error("Could not find JSON text in resume parsing response structure.", responseData);
+             // Check for blocks
              if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
-                  throw new Error("Resume Tailoring API returned a candidate but no content, potentially blocked or empty.");
-             }
-             throw new Error("Resume Tailoring API response structure was unexpected. Could not extract tailored resume.");
+                    throw new Error("Resume parsing API returned a candidate but no content, potentially blocked.");
+              } else if (responseData.promptFeedback?.blockReason) {
+                   throw new Error(`Resume parsing API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
+              }
+             throw new Error("Resume parsing response structure was unexpected.");
         }
-
-        // Constraint validation
-         const wordCount = generatedText.split(/\s+/).filter(Boolean).length;
-        const charCount = generatedText.length;
-        console.log(`Generated tailored resume - Words: ${wordCount}, Chars: ${charCount}`);
-
-        if (wordCount > 650 || charCount > 4500) {
-            console.warn("API tailored resume response exceeded constraints despite prompt instruction.");
-            // Consider trimming or throwing error? For now, throw error.
-            throw new Error(`Generated resume exceeded length limits (Words: ${wordCount}/650, Chars: ${charCount}/4500).`);
-        }
-
-        if (!generatedText.trim()) {
-             throw new Error("API returned an empty tailored resume.");
-        }
-
-        return { generatedResume: generatedText.trim() };
 
     } catch (error) {
-        console.error("Error during Google Gemini Resume Tailoring API call:", error);
-        throw new Error(`Failed to generate tailored resume via API: ${error.message}`);
+        console.error("Error during resume JSON parsing API call:", error);
+        throw new Error(`Failed to parse resume to JSON via API: ${error.message}`);
     }
 }
 
-// === NEW Async Handler Function for Preview ===
+
+// === NEW Function to Tailor a Specific Resume Section ===
+async function callGoogleGeminiAPI_TailorSection(apiKey, jobDescription, originalSectionData, sectionType) {
+    console.log(`Tailoring section: ${sectionType}...`);
+    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`; // Use flash
+    const modelName = "gemini-1.5-flash-latest";
+
+    // Create a prompt specific to the section type
+    let prompt = `**Instruction:**
+Analyze the following original resume section (\`${sectionType}\`) and the provided job description. Generate a tailored version of *only this section*, highlighting skills and experiences relevant to the job description.
+- Use strong action verbs.
+- Quantify achievements where possible based *only* on the original section data.
+- Maintain the original meaning and key information.
+- **Strictly do not add any skills or experiences not present in the original section data.**
+- Output the result as a JSON object that matches the structure of the original section data provided. Output *only* the valid JSON object.
+
+**Job Description:**
+\`\`\`
+${jobDescription}
+\`\`\`
+
+**Original Resume Section (${sectionType}):**
+\`\`\`json
+${JSON.stringify(originalSectionData, null, 2)}
+\`\`\`
+
+**--- Tailored Section JSON Output (${sectionType}) ---**
+`;
+
+    const requestBody = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+           responseMimeType: "application/json",
+           temperature: 0.4 // Slightly higher temp for creative tailoring, but still structured
+        },
+         safetySettings: [ /* Standard safety settings */
+           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+           { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        ]
+    };
+
+     try {
+        console.log(`Sending section tailoring request (${sectionType}) to ${modelName}...`);
+        const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+        });
+
+         if (!response.ok) {
+             const errorText = await response.text();
+             console.error(`Section (${sectionType}) Tailoring API Error:`, response.status, errorText);
+             throw new Error(`Section (${sectionType}) tailoring API request failed (${response.status}).`);
+        }
+
+        const responseData = await response.json();
+        console.log(`Section (${sectionType}) Tailoring Response Received.`);
+
+        if (responseData.candidates && responseData.candidates[0]?.content?.parts[0]?.text) {
+            const jsonText = responseData.candidates[0].content.parts[0].text;
+             try {
+                 const tailoredJson = JSON.parse(jsonText);
+                 console.log(`Successfully parsed tailored JSON for section: ${sectionType}`);
+                 return tailoredJson;
+            } catch (parseError) {
+                 console.error(`Failed to parse JSON response from section (${sectionType}) tailoring API:`, parseError, "\nRaw Text:", jsonText);
+                 throw new Error(`Failed to parse JSON response from section (${sectionType}) tailoring API.`);
+            }
+        } else {
+             console.error(`Could not find JSON text in section (${sectionType}) tailoring response structure.`, responseData);
+              // Check for blocks
+              if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
+                    throw new Error(`Section (${sectionType}) tailoring API returned a candidate but no content, potentially blocked.`);
+              } else if (responseData.promptFeedback?.blockReason) {
+                   throw new Error(`Section (${sectionType}) tailoring API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
+              }
+             throw new Error(`Section (${sectionType}) tailoring response structure was unexpected.`);
+        }
+
+    } catch (error) {
+        console.error(`Error during section (${sectionType}) tailoring API call:`, error);
+        // Don't re-throw immediately, allow the main handler to decide
+        // We return null to indicate failure for this section.
+         return null; 
+    }
+}
+
+
+// === Async Handler Function for Preview (Kept for separate JD extraction) ===
 async function handleGetJobDescriptionPreview(request, sendResponse, listenerId) {
     console.log(`[${listenerId}] Preview Async Handler Started.`);
     let jobDescription = '';
@@ -342,7 +406,7 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
              }
              console.log(`[${listenerId}] Preview AI: Getting page text...`);
              const pageText = await getFullPageTextContent();
-             console.log('pageText', pageText);
+             // console.log('pageText', pageText); // Keep commented unless debugging extraction
              console.log(`[${listenerId}] Preview AI: Page text acquired, calling AI extraction...`);
              jobDescription = await extractJobDescriptionViaAI(request.apiToken, pageText);
              console.log(`[${listenerId}] Preview AI: AI extraction finished.`);
@@ -352,17 +416,22 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
              console.log(`[${listenerId}] Preview Standard: Standard extraction finished.`);
         }
         
-        if (!jobDescription || jobDescription.length < 50) {
-             console.warn(`[${listenerId}] Preview Warn: Extracted description too short or invalid.`);
+        // Handle case where AI extraction returned null (meaning it didn't find JD)
+        if (!jobDescription) {
+             console.warn(`[${listenerId}] Preview Warn: No valid job description extracted.`);
              throw new Error("Could not extract a valid job description using the selected method.");
         }
+        if (jobDescription.length < 50) { // Check length if not null
+             console.warn(`[${listenerId}] Preview Warn: Extracted description too short.`);
+              throw new Error("Extracted job description seems too short.");
+        }
+
         console.log(`[${listenerId}] Preview Success: Sending response...`);
         sendResponse({ success: true, jobDescription: jobDescription });
         console.log(`[${listenerId}] Preview Success: Response sent.`);
     } catch (error) {
          console.error(`[${listenerId}] Preview Error:`, error);
          console.log(`[${listenerId}] Preview Error: Sending error response...`);
-         // Ensure sendResponse is called even on error
          if (typeof sendResponse === 'function') {
             sendResponse({ success: false, error: error.message });
             console.log(`[${listenerId}] Preview Error: Error response sent.`);
@@ -372,46 +441,126 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
     }
 }
 
-// === NEW Async Handler Function for Create Tailored Resume ===
+
+// === NEW Async Handler Function for Create Tailored Resume (JSON based) ===
 async function handleCreateTailoredResume(request, sendResponse, listenerId) {
-    console.log(`[${listenerId}] Create Async Handler Started.`);
-    let jobDescription = '';
+    console.log(`[${listenerId}] Create JSON Handler Started.`);
     try {
-      console.log(`[${listenerId}] Create Flow: Received resume data: ${request.resumeData.filename} (Type: ${request.resumeData.mimeType})`);
-      console.log(`[${listenerId}] Create Flow: Received API token (first 5 chars): ${request.apiToken.substring(0, 5)}`);
+        console.log(`[${listenerId}] Create Flow: Received resume data: ${request.resumeData.filename}`);
+        console.log(`[${listenerId}] Create Flow: API token provided.`);
 
-      // --- Step 1: Extract Job Description (Conditional) ---
-      console.log(`[${listenerId}] Create Flow: Executing extraction (Method: ${request.extractionMethod})...`);
+        // --- Step 1: Parse Original Resume to JSON ---
+        console.log(`[${listenerId}] Create Flow: Parsing original resume to JSON...`);
+        const originalResumeJSON = await parseResumeToJSON(request.apiToken, request.resumeData);
+        if (!originalResumeJSON) { // Should not happen if parseResumeToJSON throws errors correctly
+             throw new Error("Failed to parse original resume into JSON structure.");
+        }
+        console.log(`[${listenerId}] Create Flow: Original resume parsed successfully.`);
+        // console.log("Parsed Original Resume JSON:", JSON.stringify(originalResumeJSON, null, 2)); // Optional: Log parsed structure
+
+
+        // --- Step 2: Extract Job Description ( Reuse existing logic or use override ) ---
+        let jobDescription = '';
+        if (request.jobDescriptionOverride) {
+            console.log(`[${listenerId}] Create Flow: Using provided job description override.`);
+            jobDescription = request.jobDescriptionOverride;
+        } else {
+            console.log(`[${listenerId}] Create Flow: Extracting job description (Method: ${request.extractionMethod})...`);
       if (request.extractionMethod === 'ai') {
-          const pageText = await getFullPageTextContent();
-          jobDescription = await extractJobDescriptionViaAI(request.apiToken, pageText);
-      } else { // Default to 'standard'
-          jobDescription = await getJobDescriptionFromActiveTab_Standard();
-      }
-      
-      if (!jobDescription || jobDescription.length < 50) { 
-          throw new Error("Could not extract a valid job description using the selected method.");
-      }
-      console.log(`[${listenerId}] Create Flow: Extracted Job Description using ${request.extractionMethod} (first 100 chars): ${jobDescription.substring(0, 100)}`);
+                 const pageText = await getFullPageTextContent(); // Assumes getFullPageTextContent is still defined
+                 jobDescription = await extractJobDescriptionViaAI(request.apiToken, pageText); // Assumes extractJobDescriptionViaAI is still defined
+            } else {
+                 jobDescription = await getJobDescriptionFromActiveTab_Standard(); // Assumes getJobDescriptionFromActiveTab_Standard is still defined
+            }
+             // Handle null return from AI extraction
+             if (!jobDescription) {
+                 throw new Error("Could not extract a job description using the selected method (AI might have failed).");
+             }
+             if (jobDescription.length < 50) { // Check length if not null
+                 throw new Error("Extracted job description seems too short.");
+             }
+            console.log(`[${listenerId}] Create Flow: Extracted Job Description successfully.`);
+        }
 
-      // --- Step 2: Call Resume Tailoring API ---
-      console.log(`[${listenerId}] Create Flow: Calling Resume Tailoring API...`);
-      const apiResult = await callGoogleGeminiAPI_TailorResume(request.apiToken, jobDescription, request.resumeData);
-      console.log(`[${listenerId}] Create Flow: Resume Tailoring API finished.`);
+        // --- Step 3: Tailor Each Section ---
+        console.log(`[${listenerId}] Create Flow: Starting section-by-section tailoring...`);
+        const tailoredResumeJSON = {}; // Initialize the final object
 
-      if (!apiResult.generatedResume) {
-          throw new Error("Resume Tailoring API did not return generated resume content.");
-      }
-      
-      console.log(`[${listenerId}] Create Flow: Resume Tailoring API call successful, sending response to popup.`);
-      // --- Step 3: Send Success Response ---
-      sendResponse({ success: true, generatedResume: apiResult.generatedResume });
+        // Tailor Summary (if exists)
+        if (originalResumeJSON.summary) {
+            tailoredResumeJSON.summary = await callGoogleGeminiAPI_TailorSection(
+                request.apiToken, jobDescription, { summary: originalResumeJSON.summary }, 'summary'
+            )?.summary || originalResumeJSON.summary; // Fallback to original if tailoring fails
+        } else {
+            tailoredResumeJSON.summary = null;
+        }
+
+        // Tailor Experience (array)
+        tailoredResumeJSON.experience = [];
+        if (originalResumeJSON.experience && Array.isArray(originalResumeJSON.experience)) {
+             for (const exp of originalResumeJSON.experience) {
+                 const tailoredExp = await callGoogleGeminiAPI_TailorSection(
+                     request.apiToken, jobDescription, exp, 'experience'
+                 );
+                 tailoredResumeJSON.experience.push(tailoredExp || exp); // Fallback to original entry
+             }
+        }
+        
+        // Tailor Education (array) - Often less tailoring needed, maybe just copy? Or tailor slightly.
+         tailoredResumeJSON.education = [];
+         if (originalResumeJSON.education && Array.isArray(originalResumeJSON.education)) {
+             for (const edu of originalResumeJSON.education) {
+                 // Decide if tailoring education makes sense. For now, let's copy it.
+                 // const tailoredEdu = await callGoogleGeminiAPI_TailorSection(request.apiToken, jobDescription, edu, 'education');
+                 // tailoredResumeJSON.education.push(tailoredEdu || edu);
+                 tailoredResumeJSON.education.push(edu); // Copy original for now
+             }
+         }
+         
+         // Tailor Skills (object/string)
+         if (originalResumeJSON.skills) {
+              tailoredResumeJSON.skills = await callGoogleGeminiAPI_TailorSection(
+                  request.apiToken, jobDescription, originalResumeJSON.skills, 'skills'
+              ) || originalResumeJSON.skills; // Fallback
+         } else {
+             tailoredResumeJSON.skills = null;
+         }
+
+         // Tailor Projects (array)
+         tailoredResumeJSON.projects = [];
+         if (originalResumeJSON.projects && Array.isArray(originalResumeJSON.projects)) {
+             for (const proj of originalResumeJSON.projects) {
+                 const tailoredProj = await callGoogleGeminiAPI_TailorSection(
+                     request.apiToken, jobDescription, proj, 'projects'
+                 );
+                 tailoredResumeJSON.projects.push(tailoredProj || proj); // Fallback
+             }
+         }
+         
+         // Tailor Achievements (array) - Copy for now, tailoring might be simple selection
+         tailoredResumeJSON.achievements = [];
+          if (originalResumeJSON.achievements && Array.isArray(originalResumeJSON.achievements)) {
+              // Maybe filter achievements based on relevance later? Copy for now.
+               tailoredResumeJSON.achievements = originalResumeJSON.achievements;
+          }
+
+         // Copy Contact Info (no tailoring needed)
+         tailoredResumeJSON.contact = originalResumeJSON.contact || null;
+
+
+        console.log(`[${listenerId}] Create Flow: Section tailoring finished.`);
+        // console.log("Final Tailored Resume JSON:", JSON.stringify(tailoredResumeJSON, null, 2)); // Optional log
+
+        // --- Step 4: Send Success Response with JSON ---
+        console.log(`[${listenerId}] Create Flow: Sending success response to popup...`);
+        sendResponse({ success: true, tailoredResumeJSON: tailoredResumeJSON }); // Send JSON object
       console.log(`[${listenerId}] Create Flow: Success response sent.`);
 
     } catch (error) {
-      console.error(`[${listenerId}] Error in createTailoredResume flow:`, error);
-      // --- Step 4: Send Error Response ---
+        console.error(`[${listenerId}] Error in createTailoredResume (JSON flow):`, error);
+        // --- Step 5: Send Error Response ---
       console.log(`[${listenerId}] Create Flow Error: Sending error response...`);
+        // Ensure sendResponse is called even on error
       if (typeof sendResponse === 'function') {
          sendResponse({ success: false, error: error.message }); 
          console.log(`[${listenerId}] Create Flow Error: Error response sent.`);
@@ -420,6 +569,7 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
       }
     }
 }
+
 
 // --- Main Message Listener ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -433,8 +583,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
      return true; // Keep returning true to indicate async response
   }
 
+  // Route to the NEW JSON-based handler
   if (request.action === "createTailoredResume") {
-     console.log(`[${listenerId}] Create Handler Entered. Calling async handler...`);
+     console.log(`[${listenerId}] Create Handler Entered. Calling JSON async handler...`);
      handleCreateTailoredResume(request, sendResponse, listenerId);
      console.log(`[${listenerId}] Create Handler: Returning true (async).`);
      return true; // Keep returning true
@@ -442,9 +593,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // If no handler matched
   console.log(`[${listenerId}] Listener End: No handler for action ${request.action}.`);
-  // Return false or nothing if the response is synchronous or no response needed
   // return false; 
 });
+
+// Cleanup TODOs from previous versions if any
+// Removed old callGoogleGeminiAPI_TailorResume function
+// Removed old handleCreateTailoredResume function
 
 // TODO: Implement API call logic to Google Gemini/AI Platform
 // TODO: Implement resume processing logic 
