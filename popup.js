@@ -568,96 +568,116 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- PDF Generation Function (using pdfmake) ---
     function generatePdf(resumeText, baseFilename) {
-        console.log("Generating PDF with structured template...");
+        console.log("Generating PDF with revised structured template...");
         try {
             const content = [];
-            const sections = resumeText.split(/^##\s+/m); // Split by "## " at the start of a line
+            // Split sections based on the AI's likely output format: **Heading**
+            // Use regex: split on lines starting with ** followed by non-* chars, ending with **, keep delimiters
+            const sections = resumeText.split(/^(\*\*.+?\*\*$\n?)/m).filter(Boolean); 
+
+            console.log("Raw sections split:", sections);
 
             // --- Process Sections ---
-            for (let i = 1; i < sections.length; i++) { // Start from 1 to skip text before first heading
-                const sectionBlock = sections[i].trim();
-                const firstNewline = sectionBlock.indexOf('\n');
-                const heading = sectionBlock.substring(0, firstNewline).trim();
-                let sectionContent = sectionBlock.substring(firstNewline).trim();
+            for (let i = 0; i < sections.length; i += 2) { // Iterate in pairs (heading, content)
+                const headingRaw = sections[i]?.trim();
+                let sectionContent = sections[i + 1]?.trim() || '';
 
-                console.log(`Processing section: ${heading}`);
+                if (!headingRaw) continue; // Skip if heading is missing
+
+                // Clean heading: remove ** and trailing colon if present
+                const heading = headingRaw.replace(/\*\*/g, '').replace(/:$/, '').trim();
+                
+                console.log(`Processing section: "${heading}"`);
+                /* Multi-line log commented out correctly
+                 console.log(`Raw Content:
+${sectionContent}
+---`);
+                */
 
                 // Add heading to PDF content
-                if (heading !== 'Contact Information') { // Contact info is handled differently
-                    content.push({ text: heading, style: 'sectionHeader' });
-                }
+                content.push({ text: heading, style: 'sectionHeader' });
 
                 // --- Format content based on section ---
-                if (heading === 'Contact Information') {
-                    // Simple centered contact info for now
-                    const lines = sectionContent.split('\n').map(line => line.trim());
-                    content.push({ text: lines.join(' | '), style: 'contactInfo' }); 
-                } else if (heading === 'Summary' || heading === 'Objective') {
+                if (heading === 'Summary') {
                     content.push({ text: sectionContent, style: 'paragraph' });
                 } else if (heading === 'Experience' || heading === 'Projects') {
-                     // Basic parsing: assumes structure like:
-                    // Company Name
-                    // Job Title | Dates
-                    // - Achievement 1
-                    // - Achievement 2
-                    const entries = sectionContent.split(/\n(?=\S)/); // Split entries by non-empty lines
-                    entries.forEach(entry => {
-                        const lines = entry.trim().split('\n');
-                        if (lines.length >= 3) {
-                            content.push({ text: lines[0].trim(), style: 'subHeader' }); // Company/Project Name
-                             const titleDate = lines[1].split('|'); // Split title and date
-                             if(titleDate.length === 2) {
-                                 content.push({ 
-                                      columns: [
-                                         { text: titleDate[0].trim(), style: 'jobTitle' },
-                                         { text: titleDate[1].trim(), style: 'dateRange', alignment: 'right' }
-                                      ]
-                                  });
-                             } else {
-                                 content.push({ text: lines[1].trim(), style: 'jobTitle' }); // Fallback if no date
-                             }
-                            const bulletPoints = lines.slice(2).map(line => line.trim().replace(/^- /, ''));
-                            content.push({ ul: bulletPoints, style: 'list' });
+                    // Parse entries (assuming potential variations in structure)
+                    // Split based on lines that likely start a new entry (e.g., start with *, -, or non-whitespace)
+                    const entries = sectionContent.split(/\n(?=\S|\*|-)/).filter(s => s.trim()); // Corrected regex (removed extra backslash before -)
+                    console.log(`  Found ${entries.length} entries.`);
+                    entries.forEach((entry, idx) => {
+                        const lines = entry.trim().split('\n').map(l => l.trim()).filter(l => l);
+                        console.log(`    Entry ${idx + 1} lines:`, lines);
+                        if (lines.length > 0) {
+                            // Assume first line is Title/Company or Project Name
+                            content.push({ text: lines[0], style: 'subHeader' });
+                            
+                            // Look for dates (heuristic: check if second line contains typical date chars)
+                            let dateLine = '';
+                            let bulletStartIndex = 1; // Where bullets start
+                            if (lines.length > 1 && /[\(\)\[\]\d{4}\-]/.test(lines[1])) {
+                                dateLine = lines[1];
+                                bulletStartIndex = 2;
+                                content.push({ text: dateLine, style: 'dateRange' });
+                            } else if (lines.length > 1) {
+                                // If second line doesn't look like a date, maybe it's a subtitle?
+                                // Let's treat it as part of the bullets for now, or adjust if needed.
+                            }
+
+                            // Process remaining lines as bullet points
+                            const bulletPoints = lines.slice(bulletStartIndex)
+                                .map(line => line.replace(/^\*\s/, '').replace(/^-s/, '')) // Simpler bullet removal regex
+                                .filter(line => line); // Remove empty lines
+                            if (bulletPoints.length > 0) {
+                                content.push({ ul: bulletPoints, style: 'list' });
+                            }
                         }
                     });
                 } else if (heading === 'Education') {
-                     // Similar basic parsing to Experience
-                    const entries = sectionContent.split(/\n(?=\S)/);
-                     entries.forEach(entry => {
-                        const lines = entry.trim().split('\n');
-                         if (lines.length >= 2) {
-                              const degreeDate = lines[0].split('|');
-                              if(degreeDate.length === 2) {
-                                 content.push({ 
-                                      columns: [
-                                         { text: degreeDate[0].trim(), style: 'subHeader' },
-                                         { text: degreeDate[1].trim(), style: 'dateRange', alignment: 'right' }
-                                      ]
-                                  });
-                             } else {
-                                 content.push({ text: lines[0].trim(), style: 'subHeader' }); // Degree
-                             }
-                             content.push({ text: lines[1].trim(), style: 'institution' }); // Institution
+                    // Similar parsing logic for Education
+                    const entries = sectionContent.split(/\n(?=\S)/).filter(s => s.trim());
+                     console.log(`  Found ${entries.length} education entries.`);
+                     entries.forEach((entry, idx) => {
+                        const lines = entry.trim().split('\n').map(l => l.trim()).filter(l => l);
+                         console.log(`    Entry ${idx + 1} lines:`, lines);
+                         if (lines.length > 0) {
+                            // Assume first line is Degree/Institution
+                            content.push({ text: lines[0], style: 'subHeader' });
+                             // Look for dates
+                            let dateLine = '';
+                            if (lines.length > 1 && /[\(\)\[\]\d{4}\-]/.test(lines[1])) {
+                                dateLine = lines[1];
+                                content.push({ text: dateLine, style: 'dateRange' });
+                            } 
+                            // Add other lines if present (e.g., GPA, details)
+                            if (lines.length > (dateLine ? 2 : 1)) {
+                                const details = lines.slice(dateLine ? 2 : 1).join('\n');
+                                content.push({ text: details, style: 'paragraph', italics: true });
+                            }
                          }
                      });
                 } else if (heading === 'Skills') {
-                    // Use columns for skills
-                    const skills = sectionContent.split(/\n|\s*,\s*/).map(s => s.trim()).filter(s => s);
+                     // Keep simple list for skills, remove category titles if present
+                    const skills = sectionContent.split('\n')
+                        .map(s => s.trim().replace(/^\*\*.+?\*\*\s?:?\s?/, '')) // Remove potential sub-headings like **Programming:**
+                        .map(s => s.replace(/^\*\s/, '').replace(/^-s/, '')) // Simpler bullet removal regex
+                        .filter(s => s);
+                     console.log(`  Found ${skills.length} skill items.`);
                     if (skills.length > 0) {
-                        content.push({
-                            // Attempt 2 columns, adjust columnGap as needed
-                            columns: [
-                                { ul: skills.slice(0, Math.ceil(skills.length / 2)) },
-                                { ul: skills.slice(Math.ceil(skills.length / 2)) }
-                            ],
-                            style: 'list',
-                            columnGap: 15 
-                        });
+                         content.push({ ul: skills, style: 'list' }); // Simple list for now
                     }
                 } else {
-                    // Default paragraph for any other sections
-                    content.push({ text: sectionContent, style: 'paragraph' });
+                    // Default: treat as simple paragraph or list
+                    const lines = sectionContent.split('\n').map(l => l.trim());
+                    const bullets = lines.map(l => l.replace(/^\*\s/, '').replace(/^-s/, '')).filter(l => l); // Simpler bullet removal regex
+                    if (lines.length > 1 && lines.every(l => l.startsWith('*') || l.startsWith('-'))) {
+                        content.push({ ul: bullets, style: 'list' });
+                    } else {
+                        content.push({ text: sectionContent, style: 'paragraph' });
+                    }
                 }
+                // Add some space between sections
+                content.push({ text: ' ', margin: [0, 5] }); 
             }
 
             // --- Document Definition ---
@@ -668,28 +688,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         fontSize: 14,
                         bold: true,
                         margin: [0, 10, 0, 5], // [left, top, right, bottom]
-                        color: '#2c3e50' // Dark blue-grey
+                        color: '#2c3e50' 
                     },
-                     subHeader: { // For Company Name / Degree
+                     subHeader: { // For Company Name / Degree / Project
                         fontSize: 11,
                         bold: true,
                         margin: [0, 5, 0, 2]
                     },
-                     jobTitle: {
-                        fontSize: 10,
-                        italics: true,
-                        color: '#34495e',
-                         margin: [0, 0, 0, 2]
-                    },
-                     institution: {
-                        fontSize: 10,
-                        italics: true,
-                         color: '#34495e',
-                         margin: [0, 0, 0, 5] // More space after institution
-                    },
                      dateRange: {
                         fontSize: 10,
-                        color: '#7f8c8d' // Grey
+                        italics: true,
+                        color: '#7f8c8d', // Grey
+                        margin: [0, 0, 0, 5]
                     },
                     paragraph: {
                         fontSize: 10,
@@ -697,13 +707,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     },
                     list: {
                         fontSize: 10,
-                        margin: [10, 0, 0, 5] // Indent lists slightly
-                    },
-                    contactInfo: {
-                        fontSize: 10,
-                        alignment: 'center',
-                        color: '#34495e',
-                         margin: [0, 0, 0, 15] // Space after contact info
+                        margin: [10, 0, 0, 5] // Indent lists
                     }
                 },
                 defaultStyle: {
@@ -711,14 +715,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     lineHeight: 1.2
                 },
                 pageSize: 'LETTER',
-                pageMargins: [ 40, 40, 40, 40 ], // Reduced top/bottom margins
+                pageMargins: [ 40, 40, 40, 40 ],
             };
 
             pdfMake.createPdf(docDefinition).download(`${baseFilename}_tailored.pdf`);
-            console.log("Structured PDF download triggered.");
+            console.log("Formatted PDF download triggered.");
         } catch (error) {
-            console.error("Error generating PDF:", error);
-            statusMessageDiv.textContent = 'Error generating PDF. Check console.';
+            console.error("Error generating formatted PDF:", error);
+            statusMessageDiv.textContent = 'Error generating formatted PDF. Check console.';
             statusMessageDiv.className = 'status-message error';
         }
     }

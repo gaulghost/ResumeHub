@@ -125,7 +125,7 @@ async function extractJobDescriptionViaAI(apiKey, pageTextContent) {
     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     // Limit input size to avoid exceeding API limits / excessive cost
-    const MAX_PAGE_TEXT_LENGTH = 150000; // Generous limit, adjust as needed
+    const MAX_PAGE_TEXT_LENGTH = 10000; // Increased limit
     if (pageTextContent.length > MAX_PAGE_TEXT_LENGTH) {
         console.warn(`Page text content truncated from ${pageTextContent.length} to ${MAX_PAGE_TEXT_LENGTH} characters.`);
         pageTextContent = pageTextContent.substring(0, MAX_PAGE_TEXT_LENGTH);
@@ -211,17 +211,21 @@ Carefully analyze the attached resume file and the following job description. Ge
 2.  **Strictly do not add any hard skills (e.g., specific software, technical processes, certifications) not explicitly present in the attached resume file.** You may add relevant soft skills (e.g., communication, teamwork, leadership) if appropriate for the tailored resume.
 3.  The entire output resume must be a maximum of 650 words.
 4.  The entire output resume must be a maximum of 4500 characters.
-5.  **Structure the output using the following markdown headings ONLY:** 
-    *   `## Contact Information` (Use placeholders like [Your Name], [Phone], [Email], [LinkedIn Profile URL], [Portfolio URL - if applicable])
-    *   `## Summary` or `## Objective`
-    *   `## Experience`
-    *   `## Education`
-    *   `## Skills`
-    *   (Optional: `## Projects` if relevant experience exists)
-6.  Under `## Experience`, list each role with Company Name, Job Title, Dates, and bullet points describing responsibilities/achievements.
-7.  Under `## Education`, list Degree, University/Institution, and Dates.
-8.  Under `## Skills`, list relevant skills (potentially grouped by category if appropriate).
-9.  Format the entire output as plain text suitable for parsing.
+5.  **Format the output in a modern, clean layout with the following structure:**
+    * **Name** - Large, centered at top
+    * **Job Title** - Centered, subtitle (e.g., "SOFTWARE DEVELOPER")
+    * **Contact Information** - Single line with email, phone, LinkedIn, GitHub, etc.
+    * **Education** - List institutions, degrees, relevant dates, and locations
+    * **Skills** - Categorized (e.g., "Programming Languages", "Web Development", "Tools")
+    * **Work Experience** - For each position include:
+        - Job Title | Company | Location (right-aligned)
+        - Dates (right-aligned)
+        - 3-4 bullet points of achievements and responsibilities relevant to the job description
+    * **Projects** (optional) - Name, brief description, technologies used
+    * **Achievements** (optional) - Competitions, awards, certifications relevant to the job
+6.  Use bullet points consistently for listing items.
+7.  Emphasize quantifiable achievements and results where available.
+8.  Format the entire output as plain text with appropriate spacing for a clean, professional look.
 
 **--- Job Description ---**
 ${jobDescription}
@@ -338,6 +342,7 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
              }
              console.log(`[${listenerId}] Preview AI: Getting page text...`);
              const pageText = await getFullPageTextContent();
+             console.log('pageText', pageText);
              console.log(`[${listenerId}] Preview AI: Page text acquired, calling AI extraction...`);
              jobDescription = await extractJobDescriptionViaAI(request.apiToken, pageText);
              console.log(`[${listenerId}] Preview AI: AI extraction finished.`);
