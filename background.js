@@ -211,7 +211,17 @@ Carefully analyze the attached resume file and the following job description. Ge
 2.  **Strictly do not add any hard skills (e.g., specific software, technical processes, certifications) not explicitly present in the attached resume file.** You may add relevant soft skills (e.g., communication, teamwork, leadership) if appropriate for the tailored resume.
 3.  The entire output resume must be a maximum of 650 words.
 4.  The entire output resume must be a maximum of 4500 characters.
-5.  Format the output as a complete resume document (plain text is acceptable), including sections like Contact Information (use placeholders if none provided in original), Summary/Objective, Experience, Skills, Education, etc., structured logically and professionally.
+5.  **Structure the output using the following markdown headings ONLY:** 
+    *   `## Contact Information` (Use placeholders like [Your Name], [Phone], [Email], [LinkedIn Profile URL], [Portfolio URL - if applicable])
+    *   `## Summary` or `## Objective`
+    *   `## Experience`
+    *   `## Education`
+    *   `## Skills`
+    *   (Optional: `## Projects` if relevant experience exists)
+6.  Under `## Experience`, list each role with Company Name, Job Title, Dates, and bullet points describing responsibilities/achievements.
+7.  Under `## Education`, list Degree, University/Institution, and Dates.
+8.  Under `## Skills`, list relevant skills (potentially grouped by category if appropriate).
+9.  Format the entire output as plain text suitable for parsing.
 
 **--- Job Description ---**
 ${jobDescription}

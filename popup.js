@@ -568,40 +568,154 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- PDF Generation Function (using pdfmake) ---
     function generatePdf(resumeText, baseFilename) {
-        console.log("Generating PDF...");
+        console.log("Generating PDF with structured template...");
         try {
-            // --- Basic Document Definition (Template) ---
-            // This is a very simple starting point. We'll need to parse resumeText
-            // and add more structure/styling later.
+            const content = [];
+            const sections = resumeText.split(/^##\s+/m); // Split by "## " at the start of a line
+
+            // --- Process Sections ---
+            for (let i = 1; i < sections.length; i++) { // Start from 1 to skip text before first heading
+                const sectionBlock = sections[i].trim();
+                const firstNewline = sectionBlock.indexOf('\n');
+                const heading = sectionBlock.substring(0, firstNewline).trim();
+                let sectionContent = sectionBlock.substring(firstNewline).trim();
+
+                console.log(`Processing section: ${heading}`);
+
+                // Add heading to PDF content
+                if (heading !== 'Contact Information') { // Contact info is handled differently
+                    content.push({ text: heading, style: 'sectionHeader' });
+                }
+
+                // --- Format content based on section ---
+                if (heading === 'Contact Information') {
+                    // Simple centered contact info for now
+                    const lines = sectionContent.split('\n').map(line => line.trim());
+                    content.push({ text: lines.join(' | '), style: 'contactInfo' }); 
+                } else if (heading === 'Summary' || heading === 'Objective') {
+                    content.push({ text: sectionContent, style: 'paragraph' });
+                } else if (heading === 'Experience' || heading === 'Projects') {
+                     // Basic parsing: assumes structure like:
+                    // Company Name
+                    // Job Title | Dates
+                    // - Achievement 1
+                    // - Achievement 2
+                    const entries = sectionContent.split(/\n(?=\S)/); // Split entries by non-empty lines
+                    entries.forEach(entry => {
+                        const lines = entry.trim().split('\n');
+                        if (lines.length >= 3) {
+                            content.push({ text: lines[0].trim(), style: 'subHeader' }); // Company/Project Name
+                             const titleDate = lines[1].split('|'); // Split title and date
+                             if(titleDate.length === 2) {
+                                 content.push({ 
+                                      columns: [
+                                         { text: titleDate[0].trim(), style: 'jobTitle' },
+                                         { text: titleDate[1].trim(), style: 'dateRange', alignment: 'right' }
+                                      ]
+                                  });
+                             } else {
+                                 content.push({ text: lines[1].trim(), style: 'jobTitle' }); // Fallback if no date
+                             }
+                            const bulletPoints = lines.slice(2).map(line => line.trim().replace(/^- /, ''));
+                            content.push({ ul: bulletPoints, style: 'list' });
+                        }
+                    });
+                } else if (heading === 'Education') {
+                     // Similar basic parsing to Experience
+                    const entries = sectionContent.split(/\n(?=\S)/);
+                     entries.forEach(entry => {
+                        const lines = entry.trim().split('\n');
+                         if (lines.length >= 2) {
+                              const degreeDate = lines[0].split('|');
+                              if(degreeDate.length === 2) {
+                                 content.push({ 
+                                      columns: [
+                                         { text: degreeDate[0].trim(), style: 'subHeader' },
+                                         { text: degreeDate[1].trim(), style: 'dateRange', alignment: 'right' }
+                                      ]
+                                  });
+                             } else {
+                                 content.push({ text: lines[0].trim(), style: 'subHeader' }); // Degree
+                             }
+                             content.push({ text: lines[1].trim(), style: 'institution' }); // Institution
+                         }
+                     });
+                } else if (heading === 'Skills') {
+                    // Use columns for skills
+                    const skills = sectionContent.split(/\n|\s*,\s*/).map(s => s.trim()).filter(s => s);
+                    if (skills.length > 0) {
+                        content.push({
+                            // Attempt 2 columns, adjust columnGap as needed
+                            columns: [
+                                { ul: skills.slice(0, Math.ceil(skills.length / 2)) },
+                                { ul: skills.slice(Math.ceil(skills.length / 2)) }
+                            ],
+                            style: 'list',
+                            columnGap: 15 
+                        });
+                    }
+                } else {
+                    // Default paragraph for any other sections
+                    content.push({ text: sectionContent, style: 'paragraph' });
+                }
+            }
+
+            // --- Document Definition ---
             const docDefinition = {
-                content: [
-                    { text: 'Tailored Resume', style: 'header' },
-                    { text: resumeText, style: 'body' }, 
-                ],
+                content: content,
                 styles: {
-                    header: {
-                        fontSize: 18,
+                    sectionHeader: {
+                        fontSize: 14,
                         bold: true,
-                        margin: [0, 0, 0, 10] // [left, top, right, bottom]
+                        margin: [0, 10, 0, 5], // [left, top, right, bottom]
+                        color: '#2c3e50' // Dark blue-grey
                     },
-                    body: {
+                     subHeader: { // For Company Name / Degree
+                        fontSize: 11,
+                        bold: true,
+                        margin: [0, 5, 0, 2]
+                    },
+                     jobTitle: {
+                        fontSize: 10,
+                        italics: true,
+                        color: '#34495e',
+                         margin: [0, 0, 0, 2]
+                    },
+                     institution: {
+                        fontSize: 10,
+                        italics: true,
+                         color: '#34495e',
+                         margin: [0, 0, 0, 5] // More space after institution
+                    },
+                     dateRange: {
+                        fontSize: 10,
+                        color: '#7f8c8d' // Grey
+                    },
+                    paragraph: {
                         fontSize: 10,
                         margin: [0, 0, 0, 5]
+                    },
+                    list: {
+                        fontSize: 10,
+                        margin: [10, 0, 0, 5] // Indent lists slightly
+                    },
+                    contactInfo: {
+                        fontSize: 10,
+                        alignment: 'center',
+                        color: '#34495e',
+                         margin: [0, 0, 0, 15] // Space after contact info
                     }
                 },
                 defaultStyle: {
-                    // font: 'Roboto' // pdfmake default
+                    font: 'Roboto',
+                    lineHeight: 1.2
                 },
-                pageSize: 'LETTER', // or 'A4'
-                pageMargins: [ 40, 60, 40, 60 ], // [left, top, right, bottom]
+                pageSize: 'LETTER',
+                pageMargins: [ 40, 40, 40, 40 ], // Reduced top/bottom margins
             };
-            
-            // --- TODO: Parse resumeText and structure the content array --- 
-            // Example: Look for headings like "## Experience" to create sections
-            // Example: Use columns for skills
 
             pdfMake.createPdf(docDefinition).download(`${baseFilename}_tailored.pdf`);
-            console.log("PDF download triggered.");
+            console.log("Structured PDF download triggered.");
         } catch (error) {
             console.error("Error generating PDF:", error);
             statusMessageDiv.textContent = 'Error generating PDF. Check console.';
