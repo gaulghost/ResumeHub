@@ -629,10 +629,15 @@ document.addEventListener('DOMContentLoaded', function() {
              });
         }
 
-        // Skills
-        if (jsonData.skills && jsonData.skills.details) {
+        // Skills (Categorized)
+        if (jsonData.skills && Array.isArray(jsonData.skills) && jsonData.skills.length > 0) {
             text += "**Skills**\n";
-            text += jsonData.skills.details + "\n\n"; // Assuming skills details is a string blob
+            jsonData.skills.forEach(skillCategory => {
+                if (skillCategory.category && skillCategory.items && skillCategory.items.length > 0) {
+                     text += `**${skillCategory.category}:** ${skillCategory.items.join(', ')}\n`;
+                }
+            });
+            text += "\n"; // Add space after the skills section
         }
 
         // Projects
@@ -662,9 +667,9 @@ document.addEventListener('DOMContentLoaded', function() {
         return text.trim();
     }
 
-    // --- REVISED PDF Generation Function (using pdfmake with JSON input) ---
+    // --- REVISED PDF Generation Function (using pdfmake with JSON input - Modern Template) ---
     function generatePdf(jsonData, baseFilename) {
-        console.log("Generating PDF from JSON data...");
+        console.log("Generating PDF - Modern Template Replication...");
         if (!jsonData) {
             console.error("generatePdf called with no JSON data.");
             statusMessageDiv.textContent = 'Error: No resume data for PDF generation.';
@@ -673,129 +678,199 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
+            const accentColor = '#2A90BA'; // Blue color from template
+            const greyColor = '#6c757d';   // Grey color for dates/secondary text
+            const lineColor = '#dee2e6';   // Light grey for separator lines
+            const headingFontSize = 13;
+            const bodyFontSize = 9.5;
+            const smallFontSize = 9;
+
             const content = [];
 
-            // Contact Info (Example: Centered Header)
+            // --- Helper function to add a horizontal line ---
+            const addLineSeparator = () => {
+                content.push({
+                    canvas: [{ type: 'line', x1: 0, y1: 5, x2: 515, y2: 5, lineWidth: 0.5, lineColor: lineColor }],
+                    margin: [0, 0, 0, 10] // Margin below line
+                });
+            };
+
+            // --- 1. Header Section ---
             if (jsonData.contact) {
-                const contactParts = [
-                    jsonData.contact.name,
-                    jsonData.contact.email,
-                    jsonData.contact.phone,
-                    jsonData.contact.linkedin,
-                    jsonData.contact.github,
-                    jsonData.contact.portfolio
-                ].filter(Boolean);
                 if (jsonData.contact.name) {
                      content.push({ text: jsonData.contact.name, style: 'nameHeader' });
                 }
-                 const otherContacts = contactParts.filter(p => p !== jsonData.contact.name);
-                 if (otherContacts.length > 0) {
-                     content.push({ text: otherContacts.join(' | '), style: 'contactInfo' });
+                 // Placeholder for Job Title - ASSUMING it might come from the summary or a separate field later
+                 // You might need to extract this from your original resume more explicitly
+                 content.push({ text: 'SOFTWARE DEVELOPER', style: 'jobTitleHeader', color: accentColor });
+
+                const contactParts = [
+                    jsonData.contact.phone,
+                    jsonData.contact.email ? { text: jsonData.contact.email, link: `mailto:${jsonData.contact.email}`, style: 'linkPlain' } : null,
+                    jsonData.contact.portfolio ? { text: 'Portfolio', link: jsonData.contact.portfolio, style: 'linkPlain' } : null,
+                    jsonData.contact.github ? { text: 'GitHub', link: jsonData.contact.github, style: 'linkPlain' } : null,
+                    jsonData.contact.linkedin ? { text: 'LinkedIn', link: jsonData.contact.linkedin, style: 'linkPlain' } : null
+                ].filter(Boolean);
+
+                 if (contactParts.length > 0) {
+                      // Build contact line with separators
+                     const contactLine = [];
+                     contactParts.forEach((part, index) => {
+                         contactLine.push(part);
+                         if (index < contactParts.length - 1) {
+                             contactLine.push({ text: ' | ', color: greyColor, margin: [2, 0] }); // Separator
+                         }
+                     });
+                     content.push({ text: contactLine, style: 'contactInfo' });
                  }
             }
+             content.push({ text: ' ', margin: [0, 5] }); // Space after header info before first section
 
-            // Summary
-            if (jsonData.summary) {
-                content.push({ text: 'Summary', style: 'sectionHeader' });
-                content.push({ text: jsonData.summary, style: 'paragraph' });
-                content.push({ text: ' ', margin: [0, 5] }); // Section space
+            // --- 2. Education Section ---
+             if (jsonData.education && jsonData.education.length > 0) {
+                 content.push({ text: 'Education', style: 'sectionHeader', color: accentColor });
+                 addLineSeparator();
+                  jsonData.education.forEach(edu => {
+                      const degreeLine = edu.degree || '';
+                      const institutionLine = edu.institution || '';
+                       const location = edu.location || '';
+                       const dates = edu.dates || '';
+
+                      content.push({
+                          columns: [
+                             { text: institutionLine, style: 'itemTitle', alignment: 'left' },
+                             { text: location, style: 'locationDate', alignment: 'right' }
+                          ]
+                      });
+                       content.push({
+                          columns: [
+                             { text: degreeLine, style: 'itemSubtitle', alignment: 'left' },
+                             { text: dates, style: 'locationDate', alignment: 'right' }
+                          ]
+                      });
+                       if (edu.details) { // For GPA or other details
+                           content.push({ text: edu.details, style: 'details', alignment: 'left' });
+                       }
+                       content.push({ text: ' ', margin: [0, 5] }); // Space between education entries
+                  });
+             }
+
+            // --- 3. Skills Section ---
+            if (jsonData.skills && Array.isArray(jsonData.skills) && jsonData.skills.length > 0) {
+                 content.push({ text: 'Skills', style: 'sectionHeader', color: accentColor });
+                 addLineSeparator();
+                 const skillsContent = [];
+                 jsonData.skills.forEach(skillCategory => {
+                     if (skillCategory.category && skillCategory.items && skillCategory.items.length > 0) {
+                          skillsContent.push({
+                              columns: [
+                                  { width: 150, text: skillCategory.category, style: 'skillCategory' }, // Fixed width for category
+                                  { width: '*', text: skillCategory.items.join(' | '), style: 'skillItems' } // Remaining width for items
+                              ],
+                              columnGap: 10,
+                              margin: [0, 0, 0, 3] // Small margin below each skill line
+                          });
+                     }
+                 });
+                 content.push(...skillsContent);
+                 content.push({ text: ' ', margin: [0, 5] }); // Space after skills section
             }
 
-            // Experience
+            // --- 4. Work Experience Section ---
             if (jsonData.experience && jsonData.experience.length > 0) {
-                 content.push({ text: 'Experience', style: 'sectionHeader' });
+                 content.push({ text: 'Work Experience', style: 'sectionHeader', color: accentColor });
+                 addLineSeparator();
                  jsonData.experience.forEach(exp => {
-                     const titleLine = [exp.title, exp.company].filter(Boolean).join(' at ');
-                     const locationDates = [exp.location, exp.dates].filter(Boolean).join(' | ');
-                     
-                     content.push({ text: titleLine, style: 'subHeader' });
-                      if (locationDates) {
-                         content.push({ text: locationDates, style: 'dateRange', alignment: 'left' }); // Or 'right' if preferred
-                     }
+                     const titleLine = exp.title || '';
+                     const companyLine = exp.company || '';
+                     const location = exp.location || '';
+                     const dates = exp.dates || '';
+
+                      content.push({
+                          columns: [
+                             { text: `${titleLine} | ${companyLine}`, style: 'itemTitle', alignment: 'left' },
+                             { text: location, style: 'locationDate', alignment: 'right' }
+                          ]
+                      });
+                       content.push({
+                          columns: [
+                               { text: '', style: 'itemSubtitle'}, // Empty column for alignment
+                               { text: dates, style: 'locationDate', alignment: 'right' }
+                          ]
+                      });
+
                      if (exp.bullets && exp.bullets.length > 0) {
                          content.push({ ul: exp.bullets, style: 'list' });
                      }
-                      content.push({ text: ' ', margin: [0, 3] }); // Space between entries
+                      content.push({ text: ' ', margin: [0, 8] }); // Space between experience entries
                  });
-                 content.push({ text: ' ', margin: [0, 5] }); // Section space
             }
 
-            // Education
-             if (jsonData.education && jsonData.education.length > 0) {
-                 content.push({ text: 'Education', style: 'sectionHeader' });
-                  jsonData.education.forEach(edu => {
-                      const degreeLine = [edu.degree, edu.institution].filter(Boolean).join(', ');
-                      const locationDates = [edu.location, edu.dates].filter(Boolean).join(' | ');
-                      
-                      content.push({ text: degreeLine, style: 'subHeader' });
-                      if (locationDates) {
-                          content.push({ text: locationDates, style: 'dateRange', alignment: 'left' });
-                      }
-                       if (edu.details) {
-                           content.push({ text: edu.details, style: 'paragraph', italics: true });
-                       }
-                       content.push({ text: ' ', margin: [0, 3] }); // Space between entries
-                  });
-                  content.push({ text: ' ', margin: [0, 5] }); // Section space
-             }
-
-            // Skills
-            if (jsonData.skills && jsonData.skills.details) {
-                 content.push({ text: 'Skills', style: 'sectionHeader' });
-                 // Treat skills.details as a block of text for now, might need splitting
-                 content.push({ text: jsonData.skills.details, style: 'paragraph' });
-                 content.push({ text: ' ', margin: [0, 5] }); // Section space
-            }
-
-            // Projects
+            // --- 5. Projects Section ---
              if (jsonData.projects && jsonData.projects.length > 0) {
-                 content.push({ text: 'Projects', style: 'sectionHeader' });
+                 content.push({ text: 'Projects', style: 'sectionHeader', color: accentColor });
+                 addLineSeparator();
                   jsonData.projects.forEach(proj => {
-                      content.push({ text: proj.name, style: 'subHeader' });
-                      if (proj.description) {
-                           content.push({ text: proj.description, style: 'paragraph' });
-                      }
-                       if (proj.technologies && proj.technologies.length > 0) {
-                            content.push({ text: `Technologies: ${proj.technologies.join(', ')}`, style: 'paragraph', italics: true });
-                       }
+                        const titleLine = [];
+                        titleLine.push({ text: proj.name, style: 'itemTitle'});
                         if (proj.link) {
-                            content.push({ text: proj.link, link: proj.link, style: 'link' });
+                            titleLine.push({ text: ` | Link`, link: proj.link, style: 'linkSmall' });
                         }
-                        content.push({ text: ' ', margin: [0, 3] }); // Space between entries
+                      content.push({ text: titleLine }); // Project Title and Link
+
+                       if (proj.description) {
+                           content.push({ text: proj.description, style: 'paragraph' });
+                       }
+                        if (proj.technologies && proj.technologies.length > 0) {
+                             content.push({ text: [ {text: 'Technologies used: ', italics: true, style: 'details'}, {text: proj.technologies.join(', '), style: 'details'} ] });
+                        }
+                        content.push({ text: ' ', margin: [0, 8] }); // Space between projects
                   });
-                  content.push({ text: ' ', margin: [0, 5] }); // Section space
              }
 
-            // Achievements
+            // --- 6. Achievements Section ---
              if (jsonData.achievements && jsonData.achievements.length > 0) {
-                 content.push({ text: 'Achievements', style: 'sectionHeader' });
+                 content.push({ text: 'Achievements', style: 'sectionHeader', color: accentColor });
+                 addLineSeparator();
                  content.push({ ul: jsonData.achievements, style: 'list' });
-                  content.push({ text: ' ', margin: [0, 5] }); // Section space
+                  content.push({ text: ' ', margin: [0, 5] }); // Space after achievements
              }
+
 
             // --- Document Definition ---
             const docDefinition = {
                 content: content,
-                styles: { // Re-define styles as needed
-                    nameHeader: { fontSize: 18, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
-                    contactInfo: { fontSize: 10, alignment: 'center', margin: [0, 0, 0, 15], color: '#34495e' },
-                    sectionHeader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5], color: '#2c3e50' },
-                    subHeader: { fontSize: 11, bold: true, margin: [0, 5, 0, 2] },
-                    dateRange: { fontSize: 10, italics: true, color: '#7f8c8d', margin: [0, 0, 0, 5] },
-                    paragraph: { fontSize: 10, margin: [0, 0, 0, 5] },
-                    list: { fontSize: 10, margin: [10, 0, 0, 5] }, // Indent lists
-                    link: { fontSize: 10, italics: true, color: 'blue', decoration: 'underline' }
+                styles: {
+                    nameHeader:     { fontSize: 26, bold: true, alignment: 'center', margin: [0, 0, 0, 2] },
+                    jobTitleHeader: { fontSize: 14, alignment: 'center', margin: [0, 0, 0, 8], color: accentColor },
+                    contactInfo:    { fontSize: smallFontSize, alignment: 'center', margin: [0, 0, 0, 5], color: greyColor },
+                    sectionHeader:  { fontSize: headingFontSize, bold: true, margin: [0, 10, 0, 2] }, // Space above, less below before line
+                    itemTitle:      { fontSize: bodyFontSize + 1, bold: true, margin: [0, 0, 0, 1] },
+                    itemSubtitle:   { fontSize: bodyFontSize, italics: true, margin: [0, 0, 0, 2] }, // Degree, etc.
+                     institution:    { fontSize: bodyFontSize, margin: [0, 0, 0, 1] }, // Institution name
+                    locationDate:   { fontSize: smallFontSize, color: greyColor },
+                    paragraph:      { fontSize: bodyFontSize, margin: [0, 1, 0, 3] },
+                    list:           { fontSize: bodyFontSize, margin: [15, 0, 0, 5] }, // Indented list items
+                    details:        { fontSize: smallFontSize, italics: true, color: greyColor }, // GPA, Technologies used text
+                     skillCategory:  { fontSize: bodyFontSize, bold: true, margin: [0, 0, 0, 1] },
+                     skillItems:     { fontSize: bodyFontSize },
+                    linkPlain:      { fontSize: smallFontSize, color: greyColor, decoration: 'underline' },
+                    linkSmall:      { fontSize: smallFontSize, color: accentColor, decoration: 'underline' }
                 },
-                defaultStyle: { font: 'Roboto', lineHeight: 1.2 },
+                defaultStyle: {
+                    font: 'Roboto', // Ensure pdfmake includes Roboto or use a standard font like Helvetica
+                    fontSize: bodyFontSize,
+                    lineHeight: 1.15
+                },
                 pageSize: 'LETTER',
-                pageMargins: [ 40, 40, 40, 40 ],
+                pageMargins: [40, 30, 40, 30], // L, T, R, B
             };
 
-            pdfMake.createPdf(docDefinition).download(`${baseFilename}_tailored.pdf`);
-            console.log("PDF download triggered from JSON data.");
+            pdfMake.createPdf(docDefinition).download(`${baseFilename}_tailored_modern.pdf`);
+            console.log("Modern Template PDF download triggered.");
 
         } catch (error) {
-            console.error("Error generating PDF from JSON:", error);
+            console.error("Error generating Modern Template PDF:", error);
             statusMessageDiv.textContent = 'Error generating PDF. Check console.';
             statusMessageDiv.className = 'status-message error';
         }

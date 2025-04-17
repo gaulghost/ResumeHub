@@ -218,13 +218,15 @@ async function parseResumeToJSON(apiKey, resumeData) {
   "summary": "string|null",
   "experience": [ { "title": "string", "company": "string", "location": "string|null", "dates": "string|null", "bullets": ["string", "..."] } ],
   "education": [ { "institution": "string", "degree": "string", "location": "string|null", "dates": "string|null", "details": "string|null" } ],
-  "skills": { "details": "string covering all skills" }, // Keep skills simpler for now
+  "skills": [ { "category": "string", "items": ["string", "..."] } ],
   "projects": [ { "name": "string", "description": "string|null", "technologies": ["string", "..."], "link": "string|null" } ],
   "achievements": [ "string", "..." ]
 }`;
 
      const prompt = `**Instruction:**
-Analyze the attached resume file content. Extract the information and structure it precisely according to the following JSON format. If a section or field is not present in the resume, represent it as 'null' (for objects/strings) or an empty array [] (for arrays like bullets/achievements). Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
+Analyze the attached resume file content. Extract the information and structure it precisely according to the following JSON format. If a section or field is not present in the resume, represent it as 'null' (for objects/strings) or an empty array [] (for arrays like bullets/achievements).
+For the "skills" section, group related skills into logical categories (e.g., "Programming Languages", "Frameworks & Libraries", "Databases", "Tools", "Cloud Platforms", "AI/ML") and represent it as an array of objects, each with a "category" name and an array of "items".
+Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
 
 **Target JSON Structure:**
 \`\`\`json
@@ -308,6 +310,10 @@ Parse the attached file and generate the JSON output.`;
 // === NEW Function to Tailor a Specific Resume Section ===
 async function callGoogleGeminiAPI_TailorSection(apiKey, jobDescription, originalSectionData, sectionType) {
     console.log(`Tailoring section: ${sectionType}...`);
+    // Add a specific log for skills structure
+    if (sectionType === 'skills') {
+        console.log("Original skills structure received for tailoring:", JSON.stringify(originalSectionData, null, 2));
+    }
     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`; // Use flash
     const modelName = "gemini-1.5-flash-latest";
 
@@ -369,6 +375,10 @@ ${JSON.stringify(originalSectionData, null, 2)}
              try {
                  const tailoredJson = JSON.parse(jsonText);
                  console.log(`Successfully parsed tailored JSON for section: ${sectionType}`);
+                 // Add a specific log for skills structure
+                 if (sectionType === 'skills') {
+                     console.log("Tailored skills structure returned:", JSON.stringify(tailoredJson, null, 2));
+                 }
                  return tailoredJson;
             } catch (parseError) {
                  console.error(`Failed to parse JSON response from section (${sectionType}) tailoring API:`, parseError, "\nRaw Text:", jsonText);
