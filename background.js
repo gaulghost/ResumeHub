@@ -228,6 +228,8 @@ Analyze the attached resume file content. Extract the information and structure 
 For the "skills" section, group related skills into logical categories (e.g., "Programming Languages", "Frameworks & Libraries", "Databases", "Tools", "Cloud Platforms", "AI/ML") and represent it as an array of objects, each with a "category" name and an array of "items".
 Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
 
+**IMPORTANT: The final resume must comply with a 570 word / 3650 character limit.** Focus on capturing the most relevant content while staying within these constraints.
+
 **Target JSON Structure:**
 \`\`\`json
 ${targetJsonStructure}
@@ -296,14 +298,14 @@ Parse the attached file and generate the JSON output.`;
                     throw new Error("Resume parsing API returned a candidate but no content, potentially blocked.");
               } else if (responseData.promptFeedback?.blockReason) {
                    throw new Error(`Resume parsing API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
-              }
+             }
              throw new Error("Resume parsing response structure was unexpected.");
         }
 
     } catch (error) {
         console.error("Error during resume JSON parsing API call:", error);
         throw new Error(`Failed to parse resume to JSON via API: ${error.message}`);
-    }
+        }
 }
 
 
@@ -324,6 +326,13 @@ Analyze the following original resume section (\`${sectionType}\`) and the provi
 - Quantify achievements where possible based *only* on the original section data.
 - Maintain the original meaning and key information.
 - **Strictly do not add any skills or experiences not present in the original section data.**
+- **IMPORTANT: The final resume must not exceed 570 words or 3650 characters in total. This is a hard limit.**
+- Prioritize the most relevant content to the job description and remove less important details.
+${sectionType === 'skills' ? 
+`- **Skills Focus**: ONLY include skills directly relevant to the job description. Remove any skills not mentioned in or related to the position requirements. Displaying too many skills dilutes impact, so focus on quality over quantity.
+- If needed, regroup skills into more job-relevant categories.` 
+: ''}
+- Be concise and impactful - focus on quality over quantity.
 - Output the result as a JSON object that matches the structure of the original section data provided. Output *only* the valid JSON object.
 
 **Job Description:**
@@ -452,6 +461,77 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
 }
 
 
+// === Helper function to estimate word and character count in the resume JSON ===
+function countResumeStats(resumeJSON) {
+    let wordCount = 0;
+    let charCount = 0;
+    
+    // Helper to count text
+    function countText(text) {
+        if (!text) return;
+        const trimmed = text.trim();
+        charCount += trimmed.length;
+        wordCount += trimmed.split(/\s+/).filter(Boolean).length;
+    }
+    
+    // Count summary
+    if (resumeJSON.summary) {
+        countText(resumeJSON.summary);
+    }
+    
+    // Count experience
+    if (resumeJSON.experience && Array.isArray(resumeJSON.experience)) {
+        resumeJSON.experience.forEach(exp => {
+            countText(exp.title);
+            countText(exp.company);
+            countText(exp.location);
+            countText(exp.dates);
+            if (exp.bullets && Array.isArray(exp.bullets)) {
+                exp.bullets.forEach(bullet => countText(bullet));
+            }
+        });
+    }
+    
+    // Count education
+    if (resumeJSON.education && Array.isArray(resumeJSON.education)) {
+        resumeJSON.education.forEach(edu => {
+            countText(edu.institution);
+            countText(edu.degree);
+            countText(edu.location);
+            countText(edu.dates);
+            countText(edu.details);
+        });
+    }
+    
+    // Count skills
+    if (resumeJSON.skills && Array.isArray(resumeJSON.skills)) {
+        resumeJSON.skills.forEach(skill => {
+            countText(skill.category);
+            if (skill.items && Array.isArray(skill.items)) {
+                skill.items.forEach(item => countText(item));
+            }
+        });
+    }
+    
+    // Count projects
+    if (resumeJSON.projects && Array.isArray(resumeJSON.projects)) {
+        resumeJSON.projects.forEach(proj => {
+            countText(proj.name);
+            countText(proj.description);
+            if (proj.technologies && Array.isArray(proj.technologies)) {
+                proj.technologies.forEach(tech => countText(tech));
+            }
+        });
+    }
+    
+    // Count achievements
+    if (resumeJSON.achievements && Array.isArray(resumeJSON.achievements)) {
+        resumeJSON.achievements.forEach(achievement => countText(achievement));
+    }
+    
+    return { wordCount, charCount };
+}
+
 // === NEW Async Handler Function for Create Tailored Resume (JSON based) ===
 async function handleCreateTailoredResume(request, sendResponse, listenerId) {
     console.log(`[${listenerId}] Create JSON Handler Started.`);
@@ -468,6 +548,9 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
         console.log(`[${listenerId}] Create Flow: Original resume parsed successfully.`);
         // console.log("Parsed Original Resume JSON:", JSON.stringify(originalResumeJSON, null, 2)); // Optional: Log parsed structure
 
+        // Get initial stats
+        const initialStats = countResumeStats(originalResumeJSON);
+        console.log(`[${listenerId}] Create Flow: Original resume stats - Words: ${initialStats.wordCount}, Characters: ${initialStats.charCount}`);
 
         // --- Step 2: Extract Job Description ( Reuse existing logic or use override ) ---
         let jobDescription = '';
@@ -485,7 +568,7 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
              // Handle null return from AI extraction
              if (!jobDescription) {
                  throw new Error("Could not extract a job description using the selected method (AI might have failed).");
-             }
+      }
              if (jobDescription.length < 50) { // Check length if not null
                  throw new Error("Extracted job description seems too short.");
              }
@@ -494,6 +577,7 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
 
         // --- Step 3: Tailor Each Section ---
         console.log(`[${listenerId}] Create Flow: Starting section-by-section tailoring...`);
+        console.log(`[${listenerId}] Create Flow: Note - Tailoring with 570 words/3650 characters limit`);
         const tailoredResumeJSON = {}; // Initialize the final object
 
         // Tailor Summary (if exists)
@@ -550,14 +634,23 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
          // Tailor Achievements (array) - Copy for now, tailoring might be simple selection
          tailoredResumeJSON.achievements = [];
           if (originalResumeJSON.achievements && Array.isArray(originalResumeJSON.achievements)) {
-              // Maybe filter achievements based on relevance later? Copy for now.
-               tailoredResumeJSON.achievements = originalResumeJSON.achievements;
+              // Tailor achievements too instead of just copying
+              const tailoredAch = await callGoogleGeminiAPI_TailorSection(
+                  request.apiToken, jobDescription, originalResumeJSON.achievements, 'achievements'
+              );
+              tailoredResumeJSON.achievements = tailoredAch || originalResumeJSON.achievements;
           }
 
          // Copy Contact Info (no tailoring needed)
          tailoredResumeJSON.contact = originalResumeJSON.contact || null;
 
-
+        // Check final word/character count
+        const finalStats = countResumeStats(tailoredResumeJSON);
+        console.log(`[${listenerId}] Create Flow: Tailored resume stats - Words: ${finalStats.wordCount}, Characters: ${finalStats.charCount}`);
+        if (finalStats.wordCount > 570 || finalStats.charCount > 3650) {
+            console.log(`[${listenerId}] Create Flow: Warning - Tailored resume exceeds the target limits`);
+        }
+      
         console.log(`[${listenerId}] Create Flow: Section tailoring finished.`);
         // console.log("Final Tailored Resume JSON:", JSON.stringify(tailoredResumeJSON, null, 2)); // Optional log
 
