@@ -33,6 +33,7 @@ cp popup.html $BUILD_DIR/
 cp popup.js $BUILD_DIR/
 cp background.js $BUILD_DIR/
 cp content.js $BUILD_DIR/
+cp PRIVACY_POLICY.md $BUILD_DIR/
 
 # Folders (copy contents recursively)
 if [ -d "assets" ]; then
