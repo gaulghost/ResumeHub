@@ -125,7 +125,7 @@ async function getFullPageTextContent() {
 // (This is kept separate from the tailoring logic now)
 async function extractJobDescriptionViaAI(apiKey, pageTextContent) {
     console.log("Calling Google Gemini API for Job Description Extraction...");
-    const modelName = 'gemini-1.5-pro-latest'; // Use a capable model for extraction
+    const modelName = 'gemini-2.5-flash'; // Using Gemini 2.5 Flash for efficient job description extraction
     const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     // Limit input size (using user's last value)
@@ -209,8 +209,8 @@ ${pageTextContent}
 // === NEW Function to Parse Resume to JSON ===
 async function parseResumeToJSON(apiKey, resumeData) {
     console.log(`Attempting to parse resume ${resumeData.filename} (${resumeData.mimeType}) into JSON...`);
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`; // Use flash for potentially faster/cheaper parsing
-    const modelName = "gemini-1.5-flash-latest";
+    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`; // Using free Gemini 2.5 Flash model
+    const modelName = "gemini-2.5-flash";
 
     // Define the target JSON structure in the prompt
     const targetJsonStructure = `{
