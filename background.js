@@ -461,6 +461,245 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
 }
 
 
+// === Async Handler Function for Auto-Fill Form ===
+async function handleAutoFillForm(request, sendResponse, listenerId) {
+    console.log(`[${listenerId}] Auto-Fill Handler Started.`);
+    
+    try {
+        const { resumeData, apiToken } = request;
+        
+        if (!resumeData || !resumeData.content) {
+            throw new Error('Missing resume data - please upload a resume first');
+        }
+        
+        if (!apiToken) {
+            throw new Error('API token is required for auto-fill functionality');
+        }
+        
+        console.log(`[${listenerId}] Getting form fields from active tab...`);
+        
+        // Step 1: Get form fields from the current page
+        const formFields = await getFormFieldsFromActiveTab();
+        console.log(`[${listenerId}] Found ${formFields.length} form fields`);
+        
+        if (formFields.length === 0) {
+            throw new Error('No form fields found on this page');
+        }
+        
+        // Step 2: Parse resume data
+        let resumeText = resumeData.content;
+        if (resumeData.content.startsWith('data:')) {
+            // Handle base64 encoded content
+            const base64Data = resumeData.content.split(',')[1];
+            resumeText = atob(base64Data);
+        }
+        
+        // Parse resume to JSON - pass the original resumeData object, not just text
+        const resumeJSON = await parseResumeToJSON(apiToken, resumeData);
+        console.log(`[${listenerId}] Resume parsed successfully`);
+        
+        // Step 3: Map resume data to form fields using AI
+        const fieldMappings = await mapResumeToFormFields(apiToken, resumeJSON, formFields);
+        console.log(`[${listenerId}] Generated ${fieldMappings.length} field mappings`);
+        
+        // Step 4: Fill the form fields
+        const fillResult = await fillFormFieldsOnPage(fieldMappings);
+        console.log(`[${listenerId}] Form filling completed:`, fillResult);
+        
+        sendResponse({
+            success: true,
+            fieldsFound: formFields.length,
+            fieldsFilled: fillResult.fieldsFilled || fieldMappings.length,
+            message: 'Form auto-filled successfully'
+        });
+        
+    } catch (error) {
+        console.error(`[${listenerId}] Auto-Fill Error:`, error);
+        sendResponse({
+            success: false,
+            error: error.message || 'Failed to auto-fill form'
+        });
+    }
+}
+
+// === Helper Functions for Auto-Fill Feature ===
+
+async function getFormFieldsFromActiveTab() {
+    console.log("Getting form fields from active tab...");
+    return new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+            if (!tabs[0]?.id) return reject(new Error("No active tab found."));
+            const tabId = tabs[0].id;
+            
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => {
+                    const formFields = [];
+                    const inputs = document.querySelectorAll('input, textarea, select');
+                    
+                    inputs.forEach((field, index) => {
+                        if (field.type === 'hidden' || field.type === 'submit' || field.type === 'button') {
+                            return;
+                        }
+                        
+                        const fieldInfo = {
+                            id: field.id || `field_${index}`,
+                            name: field.name || '',
+                            type: field.type || field.tagName.toLowerCase(),
+                            placeholder: field.placeholder || '',
+                            label: '',
+                            selector: '',
+                            value: field.value || ''
+                        };
+                        
+                        // Try to find associated label
+                        let label = '';
+                        if (field.id) {
+                            const labelElement = document.querySelector(`label[for="${field.id}"]`);
+                            if (labelElement) {
+                                label = labelElement.textContent.trim();
+                            }
+                        }
+                        
+                        // If no label found, look for nearby text
+                        if (!label) {
+                            const parent = field.parentElement;
+                            if (parent) {
+                                const prevText = parent.textContent.replace(field.value, '').trim();
+                                if (prevText.length > 0 && prevText.length < 100) {
+                                    label = prevText.substring(0, 50);
+                                }
+                            }
+                        }
+                        
+                        fieldInfo.label = label;
+                        fieldInfo.selector = field.id ? `#${field.id}` : 
+                                           field.name ? `[name="${field.name}"]` : 
+                                           `${field.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
+                        
+                        formFields.push(fieldInfo);
+                    });
+                    
+                    return formFields;
+                }
+            }, (results) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Error getting form fields: ", chrome.runtime.lastError);
+                    return reject(chrome.runtime.lastError);
+                }
+                if (results && results[0] && results[0].result) {
+                    console.log("Successfully got form fields from page.");
+                    resolve(results[0].result);
+                } else {
+                    reject(new Error("Could not retrieve form fields from the page."));
+                }
+            });
+        });
+    });
+}
+
+// === Auto-Fill Helper Functions ===
+
+// Simple field mapping function for auto-fill
+async function mapResumeToFormFields(apiKey, resumeJSON, formFields) {
+    console.log("Mapping resume data to form fields...");
+    
+    const mappings = [];
+    
+    // Basic field mappings based on common patterns
+    for (const field of formFields) {
+        let value = '';
+        const fieldName = (field.name || field.id || '').toLowerCase();
+        const fieldLabel = (field.label || '').toLowerCase();
+        const fieldPlaceholder = (field.placeholder || '').toLowerCase();
+        const fieldText = `${fieldName} ${fieldLabel} ${fieldPlaceholder}`;
+        
+        // Map basic contact information
+        if (fieldText.includes('first') && fieldText.includes('name')) {
+            const fullName = resumeJSON.contact?.name || '';
+            value = fullName.split(' ')[0] || '';
+        } else if (fieldText.includes('last') && fieldText.includes('name')) {
+            const fullName = resumeJSON.contact?.name || '';
+            const nameParts = fullName.split(' ');
+            value = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+        } else if (fieldText.includes('name') && !fieldText.includes('first') && !fieldText.includes('last')) {
+            value = resumeJSON.contact?.name || '';
+        } else if (fieldText.includes('email')) {
+            value = resumeJSON.contact?.email || '';
+        } else if (fieldText.includes('phone')) {
+            value = resumeJSON.contact?.phone || '';
+        } else if (fieldText.includes('linkedin')) {
+            value = resumeJSON.contact?.linkedin || '';
+        } else if (fieldText.includes('github')) {
+            value = resumeJSON.contact?.github || '';
+        } else if (fieldText.includes('portfolio') || fieldText.includes('website')) {
+            value = resumeJSON.contact?.portfolio || '';
+        }
+        
+        if (value) {
+            mappings.push({
+                fieldId: field.id,
+                fieldSelector: field.selector,
+                fieldValue: value,
+                fieldType: field.type
+            });
+        }
+    }
+    
+    console.log(`Generated ${mappings.length} field mappings`);
+    return mappings;
+}
+
+// Function to fill form fields on the page
+async function fillFormFieldsOnPage(fieldMappings) {
+    console.log("Filling form fields on page...");
+    
+    return new Promise((resolve, reject) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+            if (!tabs[0]?.id) return reject(new Error("No active tab found."));
+            
+            const tabId = tabs[0].id;
+            
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: (mappings) => {
+                    let filledCount = 0;
+                    
+                    for (const mapping of mappings) {
+                        try {
+                            const element = document.querySelector(mapping.fieldSelector);
+                            if (element && element.value !== undefined) {
+                                element.value = mapping.fieldValue;
+                                element.dispatchEvent(new Event('input', { bubbles: true }));
+                                element.dispatchEvent(new Event('change', { bubbles: true }));
+                                filledCount++;
+                            }
+                        } catch (error) {
+                            console.warn('Failed to fill field:', mapping.fieldSelector, error);
+                        }
+                    }
+                    
+                    return { fieldsFilled: filledCount };
+                },
+                args: [fieldMappings]
+            }, (results) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Error filling form fields: ", chrome.runtime.lastError);
+                    return reject(chrome.runtime.lastError);
+                }
+                if (results && results[0] && results[0].result) {
+                    console.log("Successfully filled form fields:", results[0].result);
+                    resolve(results[0].result);
+                } else {
+                    reject(new Error("Could not fill form fields on the page."));
+                }
+            });
+        });
+    });
+}
+
 // === Helper function to estimate word and character count in the resume JSON ===
 function countResumeStats(resumeJSON) {
     let wordCount = 0;
@@ -673,7 +912,6 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
     }
 }
 
-
 // --- Main Message Listener ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const listenerId = Date.now(); 
@@ -694,14 +932,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
      return true; // Keep returning true
   }
 
+  // Handle auto-fill form action
+  if (request.action === "autoFillForm") {
+     console.log(`[${listenerId}] Auto-Fill Handler Entered. Calling async handler...`);
+     handleAutoFillForm(request, sendResponse, listenerId);
+     console.log(`[${listenerId}] Auto-Fill Handler: Returning true (async).`);
+     return true; // Keep returning true
+  }
+
   // If no handler matched
   console.log(`[${listenerId}] Listener End: No handler for action ${request.action}.`);
   // return false; 
 });
-
-// Cleanup TODOs from previous versions if any
-// Removed old callGoogleGeminiAPI_TailorResume function
-// Removed old handleCreateTailoredResume function
-
-// TODO: Implement API call logic to Google Gemini/AI Platform
-// TODO: Implement resume processing logic 

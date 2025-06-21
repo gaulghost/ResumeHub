@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const previewOutput = document.getElementById('preview-jd-output');
     const manualJdInputArea = document.getElementById('manual-jd-input-area');
     const manualJdTextarea = document.getElementById('manual-jd-textarea');
+    const autoFillBtn = document.getElementById('auto-fill-btn');
+    const autoFillStatus = document.getElementById('auto-fill-status');
 
     // --- State ---
     let storedResume = { 
@@ -390,6 +392,72 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Auto-fill button click handler
+    autoFillBtn.addEventListener('click', () => {
+        handleAutoFillForm();
+    });
+
+    // Handle Auto-Fill Form functionality
+    async function handleAutoFillForm() {
+        console.log('Auto-fill button clicked');
+        
+        // Validate prerequisites
+        if (!storedResume.content) {
+            autoFillStatus.textContent = '❌ Error: Please upload a resume first';
+            autoFillStatus.className = 'status-message error';
+            return;
+        }
+
+        // Get API token
+        const apiToken = apiTokenInput.value.trim();
+        if (!apiToken) {
+            autoFillStatus.textContent = '❌ Error: Please enter your API token first';
+            autoFillStatus.className = 'status-message error';
+            return;
+        }
+
+        // Disable button and show loading state
+        autoFillBtn.disabled = true;
+        autoFillBtn.textContent = 'Processing...';
+        autoFillStatus.textContent = '🔄 Analyzing form fields and filling data...';
+        autoFillStatus.className = 'status-message processing';
+
+        try {
+            // Send message to background script
+            const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({
+                    action: "autoFillForm",
+                    resumeData: storedResume,
+                    apiToken: apiToken
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error("Auto-fill message failed:", chrome.runtime.lastError);
+                        resolve({ success: false, error: `Could not establish connection. ${chrome.runtime.lastError.message || 'Receiving end does not exist.'}` });
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+            
+            if (response && response.success) {
+                autoFillStatus.textContent = `✅ Form auto-filled successfully! ${response.fieldsFound || 0} fields detected, ${response.fieldsFilled || 0} fields filled.`;
+                autoFillStatus.className = 'status-message success';
+            } else {
+                const errorMessage = response?.error || response?.message || 'Unknown error occurred';
+                autoFillStatus.textContent = `❌ Error: ${errorMessage}`;
+                autoFillStatus.classList.add('error');
+            }
+        } catch (error) {
+            console.error('Auto-fill error:', error);
+            autoFillStatus.textContent = `❌ Error: ${error.message || error.toString() || 'Failed to auto-fill form'}`;
+            autoFillStatus.classList.add('error');
+        } finally {
+            // Re-enable button
+            autoFillBtn.disabled = false;
+            autoFillBtn.textContent = '🤖 Auto-Fill Current Form';
+        }
+    }
+
     // Helper function to trigger download
     function triggerDownload(content, mimeType, extension) {
         if (!storedResume.filename) {
@@ -650,7 +718,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (skillCategory.category && skillCategory.items && skillCategory.items.length > 0) {
                      // Bolder category, then items
                      text += skillCategory.category.toUpperCase() + ":" + newline;
-                     text += bulletIndent + skillCategory.items.join(', ') + newline;
+                     text += bulletIndent + skillCategory.items.join(' | ') + newline;
                 }
             });
             text += newline; // Extra space after section
