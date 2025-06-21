@@ -319,19 +319,48 @@ body.theme-dark {
     font-weight: 500;
     text-align: center;
     min-height: 1.5em; 
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin: 8px 0;
+    transition: all 0.2s ease;
 }
 
-/* Use generic --text variable and let theme override */
 .status-message.success {
     color: var(--color-success);
+    background-color: rgba(52, 199, 89, 0.08);
+    border: 1px solid rgba(52, 199, 89, 0.2);
 }
 
 .status-message.error {
     color: var(--color-danger);
+    background-color: rgba(255, 59, 48, 0.08);
+    border: 1px solid rgba(255, 59, 48, 0.2);
 }
 
 .status-message.processing {
-    color: var(--color-warning);
+    color: var(--color-primary);
+    background-color: rgba(0, 122, 255, 0.08);
+    border: 1px solid rgba(0, 122, 255, 0.2);
+}
+
+/* Auto-fill section specific improvements */
+.auto-fill-section .card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auto-fill-section .help-text {
+    margin-bottom: 0;
+}
+
+.auto-fill-section #auto-fill-btn {
+    align-self: stretch;
+    margin: 0;
+}
+
+.auto-fill-section #auto-fill-status {
+    margin: 0;
 }
 
 .download-link {

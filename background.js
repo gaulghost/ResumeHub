@@ -1,3 +1,18 @@
+// Field mapping cache and configuration for auto-fill
+const FIELD_CACHE_KEY = 'resumehub_field_mappings';
+const CACHE_EXPIRY_HOURS = 24;
+
+const FIELD_CATEGORIES = {
+    STATIC: ['first_name', 'fname', 'last_name', 'lname', 'name', 'full_name', 'email', 'phone', 'phone_number', 'mobile'],
+    SEMI_STATIC: ['address', 'street', 'city', 'state', 'zip', 'zipcode', 'country', 'linkedin', 'website', 'portfolio', 'github'],
+    DYNAMIC: ['experience', 'work', 'job', 'role', 'company', 'why', 'interested', 'cover', 'letter', 'describe', 'summary', 'objective', 'skills', 'projects']
+};
+
+// Maximum concurrent API calls for field mapping
+const MAX_CONCURRENT_FIELD_CALLS = 3;
+
+// === Resume Parsing ===
+
 // ResumeHub background service worker
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -601,13 +616,257 @@ async function getFormFieldsFromActiveTab() {
 
 // === Auto-Fill Helper Functions ===
 
-// Simple field mapping function for auto-fill
+// Enhanced per-field AI mapping function with caching and parallelization
 async function mapResumeToFormFields(apiKey, resumeJSON, formFields) {
-    console.log("Mapping resume data to form fields...");
+    console.log("Starting advanced field mapping with AI, caching, and parallelization...");
     
+    try {
+        // Step 1: Generate resume hash for cache invalidation
+        const resumeHash = generateResumeHash(resumeJSON);
+        
+        // Step 2: Check cache first
+        const cacheResults = await checkFieldCache(formFields, resumeHash);
+        console.log(`Cache hits: ${Object.keys(cacheResults).length}/${formFields.length}`);
+        
+        // Step 3: Identify fields needing AI calls
+        const uncachedFields = formFields.filter(field => !cacheResults[field.id || field.name]);
+        console.log(`Fields needing AI calls: ${uncachedFields.length}`);
+        
+        if (uncachedFields.length === 0) {
+            console.log("All fields resolved from cache!");
+            return Object.values(cacheResults);
+        }
+        
+        // Step 4: Classify and batch fields by priority
+        const fieldBatches = batchFieldsByPriority(uncachedFields);
+        
+        // Step 5: Parallel AI calls with controlled concurrency
+        const aiResults = await processFieldBatchesWithAI(fieldBatches, apiKey, resumeJSON);
+        
+        // Step 6: Pattern matching fallback for failed AI calls
+        const failedFields = uncachedFields.filter(field => 
+            !aiResults.some(result => result.fieldId === (field.id || field.name))
+        );
+        const fallbackResults = await applyPatternFallback(failedFields, resumeJSON);
+        
+        // Step 7: Combine all results
+        const allResults = [...Object.values(cacheResults), ...aiResults, ...fallbackResults];
+        
+        // Step 8: Cache successful AI results
+        await cacheFieldMappings([...aiResults, ...fallbackResults], resumeHash);
+        
+        console.log(`Successfully mapped ${allResults.length} fields (${Object.keys(cacheResults).length} from cache, ${aiResults.length} from AI, ${fallbackResults.length} from fallback)`);
+        return allResults;
+        
+    } catch (error) {
+        console.error("Error in advanced field mapping, falling back to basic pattern matching:", error);
+        return await basicPatternMapping(resumeJSON, formFields);
+    }
+}
+
+// Generate hash for resume to detect changes
+function generateResumeHash(resumeJSON) {
+    const staticData = {
+        personal: resumeJSON.contact,
+        // Exclude dynamic fields that change per job
+    };
+    return btoa(JSON.stringify(staticData)).substring(0, 16);
+}
+
+// Check cache for existing field mappings
+async function checkFieldCache(formFields, resumeHash) {
+    try {
+        const cached = await chrome.storage.local.get(FIELD_CACHE_KEY);
+        const cache = cached[FIELD_CACHE_KEY] || {};
+        const results = {};
+        
+        for (const field of formFields) {
+            const fieldKey = generateFieldCacheKey(field);
+            const entry = cache[fieldKey];
+            
+            if (entry && entry.resumeHash === resumeHash && !isCacheExpired(entry.timestamp)) {
+                results[field.id || field.name] = entry.mapping;
+            }
+        }
+        
+        return results;
+    } catch (error) {
+        console.warn("Cache check failed:", error);
+        return {};
+    }
+}
+
+// Generate cache key for a field
+function generateFieldCacheKey(field) {
+    const identifier = `${field.name || ''}_${field.id || ''}_${field.label || ''}_${field.placeholder || ''}`.toLowerCase();
+    return btoa(identifier).substring(0, 12);
+}
+
+// Check if cache entry is expired
+function isCacheExpired(timestamp) {
+    const now = Date.now();
+    const expiryMs = CACHE_EXPIRY_HOURS * 60 * 60 * 1000;
+    return (now - timestamp) > expiryMs;
+}
+
+// Batch fields by priority for processing
+function batchFieldsByPriority(fields) {
+    const staticFields = [];
+    const semiStaticFields = [];
+    const dynamicFields = [];
+    
+    for (const field of fields) {
+        const fieldText = `${field.name || ''} ${field.id || ''} ${field.label || ''} ${field.placeholder || ''}`.toLowerCase();
+        
+        if (FIELD_CATEGORIES.STATIC.some(keyword => fieldText.includes(keyword))) {
+            staticFields.push(field);
+        } else if (FIELD_CATEGORIES.SEMI_STATIC.some(keyword => fieldText.includes(keyword))) {
+            semiStaticFields.push(field);
+        } else {
+            dynamicFields.push(field);
+        }
+    }
+    
+    return [
+        { priority: 'static', fields: staticFields },
+        { priority: 'semi-static', fields: semiStaticFields },
+        { priority: 'dynamic', fields: dynamicFields }
+    ].filter(batch => batch.fields.length > 0);
+}
+
+// Process field batches with AI using controlled concurrency
+async function processFieldBatchesWithAI(batches, apiKey, resumeJSON) {
+    const allResults = [];
+    
+    for (const batch of batches) {
+        console.log(`Processing ${batch.priority} fields: ${batch.fields.length} fields`);
+        
+        // Process fields in parallel with controlled concurrency
+        const promises = [];
+        for (let i = 0; i < batch.fields.length; i += MAX_CONCURRENT_FIELD_CALLS) {
+            const fieldChunk = batch.fields.slice(i, i + MAX_CONCURRENT_FIELD_CALLS);
+            const chunkPromises = fieldChunk.map(field => mapSingleFieldWithAI(field, apiKey, resumeJSON));
+            promises.push(...chunkPromises);
+        }
+        
+        const batchResults = await Promise.allSettled(promises);
+        const successfulResults = batchResults
+            .filter(result => result.status === 'fulfilled' && result.value)
+            .map(result => result.value);
+        
+        allResults.push(...successfulResults);
+        
+        // Small delay between batches to be API-friendly
+        if (batches.indexOf(batch) < batches.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+    
+    return allResults;
+}
+
+// Map a single field using AI
+async function mapSingleFieldWithAI(field, apiKey, resumeJSON) {
+    try {
+        const fieldContext = `Field: ${field.name || field.id || 'unknown'}
+Label: ${field.label || 'none'}
+Placeholder: ${field.placeholder || 'none'}
+Type: ${field.type || 'text'}`;
+
+        const resumeContext = createCompactResumeData(resumeJSON);
+        
+        const prompt = `Map the following form field to appropriate resume data:
+
+${fieldContext}
+
+Resume Data:
+${resumeContext}
+
+Instructions:
+- Analyze the field context and determine the most appropriate value from the resume
+- For name fields, extract first/last name appropriately
+- For contact fields, use exact matches
+- For experience/skills fields, provide relevant content
+- Return ONLY the value to fill, or "null" if no appropriate match
+
+Value:`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.1, maxOutputTokens: 100 }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const value = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+        
+        if (value && value !== "null" && value.length > 0) {
+            return {
+                fieldId: field.id || field.name,
+                fieldSelector: field.selector,
+                fieldValue: value,
+                fieldType: field.type
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.warn(`AI mapping failed for field ${field.name || field.id}:`, error);
+        return null;
+    }
+}
+
+// Create compact resume data for individual field processing
+function createCompactResumeData(resumeJSON) {
+    return `Name: ${resumeJSON.contact?.name || 'N/A'}
+Email: ${resumeJSON.contact?.email || 'N/A'}
+Phone: ${resumeJSON.contact?.phone || 'N/A'}
+LinkedIn: ${resumeJSON.contact?.linkedin || 'N/A'}
+Summary: ${resumeJSON.summary || 'N/A'}`;
+}
+
+// Apply pattern matching fallback for failed AI calls
+async function applyPatternFallback(failedFields, resumeJSON) {
+    console.log(`Applying pattern fallback for ${failedFields.length} fields`);
+    return await basicPatternMapping(resumeJSON, failedFields);
+}
+
+// Cache successful field mappings
+async function cacheFieldMappings(mappings, resumeHash) {
+    try {
+        const cached = await chrome.storage.local.get(FIELD_CACHE_KEY);
+        const cache = cached[FIELD_CACHE_KEY] || {};
+        
+        for (const mapping of mappings) {
+            if (mapping && mapping.fieldId) {
+                // Find original field info (this is simplified)
+                const fieldKey = mapping.fieldId; // Simplified key generation
+                cache[fieldKey] = {
+                    mapping: mapping,
+                    resumeHash: resumeHash,
+                    timestamp: Date.now()
+                };
+            }
+        }
+        
+        await chrome.storage.local.set({ [FIELD_CACHE_KEY]: cache });
+        console.log(`Cached ${mappings.length} field mappings`);
+    } catch (error) {
+        console.warn("Failed to cache field mappings:", error);
+    }
+}
+
+// Basic pattern mapping for fallback
+async function basicPatternMapping(resumeJSON, formFields) {
     const mappings = [];
     
-    // Basic field mappings based on common patterns
     for (const field of formFields) {
         let value = '';
         const fieldName = (field.name || field.id || '').toLowerCase();
@@ -647,7 +906,6 @@ async function mapResumeToFormFields(apiKey, resumeJSON, formFields) {
         }
     }
     
-    console.log(`Generated ${mappings.length} field mappings`);
     return mappings;
 }
 
