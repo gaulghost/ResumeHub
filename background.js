@@ -1,3 +1,26 @@
+// ResumeHub background service worker - Refactored with utility modules
+
+console.log('Loading ResumeHub background service worker...');
+
+// Import utility modules
+try {
+  importScripts('utils/storage-manager.js');
+  console.log('StorageManager loaded:', typeof StorageManager);
+  
+  importScripts('utils/error-handler.js');
+  console.log('ErrorHandler loaded:', typeof ErrorHandler);
+  
+  importScripts('utils/script-injector.js');
+  console.log('ScriptInjector loaded:', typeof ScriptInjector);
+  
+  importScripts('utils/api-client.js');
+  console.log('GeminiAPIClient loaded:', typeof GeminiAPIClient);
+  
+  console.log('All utility modules loaded successfully');
+} catch (error) {
+  console.error('Failed to load utility modules:', error);
+}
+
 // Field mapping cache and configuration for auto-fill
 const FIELD_CACHE_KEY = 'resumehub_field_mappings';
 const CACHE_EXPIRY_HOURS = 24;
@@ -11,316 +34,22 @@ const FIELD_CATEGORIES = {
 // Maximum concurrent API calls for field mapping
 const MAX_CONCURRENT_FIELD_CALLS = 3;
 
-// === Resume Parsing ===
-
-// ResumeHub background service worker
-
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   console.log('ResumeHub extension installed.');
-  chrome.storage.sync.set({ theme: 'light', extractionMethod: 'standard' }); // Set defaults
+  await StorageManager.setSettings({ theme: 'light', extractionMethod: 'standard' });
 });
 
-// === Standard Extraction (Using Selectors) ===
+// === Refactored Job Description Extraction Functions ===
+// (Functions moved to utility modules)
 
-// Helper to inject the selector logic into the page
-async function getJobDescriptionFromActiveTab_Standard() {
-  console.log("Attempting standard job description extraction...");
-  return new Promise((resolve, reject) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-      if (!tabs[0]?.id) return reject(new Error("No active tab found."));
-      const tabId = tabs[0].id;
-      
-      chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        func: findJobDescriptionOnPage_Standard, // Note: func, not function for passing the actual function
-      }, (results) => {
-        if (chrome.runtime.lastError) {
-          console.error("Standard Extraction Script Error: ", chrome.runtime.lastError);
-          return reject(chrome.runtime.lastError);
-        }
-        if (results && results[0] && results[0].result) {
-          console.log("Standard extraction successful.");
-          resolve(results[0].result);
-        } else {
-           // Fallback if specific selectors fail
-           console.warn("Standard selectors failed, attempting fallback extraction (main content)...");
-           chrome.scripting.executeScript({
-               target: { tabId: tabId },
-               func: () => { 
-                  const mainElement = document.querySelector('main');
-                  if (mainElement) return mainElement.innerText;
-                  // Very basic fallback if no <main>
-                  return document.body.innerText?.substring(0, 50000); // Limit fallback size
-               },
-           }, (fallbackResults) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Fallback Extraction Script Error: ", chrome.runtime.lastError);
-                    return reject(new Error("Standard extraction failed, fallback also failed."));
-                }
-                if (fallbackResults && fallbackResults[0] && fallbackResults[0].result) {
-                     console.log("Fallback extraction successful.");
-                     resolve(fallbackResults[0].result);
-                } else {
-                     reject(new Error("Standard and fallback extraction failed to find content."));
-                }
-           });
-        }
-      });
-    });
-  });
-}
-
-// Function injected for standard extraction (kept for reference, called by helper)
-function findJobDescriptionOnPage_Standard() {
-  const selectors = [
-    // Common High-Level Containers
-    '#job-description', '.job-description',
-    '[class*="job-details"]', '[class*="jobDescription"]', '[class*="jobdesc"]', 
-    '[aria-label*="description"]', '[data-testid*="description"]',
-    // Specific Job Boards (Examples - Add More!)
-    '.jobsearch-JobComponent-description', // Indeed
-    '.jobs-description-content__text', // LinkedIn (Primary Description Area)
-    '#job_details', // LinkedIn (Older? Might be specific views)
-    '.jobdesciptioncontent', '.jobDescriptionContent', // Greenhouse
-    'section[data-qa="job-description"]', // Lever
-    '.job-details-content', // SmartRecruiters
-    '.ats-description-wrapper', // Ashby?
-    // Generic Content Areas (Lower Priority)
-    '.content .description', 'article .job-body' 
-  ];
-  console.log("Running standard extraction selectors...");
-  for (const selector of selectors) {
-    try {
-        const element = document.querySelector(selector);
-        if (element && element.innerText?.trim()?.length > 100) { // Check for meaningful content
-          console.log(`Standard extraction found via selector: ${selector}`);
-          return element.innerText;
-        }
-    } catch (e) { console.warn(`Error with selector ${selector}: ${e.message}`); }
-  }
-  console.warn('Standard extraction could not find specific element using selectors.');
-  return null; // Return null if nothing specific is found
-}
-
-// === AI-Powered Extraction ===
-
-// Helper to get the full DOM text content (or targeted)
-async function getFullPageTextContent() {
-     // Reverted to simpler innerText extraction as per user change. 
-     // If issues persist with dynamic pages, re-evaluate the targeted/delay logic.
-     console.log("Getting full page text content for AI extraction...");
-     return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-            if (!tabs[0]?.id) return reject(new Error("No active tab found."));
-            const tabId = tabs[0].id;
-
-            chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                func: () => document.body.innerText || document.documentElement.innerText, // Get all visible text
-            }, (results) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Error getting page text content: ", chrome.runtime.lastError);
-                    return reject(chrome.runtime.lastError);
-                }
-                if (results && results[0] && results[0].result) {
-                    console.log("Successfully got page text content.");
-                    resolve(results[0].result);
-                } else {
-                    reject(new Error("Could not retrieve text content from the page."));
-                }
-            });
-        });
-    });
-}
-
-
-// Function to call Gemini API specifically for *extracting* the job description text
-// (This is kept separate from the tailoring logic now)
-async function extractJobDescriptionViaAI(apiKey, pageTextContent) {
-    console.log("Calling Google Gemini API for Job Description Extraction...");
-    const modelName = 'gemini-2.5-flash'; // Using Gemini 2.5 Flash for efficient job description extraction
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    
-    // Limit input size (using user's last value)
-    const MAX_PAGE_TEXT_LENGTH = 10000; 
-    if (pageTextContent.length > MAX_PAGE_TEXT_LENGTH) {
-        console.warn(`Page text content truncated from ${pageTextContent.length} to ${MAX_PAGE_TEXT_LENGTH} characters.`);
-        pageTextContent = pageTextContent.substring(0, MAX_PAGE_TEXT_LENGTH);
-    }
-
-    const prompt = `**Instruction:**
-Analyze the following text content extracted from a webpage. Identify and extract *only* the main job description section. Exclude headers, footers, navigation, related job links, company boilerplates, EEO statements, and any text not part of the core job duties, qualifications, or description.
-
-**Output Format:**
-Return *only* the extracted job description text. If no job description is found, return the exact string "NO_JOB_DESCRIPTION_FOUND".
-
-**--- Webpage Text Content ---**
-${pageTextContent}
-
-**--- Extracted Job Description ---**`;
-
-    const requestBody = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { 
-             maxOutputTokens: 8192, 
-             temperature: 0.2 
-         },
-         safetySettings: [
-           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-         ]
-    };
-
-    try {
-        console.log(`Sending extraction request to ${modelName}...`);
-        const response = await fetch(apiEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text(); 
-            console.error("AI Extraction API Error:", response.status, errorText);
-            throw new Error(`AI extraction API request failed (${response.status}).`);
-        }
-
-        const responseData = await response.json();
-        console.log("AI Extraction Response Received.");
-
-        let extractedText = '';
-        if (responseData.candidates && responseData.candidates[0]?.content?.parts[0]?.text) {
-            extractedText = responseData.candidates[0].content.parts[0].text.trim();
-        } else {
-             console.error("Could not find text in AI extraction response structure.", responseData);
-              if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
-                    throw new Error("AI Extraction API returned a candidate but no content, potentially blocked.");
-              } else if (responseData.promptFeedback?.blockReason) {
-                   throw new Error(`AI Extraction API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
-              }
-             throw new Error("AI extraction response structure was unexpected.");
-        }
-
-        if (extractedText === "NO_JOB_DESCRIPTION_FOUND" || extractedText.length < 50) { 
-            console.warn("AI extraction did not find a job description or result was too short.");
-            // Return null instead of throwing error here, let the caller decide
-            return null; 
-        }
-        
-        console.log("AI extraction successful.");
-        return extractedText;
-
-    } catch (error) {
-        console.error("Error during AI job description extraction:", error);
-        // Re-throw for the main handler if needed, or return null
-        throw new Error(`AI-powered job description extraction failed: ${error.message}`);
-    }
-}
-
-// === NEW Function to Parse Resume to JSON ===
+// === Resume Parsing ===
 async function parseResumeToJSON(apiKey, resumeData) {
     console.log(`Attempting to parse resume ${resumeData.filename} (${resumeData.mimeType}) into JSON...`);
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`; // Using free Gemini 2.5 Flash model
-    const modelName = "gemini-2.5-flash";
-
-    // Define the target JSON structure in the prompt
-    const targetJsonStructure = `{
-  "contact": { "name": "string|null", "email": "string|null", "phone": "string|null", "linkedin": "string|null", "github": "string|null", "portfolio": "string|null" },
-  "summary": "string|null",
-  "experience": [ { "title": "string", "company": "string", "location": "string|null", "dates": "string|null", "bullets": ["string", "..."] } ],
-  "education": [ { "institution": "string", "degree": "string", "location": "string|null", "dates": "string|null", "details": "string|null" } ],
-  "skills": [ { "category": "string", "items": ["string", "..."] } ],
-  "projects": [ { "name": "string", "description": "string|null", "technologies": ["string", "..."], "link": "string|null" } ],
-  "achievements": [ "string", "..." ]
-}`;
-
-     const prompt = `**Instruction:**
-Analyze the attached resume file content. Extract the information and structure it precisely according to the following JSON format. If a section or field is not present in the resume, represent it as 'null' (for objects/strings) or an empty array [] (for arrays like bullets/achievements).
-For the "skills" section, group related skills into logical categories (e.g., "Programming Languages", "Frameworks & Libraries", "Databases", "Tools", "Cloud Platforms", "AI/ML") and represent it as an array of objects, each with a "category" name and an array of "items".
-Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
-
-**IMPORTANT: The final resume must comply with a 570 word / 3650 character limit.** Focus on capturing the most relevant content while staying within these constraints.
-
-**Target JSON Structure:**
-\`\`\`json
-${targetJsonStructure}
-\`\`\`
-
-**--- Resume Content Analysis ---**
-Parse the attached file and generate the JSON output.`;
-
-     const requestBody = {
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: resumeData.mimeType,
-                  data: resumeData.content // Assuming content is Base64
-                }
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-           responseMimeType: "application/json", // Request JSON output directly
-           temperature: 0.1 // Low temperature for structured output
-        },
-        safetySettings: [ /* Standard safety settings */
-           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-         ]
-    };
-
-      try {
-        console.log(`Sending resume parsing request to ${modelName}...`);
-        const response = await fetch(apiEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-                 const errorText = await response.text();
-             console.error("Resume Parsing API Error:", response.status, errorText);
-             throw new Error(`Resume parsing API request failed (${response.status}). Response: ${errorText}`);
-        }
-
-        const responseData = await response.json();
-        console.log("Resume Parsing Response Received.");
-
-        if (responseData.candidates && responseData.candidates[0]?.content?.parts[0]?.text) {
-            const jsonText = responseData.candidates[0].content.parts[0].text;
-            try {
-                 const parsedJson = JSON.parse(jsonText);
-                 console.log("Successfully parsed resume JSON.");
-                 return parsedJson;
-            } catch (parseError) {
-                 console.error("Failed to parse JSON response from resume parsing API:", parseError, "\nRaw Text:", jsonText);
-                 throw new Error("Failed to parse JSON response from resume parsing API.");
-            }
-        } else {
-             console.error("Could not find JSON text in resume parsing response structure.", responseData);
-             // Check for blocks
-             if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
-                    throw new Error("Resume parsing API returned a candidate but no content, potentially blocked.");
-              } else if (responseData.promptFeedback?.blockReason) {
-                   throw new Error(`Resume parsing API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
-             }
-             throw new Error("Resume parsing response structure was unexpected.");
-        }
-
-    } catch (error) {
-        console.error("Error during resume JSON parsing API call:", error);
-        throw new Error(`Failed to parse resume to JSON via API: ${error.message}`);
-        }
+    
+    return await ErrorHandler.safeAPICall(async () => {
+        const apiClient = new GeminiAPIClient(apiKey);
+        return await apiClient.parseResumeToJSON(resumeData);
+    }, 'resume parsing');
 }
 
 
@@ -427,6 +156,16 @@ ${JSON.stringify(originalSectionData, null, 2)}
     }
 }
 
+// === Refactored Section Tailoring ===
+async function callGoogleGeminiAPI_TailorSection_New(apiKey, jobDescription, originalSectionData, sectionType) {
+    console.log(`Tailoring section: ${sectionType}...`);
+    
+    return await ErrorHandler.safeAPICall(async () => {
+        const apiClient = new GeminiAPIClient(apiKey);
+        return await apiClient.tailorSection(jobDescription, originalSectionData, sectionType);
+    }, `section ${sectionType} tailoring`);
+}
+
 
 // === Async Handler Function for Preview (Kept for separate JD extraction) ===
 async function handleGetJobDescriptionPreview(request, sendResponse, listenerId) {
@@ -439,14 +178,15 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
                  throw new Error("API Key is required for AI extraction preview.");
              }
              console.log(`[${listenerId}] Preview AI: Getting page text...`);
-             const pageText = await getFullPageTextContent();
+             const pageText = await ScriptInjector.getPageText();
              // console.log('pageText', pageText); // Keep commented unless debugging extraction
              console.log(`[${listenerId}] Preview AI: Page text acquired, calling AI extraction...`);
-             jobDescription = await extractJobDescriptionViaAI(request.apiToken, pageText);
+             const apiClient = new GeminiAPIClient(request.apiToken);
+             jobDescription = await apiClient.extractJobDescription(pageText);
              console.log(`[${listenerId}] Preview AI: AI extraction finished.`);
         } else { // Default to 'standard'
              console.log(`[${listenerId}] Preview Standard: Calling standard extraction...`);
-             jobDescription = await getJobDescriptionFromActiveTab_Standard();
+             jobDescription = await ScriptInjector.extractJobDescriptionStandard();
              console.log(`[${listenerId}] Preview Standard: Standard extraction finished.`);
         }
         
@@ -541,77 +281,10 @@ async function handleAutoFillForm(request, sendResponse, listenerId) {
 
 async function getFormFieldsFromActiveTab() {
     console.log("Getting form fields from active tab...");
-    return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-            if (!tabs[0]?.id) return reject(new Error("No active tab found."));
-            const tabId = tabs[0].id;
-            
-            chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                func: () => {
-                    const formFields = [];
-                    const inputs = document.querySelectorAll('input, textarea, select');
-                    
-                    inputs.forEach((field, index) => {
-                        if (field.type === 'hidden' || field.type === 'submit' || field.type === 'button') {
-                            return;
-                        }
-                        
-                        const fieldInfo = {
-                            id: field.id || `field_${index}`,
-                            name: field.name || '',
-                            type: field.type || field.tagName.toLowerCase(),
-                            placeholder: field.placeholder || '',
-                            label: '',
-                            selector: '',
-                            value: field.value || ''
-                        };
-                        
-                        // Try to find associated label
-                        let label = '';
-                        if (field.id) {
-                            const labelElement = document.querySelector(`label[for="${field.id}"]`);
-                            if (labelElement) {
-                                label = labelElement.textContent.trim();
-                            }
-                        }
-                        
-                        // If no label found, look for nearby text
-                        if (!label) {
-                            const parent = field.parentElement;
-                            if (parent) {
-                                const prevText = parent.textContent.replace(field.value, '').trim();
-                                if (prevText.length > 0 && prevText.length < 100) {
-                                    label = prevText.substring(0, 50);
-                                }
-                            }
-                        }
-                        
-                        fieldInfo.label = label;
-                        fieldInfo.selector = field.id ? `#${field.id}` : 
-                                           field.name ? `[name="${field.name}"]` : 
-                                           `${field.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
-                        
-                        formFields.push(fieldInfo);
-                    });
-                    
-                    return formFields;
-                }
-            }, (results) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Error getting form fields: ", chrome.runtime.lastError);
-                    return reject(chrome.runtime.lastError);
-                }
-                if (results && results[0] && results[0].result) {
-                    console.log("Successfully got form fields from page.");
-                    resolve(results[0].result);
-                } else {
-                    reject(new Error("Could not retrieve form fields from the page."));
-                }
-            });
-        });
-    });
+    return await ErrorHandler.safeChromeOperation(
+        () => ScriptInjector.getFormFields(),
+        'form field extraction'
+    );
 }
 
 // === Auto-Fill Helper Functions ===
@@ -676,8 +349,7 @@ function generateResumeHash(resumeJSON) {
 // Check cache for existing field mappings
 async function checkFieldCache(formFields, resumeHash) {
     try {
-        const cached = await chrome.storage.local.get(FIELD_CACHE_KEY);
-        const cache = cached[FIELD_CACHE_KEY] || {};
+        const cache = await StorageManager.getValidCache(FIELD_CACHE_KEY) || {};
         const results = {};
         
         for (const field of formFields) {
@@ -767,60 +439,10 @@ async function processFieldBatchesWithAI(batches, apiKey, resumeJSON) {
 
 // Map a single field using AI
 async function mapSingleFieldWithAI(field, apiKey, resumeJSON) {
-    try {
-        const fieldContext = `Field: ${field.name || field.id || 'unknown'}
-Label: ${field.label || 'none'}
-Placeholder: ${field.placeholder || 'none'}
-Type: ${field.type || 'text'}`;
-
-        const resumeContext = createCompactResumeData(resumeJSON);
-        
-        const prompt = `Map the following form field to appropriate resume data:
-
-${fieldContext}
-
-Resume Data:
-${resumeContext}
-
-Instructions:
-- Analyze the field context and determine the most appropriate value from the resume
-- For name fields, extract first/last name appropriately
-- For contact fields, use exact matches
-- For experience/skills fields, provide relevant content
-- Return ONLY the value to fill, or "null" if no appropriate match
-
-Value:`;
-
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.1, maxOutputTokens: 100 }
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`API request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const value = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-        
-        if (value && value !== "null" && value.length > 0) {
-            return {
-                fieldId: field.id || field.name,
-                fieldSelector: field.selector,
-                fieldValue: value,
-                fieldType: field.type
-            };
-        }
-        
-        return null;
-    } catch (error) {
-        console.warn(`AI mapping failed for field ${field.name || field.id}:`, error);
-        return null;
-    }
+    return await ErrorHandler.safeAPICall(async () => {
+        const apiClient = new GeminiAPIClient(apiKey);
+        return await apiClient.mapFieldToResume(field, resumeJSON);
+    }, `field mapping for ${field.name || field.id}`);
 }
 
 // Create compact resume data for individual field processing
@@ -841,8 +463,7 @@ async function applyPatternFallback(failedFields, resumeJSON) {
 // Cache successful field mappings
 async function cacheFieldMappings(mappings, resumeHash) {
     try {
-        const cached = await chrome.storage.local.get(FIELD_CACHE_KEY);
-        const cache = cached[FIELD_CACHE_KEY] || {};
+        const cache = await StorageManager.getCache(FIELD_CACHE_KEY) || {};
         
         for (const mapping of mappings) {
             if (mapping && mapping.fieldId) {
@@ -856,7 +477,7 @@ async function cacheFieldMappings(mappings, resumeHash) {
             }
         }
         
-        await chrome.storage.local.set({ [FIELD_CACHE_KEY]: cache });
+        await StorageManager.setCache(FIELD_CACHE_KEY, cache, CACHE_EXPIRY_HOURS);
         console.log(`Cached ${mappings.length} field mappings`);
     } catch (error) {
         console.warn("Failed to cache field mappings:", error);
@@ -912,50 +533,10 @@ async function basicPatternMapping(resumeJSON, formFields) {
 // Function to fill form fields on the page
 async function fillFormFieldsOnPage(fieldMappings) {
     console.log("Filling form fields on page...");
-    
-    return new Promise((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-            if (!tabs[0]?.id) return reject(new Error("No active tab found."));
-            
-            const tabId = tabs[0].id;
-            
-            chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                func: (mappings) => {
-                    let filledCount = 0;
-                    
-                    for (const mapping of mappings) {
-                        try {
-                            const element = document.querySelector(mapping.fieldSelector);
-                            if (element && element.value !== undefined) {
-                                element.value = mapping.fieldValue;
-                                element.dispatchEvent(new Event('input', { bubbles: true }));
-                                element.dispatchEvent(new Event('change', { bubbles: true }));
-                                filledCount++;
-                            }
-                        } catch (error) {
-                            console.warn('Failed to fill field:', mapping.fieldSelector, error);
-                        }
-                    }
-                    
-                    return { fieldsFilled: filledCount };
-                },
-                args: [fieldMappings]
-            }, (results) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Error filling form fields: ", chrome.runtime.lastError);
-                    return reject(chrome.runtime.lastError);
-                }
-                if (results && results[0] && results[0].result) {
-                    console.log("Successfully filled form fields:", results[0].result);
-                    resolve(results[0].result);
-                } else {
-                    reject(new Error("Could not fill form fields on the page."));
-                }
-            });
-        });
-    });
+    return await ErrorHandler.safeChromeOperation(
+        () => ScriptInjector.fillFormFields(fieldMappings),
+        'form field filling'
+    );
 }
 
 // === Helper function to estimate word and character count in the resume JSON ===
@@ -1056,19 +637,20 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
             jobDescription = request.jobDescriptionOverride;
         } else {
             console.log(`[${listenerId}] Create Flow: Extracting job description (Method: ${request.extractionMethod})...`);
-      if (request.extractionMethod === 'ai') {
-                 const pageText = await getFullPageTextContent(); // Assumes getFullPageTextContent is still defined
-                 jobDescription = await extractJobDescriptionViaAI(request.apiToken, pageText); // Assumes extractJobDescriptionViaAI is still defined
+            if (request.extractionMethod === 'ai') {
+                const pageText = await ScriptInjector.getPageText();
+                const apiClient = new GeminiAPIClient(request.apiToken);
+                jobDescription = await apiClient.extractJobDescription(pageText);
             } else {
-                 jobDescription = await getJobDescriptionFromActiveTab_Standard(); // Assumes getJobDescriptionFromActiveTab_Standard is still defined
+                jobDescription = await ScriptInjector.extractJobDescriptionStandard();
             }
-             // Handle null return from AI extraction
-             if (!jobDescription) {
-                 throw new Error("Could not extract a job description using the selected method (AI might have failed).");
-      }
-             if (jobDescription.length < 50) { // Check length if not null
-                 throw new Error("Extracted job description seems too short.");
-             }
+            // Handle null return from AI extraction
+            if (!jobDescription) {
+                throw new Error("Could not extract a job description using the selected method (AI might have failed).");
+            }
+            if (jobDescription.length < 50) { // Check length if not null
+                throw new Error("Extracted job description seems too short.");
+            }
             console.log(`[${listenerId}] Create Flow: Extracted Job Description successfully.`);
         }
 
