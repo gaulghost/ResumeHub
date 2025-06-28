@@ -85,7 +85,7 @@ class ResumeProcessor {
     const previewText = this.uiManager.elements.previewOutput?.value.trim() || '';
     const placeholderText = this.uiManager.elements.previewOutput?.placeholder || '';
     
-    // Check if preview text is user input
+    // Check if preview text is user input (manual text in preview area)
     const isPreviewTextUserInput = previewText && 
       previewText !== placeholderText && 
       !previewText.startsWith('Attempting extraction...') &&
@@ -97,10 +97,8 @@ class ResumeProcessor {
       return { override: previewText, method: 'Preview/Edited Text' };
     }
 
-    // Manual input method removed - only preview area available for manual editing
+    // Use background extraction for all other cases
     const extractionMethod = this.stateManager.getExtractionMethod();
-
-    // Use background extraction
     console.log(`Using background extraction method: ${extractionMethod}`);
     return { override: null, method: extractionMethod };
   }

@@ -331,7 +331,7 @@ class FileHandlers {
    * Generate PDF document definition
    */
   generatePdfDefinition(jsonData) {
-    console.log('🔍 PDF Generation Debug - Full resume data received:', JSON.stringify(jsonData, null, 2));
+    console.log('Generating PDF from resume data...');
     
     // Updated color scheme to match the professional design
     const accentColor = '#4285F4'; // Modern blue accent
@@ -354,7 +354,6 @@ class FileHandlers {
 
     // --- 1. Header Section ---
     if (jsonData.contact) {
-      console.log('✅ Adding contact section to PDF');
       if (jsonData.contact.name) {
         content.push({ text: jsonData.contact.name, style: 'nameHeader' });
       }
@@ -398,13 +397,10 @@ class FileHandlers {
       }
       
       content.push({ text: ' ', margin: [0, 10] }); // Extra space after header
-    } else {
-      console.log('❌ No contact section found in resume data');
     }
 
     // --- 2. Education Section ---
     if (jsonData.education && jsonData.education.length > 0) {
-      console.log('✅ Adding education section to PDF:', jsonData.education.length, 'entries');
       content.push({ text: 'Education', style: 'sectionHeader', color: accentColor });
       addLineSeparator();
       
@@ -433,13 +429,10 @@ class FileHandlers {
         
         content.push({ text: ' ', margin: [0, 5] }); // Space between education entries
       });
-    } else {
-      console.log('❌ No education section found in resume data');
     }
 
     // --- 3. Skills Section ---
     if (jsonData.skills && Array.isArray(jsonData.skills) && jsonData.skills.length > 0) {
-      console.log('✅ Adding skills section to PDF:', jsonData.skills.length, 'categories');
       content.push({ text: 'Skills', style: 'sectionHeader', color: accentColor });
       addLineSeparator();
       
@@ -458,13 +451,10 @@ class FileHandlers {
       });
       content.push(...skillsContent);
       content.push({ text: ' ', margin: [0, 5] });
-    } else {
-      console.log('❌ No skills section found in resume data');
     }
 
     // --- 4. Work Experience Section ---
     if (jsonData.experience && jsonData.experience.length > 0) {
-      console.log('✅ Adding experience section to PDF:', jsonData.experience.length, 'entries');
       content.push({ text: 'Work Experience', style: 'sectionHeader', color: accentColor });
       addLineSeparator();
       
@@ -494,13 +484,10 @@ class FileHandlers {
         
         content.push({ text: ' ', margin: [0, 8] }); // Space between experience entries
       });
-    } else {
-      console.log('❌ No experience section found in resume data');
     }
 
     // --- 5. Projects Section ---
     if (jsonData.projects && jsonData.projects.length > 0) {
-      console.log('✅ Adding projects section to PDF:', jsonData.projects.length, 'entries');
       content.push({ text: 'Projects', style: 'sectionHeader', color: accentColor });
       addLineSeparator();
       
@@ -534,13 +521,10 @@ class FileHandlers {
         
         content.push({ text: ' ', margin: [0, 5] }); // Space between projects
       });
-    } else {
-      console.log('❌ No projects section found in resume data');
     }
 
     // --- 6. Achievements Section ---
     if (jsonData.achievements && jsonData.achievements.length > 0) {
-      console.log('✅ Adding achievements section to PDF:', jsonData.achievements.length, 'entries');
       content.push({ text: 'Achievements', style: 'sectionHeader', color: accentColor });
       addLineSeparator();
       
@@ -551,11 +535,9 @@ class FileHandlers {
       });
       
       content.push({ text: ' ', margin: [0, 5] });
-    } else {
-      console.log('❌ No achievements section found in resume data');
     }
 
-    console.log('📄 PDF content structure created with', content.length, 'elements');
+    console.log('PDF content structure created successfully');
 
     return {
       content: content,

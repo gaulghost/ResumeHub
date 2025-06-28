@@ -72,22 +72,18 @@ class AppController {
     try {
       // Initialize StateManager first (other modules depend on it)
       this.modules.stateManager = new StateManager();
-      console.log('✓ StateManager initialized');
 
       // Initialize UIManager
       this.modules.uiManager = new UIManager();
-      console.log('✓ UIManager initialized');
 
       // Initialize FileHandlers (depends on StateManager)
       this.modules.fileHandlers = new FileHandlers(this.modules.stateManager);
-      console.log('✓ FileHandlers initialized');
 
       // Initialize ResumeProcessor (depends on StateManager and UIManager)
       this.modules.resumeProcessor = new ResumeProcessor(
         this.modules.stateManager,
         this.modules.uiManager
       );
-      console.log('✓ ResumeProcessor initialized');
 
       // Initialize EventHandlers last (depends on all other modules)
       this.modules.eventHandlers = new EventHandlers(
@@ -96,7 +92,6 @@ class AppController {
         this.modules.fileHandlers,
         this.modules.resumeProcessor
       );
-      console.log('✓ EventHandlers initialized');
 
       console.log('All modules initialized successfully');
 
@@ -115,9 +110,9 @@ class AppController {
     try {
       const success = await this.modules.stateManager.loadFromStorage();
       if (success) {
-        console.log('✓ Initial state loaded from storage');
+        console.log('Initial state loaded from storage');
       } else {
-        console.log('⚠️ Could not load state from storage, using defaults');
+        console.log('Could not load state from storage, using defaults');
       }
     } catch (error) {
       console.error('Error loading initial state:', error);
@@ -139,7 +134,7 @@ class AppController {
       // Update UI based on current state
       this.updateUIFromState();
 
-      console.log('✓ UI initialized');
+      console.log('UI initialized');
 
     } catch (error) {
       console.error('Error initializing UI:', error);
@@ -155,7 +150,7 @@ class AppController {
 
     try {
       this.modules.eventHandlers.initialize();
-      console.log('✓ Event handlers initialized');
+      console.log('Event handlers initialized');
 
     } catch (error) {
       console.error('Error initializing event handlers:', error);
@@ -173,7 +168,7 @@ class AppController {
       // Check background script availability
       const backgroundAvailable = await this.modules.resumeProcessor.checkBackgroundScript();
       if (!backgroundAvailable) {
-        console.warn('⚠️ Background script not available - some features may not work');
+        console.warn('Background script not available - some features may not work');
         this.modules.uiManager.updateStatus(
           'Warning: Background script not available. Please reload the extension.',
           'warning'
@@ -186,7 +181,7 @@ class AppController {
       // Setup global error handling
       this.setupGlobalErrorHandling();
 
-      console.log('✓ Initialization finalized');
+      console.log('Initialization finalized');
 
     } catch (error) {
       console.error('Error finalizing initialization:', error);
@@ -233,35 +228,26 @@ class AppController {
   }
 
   /**
-   * Validate critical elements exist
+   * Validate that critical UI elements exist
    */
   validateCriticalElements() {
     const criticalElements = [
+      'statusMessageDiv',
       'createResumeBtn',
-      'resumeUploadInput',
       'apiTokenInput',
-      'statusMessageDiv'
+      'resumeUploadInput'
     ];
-
-    // Debug: log all available elements
-    console.log('Available UI elements:', Object.keys(this.modules.uiManager.elements));
-    console.log('Elements status:', criticalElements.map(id => ({
-      id,
-      exists: !!this.modules.uiManager.elements[id],
-      element: this.modules.uiManager.elements[id]
-    })));
 
     const missing = criticalElements.filter(elementId => 
       !this.modules.uiManager.elements[elementId]
     );
 
     if (missing.length > 0) {
-      console.error('❌ Missing elements:', missing);
-      console.error('All UI Manager elements:', this.modules.uiManager.elements);
+      console.error('Missing critical UI elements:', missing);
       throw new Error(`Critical UI elements missing: ${missing.join(', ')}`);
     }
 
-    console.log('✓ All critical elements validated');
+    console.log('All critical elements validated');
   }
 
   /**
@@ -283,7 +269,7 @@ class AppController {
       // Don't show UI error for every script error, just log it
     });
 
-    console.log('✓ Global error handling setup');
+    console.log('Global error handling setup');
   }
 
   /**

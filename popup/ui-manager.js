@@ -227,7 +227,7 @@ class UIManager {
    * Handle extraction method UI changes
    */
   updateExtractionMethodUI(method) {
-    // Collapse extraction card when method is selected (since manual option removed)
+    // Collapse extraction card when method is selected
     this.toggleCard(this.elements.extractionCard, true);
   }
 

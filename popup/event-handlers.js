@@ -122,15 +122,17 @@ class EventHandlers {
    * Initialize extraction method events
    */
   initializeExtractionMethodEvents() {
+    // Extraction method change handlers
     const extractionMethodRadios = document.querySelectorAll('input[name="extractionMethod"]');
-    
     extractionMethodRadios.forEach(radio => {
       radio.addEventListener('change', (event) => {
-        const method = event.target.value;
-        this.stateManager.setExtractionMethod(method);
-        this.uiManager.updateExtractionMethodUI(method);
-        
-        console.log("Extraction method changed to:", method);
+        if (event.target.checked) {
+          const method = event.target.value;
+          this.stateManager.setExtractionMethod(method);
+          this.uiManager.updateExtractionMethodUI(method);
+          
+          console.log("Extraction method changed to:", method);
+        }
       });
     });
   }
