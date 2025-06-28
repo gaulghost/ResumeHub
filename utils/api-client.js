@@ -174,7 +174,7 @@ ${JSON.stringify(originalSectionData, null, 2)}
 
 **--- Tailored Section JSON Output (${sectionType}) ---**`;
 
-    const response = await this.callAPI('gemini-1.5-flash-latest', prompt, {
+    const response = await this.callAPI('gemini-2.5-flash', prompt, {
       temperature: 0.4,
       responseMimeType: "application/json"
     });

@@ -1,0 +1,747 @@
+/**
+ * File Handlers Module
+ * Manages file upload, download, and format conversion operations
+ */
+
+class FileHandlers {
+  constructor(stateManager) {
+    this.stateManager = stateManager;
+    this.supportedFormats = {
+      upload: ['.pdf', '.doc', '.docx', '.txt'],
+      download: ['docx', 'pdf', 'txt']
+    };
+  }
+
+  /**
+   * Handle resume file upload
+   */
+  async handleResumeUpload(file) {
+    try {
+      if (!file) {
+        throw new Error('No file selected');
+      }
+
+      // Validate file type (match original validation)
+      const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error('Invalid type. Use PDF, DOCX, or TXT.');
+      }
+
+      // Validate file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        throw new Error('File size too large. Maximum size is 10MB.');
+      }
+
+      console.log(`Processing file upload: ${file.name} (${file.type}, ${file.size} bytes)`);
+
+      // Read file as base64
+      const base64Content = await this.readFileAsBase64(file);
+      
+      // Store in state
+      this.stateManager.setResume(file.name, base64Content, file.type);
+      
+      console.log('Resume uploaded successfully');
+      return {
+        success: true,
+        filename: file.name,
+        size: file.size,
+        type: file.type
+      };
+
+    } catch (error) {
+      console.error('Error uploading resume:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Read file as base64
+   */
+  readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        // Extract just the base64 part (after the comma) like original implementation
+        const base64Content = e.target.result.split(',')[1];
+        resolve(base64Content);
+      };
+      
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
+      
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Download original resume file
+   */
+  downloadOriginalResume() {
+    try {
+      const resume = this.stateManager.getResume();
+      
+      if (!resume.filename || !resume.content || !resume.mimeType) {
+        throw new Error('No resume file available for download');
+      }
+
+      // Convert Base64 back to binary data like original implementation
+      const byteCharacters = atob(resume.content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: resume.mimeType });
+      
+      // Create download link
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.href = url;
+      link.download = resume.filename;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log('Original resume downloaded:', resume.filename);
+      return true;
+
+    } catch (error) {
+      console.error('Error downloading original resume:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download generated resume in specified format
+   */
+  downloadGeneratedResume(format = 'txt') {
+    try {
+      const resumeJSON = this.stateManager.getGeneratedResume();
+      
+      if (!resumeJSON) {
+        throw new Error('No generated resume available. Please create a tailored resume first.');
+      }
+
+      const baseFilename = this.generateFilename();
+      
+      switch (format.toLowerCase()) {
+        case 'txt':
+          return this.downloadAsText(resumeJSON, baseFilename);
+        case 'pdf':
+          return this.downloadAsPdf(resumeJSON, baseFilename);
+        case 'docx':
+          return this.downloadAsDocx(resumeJSON, baseFilename);
+        default:
+          throw new Error(`Unsupported format: ${format}`);
+      }
+
+    } catch (error) {
+      console.error(`Error downloading ${format} resume:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download resume as text file
+   */
+  downloadAsText(resumeJSON, baseFilename) {
+    const textContent = this.convertResumeJSONToText(resumeJSON);
+    const blob = new Blob([textContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    
+    this.downloadBlob(url, `${baseFilename}.txt`);
+    console.log('Resume downloaded as TXT');
+    return true;
+  }
+
+  /**
+   * Download resume as PDF
+   */
+  downloadAsPdf(resumeJSON, baseFilename) {
+    try {
+      // Check if pdfMake is available
+      if (typeof pdfMake === 'undefined') {
+        throw new Error('PDF generation library not available');
+      }
+
+      const docDefinition = this.generatePdfDefinition(resumeJSON);
+      
+      pdfMake.createPdf(docDefinition).download(`${baseFilename}.pdf`);
+      console.log('Resume downloaded as PDF');
+      return true;
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      throw new Error('Failed to generate PDF. Please try TXT format instead.');
+    }
+  }
+
+  /**
+   * Download resume as DOCX (placeholder - would need additional library)
+   */
+  downloadAsDocx(resumeJSON, baseFilename) {
+    // For now, fallback to text format with .docx extension
+    // In a full implementation, you'd use a library like docx or similar
+    console.warn('DOCX generation not fully implemented, falling back to text format');
+    
+    const textContent = this.convertResumeJSONToText(resumeJSON);
+    const blob = new Blob([textContent], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const url = URL.createObjectURL(blob);
+    
+    this.downloadBlob(url, `${baseFilename}.docx`);
+    console.log('Resume downloaded as DOCX (text format)');
+    return true;
+  }
+
+  /**
+   * Convert resume JSON to formatted text
+   */
+  convertResumeJSONToText(jsonData) {
+    if (!jsonData) return "Error: No resume data available to format.";
+
+    let text = "";
+    const newline = "\n";
+    const sectionSeparator = newline + newline;
+    const entrySeparator = newline;
+    const bulletIndent = "  ";
+
+    // Contact Info
+    if (jsonData.contact) {
+      const contactParts = [
+        jsonData.contact.name,
+        jsonData.contact.email,
+        jsonData.contact.phone,
+        jsonData.contact.linkedin,
+        jsonData.contact.github,
+        jsonData.contact.portfolio
+      ].filter(Boolean);
+      
+      if (contactParts.length > 0) {
+        if (jsonData.contact.name) {
+          const padding = Math.max(0, Math.floor((80 - jsonData.contact.name.length) / 2));
+          text += ' '.repeat(padding) + jsonData.contact.name.toUpperCase() + newline;
+          const otherContacts = contactParts.filter(p => p !== jsonData.contact.name);
+          if (otherContacts.length > 0) {
+            text += otherContacts.join(' | ') + newline;
+          }
+        } else {
+          text += contactParts.join(' | ') + newline;
+        }
+        text += sectionSeparator;
+      }
+    }
+
+    // Summary
+    if (jsonData.summary) {
+      text += "SUMMARY" + sectionSeparator;
+      text += jsonData.summary + sectionSeparator;
+    }
+
+    // Experience
+    text += this.formatSectionText("EXPERIENCE", jsonData.experience, (exp) => {
+      let entryText = "";
+      const titleLine = [exp.title, exp.company].filter(Boolean).join(' @ ');
+      const locationLine = [exp.location, exp.dates].filter(Boolean).join(' | ');
+      
+      if (titleLine) entryText += titleLine + newline;
+      if (locationLine) entryText += locationLine + newline;
+      
+      if (exp.bullets && Array.isArray(exp.bullets)) {
+        exp.bullets.forEach(bullet => {
+          entryText += bulletIndent + "• " + bullet + newline;
+        });
+      }
+      
+      return entryText;
+    });
+
+    // Education
+    text += this.formatSectionText("EDUCATION", jsonData.education, (edu) => {
+      let entryText = "";
+      const degreeLine = [edu.degree, edu.institution].filter(Boolean).join(' - ');
+      const locationLine = [edu.location, edu.dates].filter(Boolean).join(' | ');
+      
+      if (degreeLine) entryText += degreeLine + newline;
+      if (locationLine) entryText += locationLine + newline;
+      if (edu.details) entryText += bulletIndent + edu.details + newline;
+      
+      return entryText;
+    });
+
+    // Skills
+    if (jsonData.skills && Array.isArray(jsonData.skills)) {
+      text += "SKILLS" + sectionSeparator;
+      jsonData.skills.forEach(skillGroup => {
+        if (skillGroup.category) {
+          text += skillGroup.category + ": ";
+        }
+        if (skillGroup.items && Array.isArray(skillGroup.items)) {
+          text += skillGroup.items.join(', ') + newline;
+        }
+      });
+      text += newline;
+    }
+
+    // Projects
+    text += this.formatSectionText("PROJECTS", jsonData.projects, (proj) => {
+      let entryText = "";
+      if (proj.name) entryText += proj.name + newline;
+      if (proj.description) entryText += proj.description + newline;
+      if (proj.technologies && Array.isArray(proj.technologies)) {
+        entryText += "Technologies: " + proj.technologies.join(', ') + newline;
+      }
+      return entryText;
+    });
+
+    // Achievements
+    if (jsonData.achievements && Array.isArray(jsonData.achievements)) {
+      text += "ACHIEVEMENTS" + sectionSeparator;
+      jsonData.achievements.forEach(achievement => {
+        text += bulletIndent + "• " + achievement + newline;
+      });
+      text += newline;
+    }
+
+    return text;
+  }
+
+  /**
+   * Helper method to format sections
+   */
+  formatSectionText(title, items, itemFormatter) {
+    if (!items || items.length === 0) return "";
+    
+    let sectionText = title.toUpperCase() + "\n\n";
+    items.forEach(item => {
+      sectionText += itemFormatter(item);
+      sectionText += "\n";
+    });
+    sectionText += "\n";
+    
+    return sectionText;
+  }
+
+  /**
+   * Generate PDF document definition
+   */
+  generatePdfDefinition(jsonData) {
+    console.log('🔍 PDF Generation Debug - Full resume data received:', JSON.stringify(jsonData, null, 2));
+    
+    // Updated color scheme to match the professional design
+    const accentColor = '#4285F4'; // Modern blue accent
+    const greyColor = '#6c757d';   // Grey color for dates/secondary text
+    const lineColor = '#e0e0e0';   // Light grey for separator lines
+    const headingFontSize = 14;
+    const sectionFontSize = 12;
+    const bodyFontSize = 10;
+    const smallFontSize = 9;
+
+    const content = [];
+    
+    // --- Helper function to add a horizontal line ---
+    const addLineSeparator = () => {
+      content.push({
+        canvas: [{ type: 'line', x1: 0, y1: 2, x2: 515, y2: 2, lineWidth: 0.5, lineColor: lineColor }],
+        margin: [0, 2, 0, 8] // Margin below line
+      });
+    };
+
+    // --- 1. Header Section ---
+    if (jsonData.contact) {
+      console.log('✅ Adding contact section to PDF');
+      if (jsonData.contact.name) {
+        content.push({ text: jsonData.contact.name, style: 'nameHeader' });
+      }
+      
+      // Job Title (role)
+      content.push({ text: 'SOFTWARE DEVELOPER', style: 'jobTitleHeader', color: accentColor });
+
+      // Contact info line with proper spacing and alignment
+      const contactParts = [];
+      
+      if (jsonData.contact.phone) contactParts.push(jsonData.contact.phone);
+      if (jsonData.contact.email) contactParts.push({ text: jsonData.contact.email, link: `mailto:${jsonData.contact.email}`, style: 'linkPlain' });
+      
+      // Improved separator handling
+      if (contactParts.length > 0) {
+        const contactLine = [];
+        contactParts.forEach((part, index) => {
+          contactLine.push(part);
+          if (index < contactParts.length - 1) {
+            contactLine.push({ text: ' | ', color: greyColor, margin: [2, 0] });
+          }
+        });
+        content.push({ text: contactLine, style: 'contactInfo', alignment: 'center' });
+      }
+      
+      // Add second line of contact info with LinkedIn and other links
+      const secondLineParts = [];
+      if (jsonData.contact.linkedin) secondLineParts.push({ text: 'LinkedIn', link: jsonData.contact.linkedin, style: 'linkPlain' });
+      if (jsonData.contact.github) secondLineParts.push({ text: 'GitHub', link: jsonData.contact.github, style: 'linkPlain' });
+      if (jsonData.contact.portfolio) secondLineParts.push({ text: 'Portfolio', link: jsonData.contact.portfolio, style: 'linkPlain' });
+      
+      if (secondLineParts.length > 0) {
+        const secondLine = [];
+        secondLineParts.forEach((part, index) => {
+          secondLine.push(part);
+          if (index < secondLineParts.length - 1) {
+            secondLine.push({ text: ' | ', color: greyColor, margin: [2, 0] });
+          }
+        });
+        content.push({ text: secondLine, style: 'contactInfo', alignment: 'center' });
+      }
+      
+      content.push({ text: ' ', margin: [0, 10] }); // Extra space after header
+    } else {
+      console.log('❌ No contact section found in resume data');
+    }
+
+    // --- 2. Education Section ---
+    if (jsonData.education && jsonData.education.length > 0) {
+      console.log('✅ Adding education section to PDF:', jsonData.education.length, 'entries');
+      content.push({ text: 'Education', style: 'sectionHeader', color: accentColor });
+      addLineSeparator();
+      
+      jsonData.education.forEach(edu => {
+        const degreeLine = edu.degree || '';
+        const institutionLine = edu.institution || '';
+        const location = edu.location || '';
+        const dates = edu.dates || '';
+
+        // Institution with location at right
+        content.push({ 
+          columns: [
+            { text: institutionLine, style: 'itemTitle', width: '*' },
+            { text: dates, style: 'locationDate', width: 'auto', alignment: 'right' }
+          ],
+          columnGap: 10
+        });
+        
+        // Degree with indentation
+        content.push({ text: degreeLine, style: 'itemSubtitle', italics: true });
+        
+        // GPA or other details if available
+        if (edu.details) {
+          content.push({ text: edu.details, style: 'details' });
+        }
+        
+        content.push({ text: ' ', margin: [0, 5] }); // Space between education entries
+      });
+    } else {
+      console.log('❌ No education section found in resume data');
+    }
+
+    // --- 3. Skills Section ---
+    if (jsonData.skills && Array.isArray(jsonData.skills) && jsonData.skills.length > 0) {
+      console.log('✅ Adding skills section to PDF:', jsonData.skills.length, 'categories');
+      content.push({ text: 'Skills', style: 'sectionHeader', color: accentColor });
+      addLineSeparator();
+      
+      const skillsContent = [];
+      jsonData.skills.forEach(skillCategory => {
+        if (skillCategory.category && skillCategory.items && skillCategory.items.length > 0) {
+          skillsContent.push({
+            columns: [
+              { width: 130, text: skillCategory.category, style: 'skillCategory', bold: true },
+              { width: '*', text: skillCategory.items.join(' | '), style: 'skillItems' }
+            ],
+            columnGap: 10,
+            margin: [0, 1, 0, 4]
+          });
+        }
+      });
+      content.push(...skillsContent);
+      content.push({ text: ' ', margin: [0, 5] });
+    } else {
+      console.log('❌ No skills section found in resume data');
+    }
+
+    // --- 4. Work Experience Section ---
+    if (jsonData.experience && jsonData.experience.length > 0) {
+      console.log('✅ Adding experience section to PDF:', jsonData.experience.length, 'entries');
+      content.push({ text: 'Work Experience', style: 'sectionHeader', color: accentColor });
+      addLineSeparator();
+      
+      jsonData.experience.forEach(exp => {
+        const titleLine = exp.title || '';
+        const companyLine = exp.company || '';
+        const location = exp.location || '';
+        const dates = exp.dates || '';
+
+        // Job title and company with date range right-aligned
+        content.push({
+          columns: [
+            { text: `${titleLine} | ${companyLine}`, style: 'itemTitle', width: '*' },
+            { text: dates, style: 'locationDate', width: 'auto', alignment: 'right' }
+          ],
+          columnGap: 10
+        });
+
+        // Bullets with proper indentation and spacing
+        if (exp.bullets && exp.bullets.length > 0) {
+          content.push({ 
+            ul: exp.bullets.map(bullet => ({text: bullet, margin: [0, 1]})),
+            style: 'list',
+            margin: [0, 3, 0, 0]
+          });
+        }
+        
+        content.push({ text: ' ', margin: [0, 8] }); // Space between experience entries
+      });
+    } else {
+      console.log('❌ No experience section found in resume data');
+    }
+
+    // --- 5. Projects Section ---
+    if (jsonData.projects && jsonData.projects.length > 0) {
+      console.log('✅ Adding projects section to PDF:', jsonData.projects.length, 'entries');
+      content.push({ text: 'Projects', style: 'sectionHeader', color: accentColor });
+      addLineSeparator();
+      
+      jsonData.projects.forEach(proj => {
+        // Project name with optional link
+        const titleLine = [];
+        titleLine.push({ text: proj.name, style: 'itemTitle' });
+        
+        if (proj.link) {
+          titleLine.push({ text: ` | `, color: greyColor });
+          titleLine.push({ text: 'Link', link: proj.link, style: 'linkSmall', color: accentColor });
+        }
+        
+        content.push({ text: titleLine });
+
+        // Project description
+        if (proj.description) {
+          content.push({ text: proj.description, style: 'paragraph', margin: [0, 2, 0, 3] });
+        }
+        
+        // Technologies used
+        if (proj.technologies && Array.isArray(proj.technologies)) {
+          content.push({ 
+            text: [
+              {text: 'Technologies used: ', style: 'techLabel', italics: true, color: greyColor},
+              {text: proj.technologies.join(', '), style: 'details'}
+            ],
+            margin: [0, 0, 0, 3]
+          });
+        }
+        
+        content.push({ text: ' ', margin: [0, 5] }); // Space between projects
+      });
+    } else {
+      console.log('❌ No projects section found in resume data');
+    }
+
+    // --- 6. Achievements Section ---
+    if (jsonData.achievements && jsonData.achievements.length > 0) {
+      console.log('✅ Adding achievements section to PDF:', jsonData.achievements.length, 'entries');
+      content.push({ text: 'Achievements', style: 'sectionHeader', color: accentColor });
+      addLineSeparator();
+      
+      content.push({ 
+        ul: jsonData.achievements.map(achievement => ({text: achievement, margin: [0, 1]})),
+        style: 'list',
+        margin: [0, 0, 0, 0]
+      });
+      
+      content.push({ text: ' ', margin: [0, 5] });
+    } else {
+      console.log('❌ No achievements section found in resume data');
+    }
+
+    console.log('📄 PDF content structure created with', content.length, 'elements');
+
+    return {
+      content: content,
+      styles: {
+        nameHeader: { 
+          fontSize: 28, 
+          bold: true, 
+          alignment: 'center', 
+          margin: [0, 0, 0, 4] 
+        },
+        jobTitleHeader: { 
+          fontSize: 16, 
+          alignment: 'center', 
+          margin: [0, 0, 0, 10], 
+          color: accentColor 
+        },
+        contactInfo: { 
+          fontSize: smallFontSize, 
+          alignment: 'center', 
+          margin: [0, 0, 0, 2], 
+          color: 'black' 
+        },
+        sectionHeader: { 
+          fontSize: headingFontSize, 
+          bold: true, 
+          margin: [0, 12, 0, 2]
+        },
+        itemTitle: { 
+          fontSize: bodyFontSize + 1, 
+          bold: true, 
+          margin: [0, 0, 0, 2] 
+        },
+        itemSubtitle: { 
+          fontSize: bodyFontSize, 
+          italics: true, 
+          margin: [0, 0, 0, 2] 
+        },
+        locationDate: { 
+          fontSize: smallFontSize, 
+          color: greyColor 
+        },
+        paragraph: { 
+          fontSize: bodyFontSize, 
+          margin: [0, 2, 0, 3], 
+          lineHeight: 1.2 
+        },
+        list: { 
+          fontSize: bodyFontSize, 
+          margin: [10, 0, 0, 5] 
+        },
+        details: { 
+          fontSize: smallFontSize, 
+          color: 'black', 
+          margin: [0, 0, 0, 2] 
+        },
+        techLabel: {
+          fontSize: smallFontSize,
+          color: greyColor
+        },
+        skillCategory: { 
+          fontSize: bodyFontSize, 
+          bold: true 
+        },
+        skillItems: { 
+          fontSize: bodyFontSize 
+        },
+        linkPlain: { 
+          fontSize: smallFontSize, 
+          color: accentColor, 
+          decoration: 'underline' 
+        },
+        linkSmall: { 
+          fontSize: smallFontSize, 
+          color: accentColor, 
+          decoration: 'underline' 
+        },
+        // Legacy styles for backward compatibility
+        header: {
+          fontSize: 18,
+          bold: true,
+          margin: [0, 0, 0, 10]
+        },
+        jobTitle: {
+          fontSize: 12,
+          bold: true,
+          margin: [0, 5, 0, 2]
+        },
+        jobDetails: {
+          fontSize: 10,
+          italics: true,
+          margin: [0, 0, 0, 5]
+        },
+        body: {
+          fontSize: 11,
+          margin: [0, 0, 0, 10]
+        },
+        bulletList: {
+          fontSize: 11,
+          margin: [20, 0, 0, 5]
+        }
+      },
+      defaultStyle: {
+        font: 'Roboto',
+        fontSize: bodyFontSize,
+        lineHeight: 1.2
+      },
+      pageSize: 'A4',
+      pageMargins: [40, 30, 40, 30] // [left, top, right, bottom]
+    };
+  }
+
+  /**
+   * Trigger file download
+   */
+  triggerDownload(content, mimeType, extension) {
+    const link = document.createElement('a');
+    link.href = content;
+    link.download = `resume.${extension}`;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up object URL if it was created
+    if (content.startsWith('blob:')) {
+      URL.revokeObjectURL(content);
+    }
+  }
+
+  /**
+   * Download blob with filename
+   */
+  downloadBlob(url, filename) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up
+    URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Generate filename with timestamp
+   */
+  generateFilename() {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/[:]/g, '-');
+    return `tailored_resume_${timestamp}`;
+  }
+
+  /**
+   * Get file extension from filename
+   */
+  getFileExtension(filename) {
+    return filename.slice((filename.lastIndexOf(".") - 1 >>> 0) + 2);
+  }
+
+  /**
+   * Validate file type
+   */
+  isValidFileType(filename, allowedTypes) {
+    const extension = '.' + this.getFileExtension(filename).toLowerCase();
+    return allowedTypes.includes(extension);
+  }
+
+  /**
+   * Format file size for display
+   */
+  formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+}
+
+// Make FileHandlers available globally for the popup
+if (typeof window !== 'undefined') {
+  window.FileHandlers = FileHandlers;
+} 

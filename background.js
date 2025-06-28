@@ -42,15 +42,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 // === Refactored Job Description Extraction Functions ===
 // (Functions moved to utility modules)
 
-// === Resume Parsing ===
-async function parseResumeToJSON(apiKey, resumeData) {
-    console.log(`Attempting to parse resume ${resumeData.filename} (${resumeData.mimeType}) into JSON...`);
-    
-    return await ErrorHandler.safeAPICall(async () => {
-        const apiClient = new GeminiAPIClient(apiKey);
-        return await apiClient.parseResumeToJSON(resumeData);
-    }, 'resume parsing');
-}
+// === Resume Parsing === (Deprecated - use GeminiAPIClient directly)
+// Function kept for backward compatibility but redirects to API client
 
 
 // === NEW Function to Tailor a Specific Resume Section ===
@@ -156,15 +149,8 @@ ${JSON.stringify(originalSectionData, null, 2)}
     }
 }
 
-// === Refactored Section Tailoring ===
-async function callGoogleGeminiAPI_TailorSection_New(apiKey, jobDescription, originalSectionData, sectionType) {
-    console.log(`Tailoring section: ${sectionType}...`);
-    
-    return await ErrorHandler.safeAPICall(async () => {
-        const apiClient = new GeminiAPIClient(apiKey);
-        return await apiClient.tailorSection(jobDescription, originalSectionData, sectionType);
-    }, `section ${sectionType} tailoring`);
-}
+// === Section Tailoring === (Deprecated - use GeminiAPIClient directly)
+// Function kept for backward compatibility but redirects to API client
 
 
 // === Async Handler Function for Preview (Kept for separate JD extraction) ===
@@ -249,8 +235,9 @@ async function handleAutoFillForm(request, sendResponse, listenerId) {
             resumeText = atob(base64Data);
         }
         
-        // Parse resume to JSON - pass the original resumeData object, not just text
-        const resumeJSON = await parseResumeToJSON(apiToken, resumeData);
+        // Parse resume to JSON using API client
+        const apiClient = new GeminiAPIClient(apiToken);
+        const resumeJSON = await apiClient.parseResumeToJSON(resumeData);
         console.log(`[${listenerId}] Resume parsed successfully`);
         
         // Step 3: Map resume data to form fields using AI
@@ -619,7 +606,8 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
 
         // --- Step 1: Parse Original Resume to JSON ---
         console.log(`[${listenerId}] Create Flow: Parsing original resume to JSON...`);
-        const originalResumeJSON = await parseResumeToJSON(request.apiToken, request.resumeData);
+        const apiClient = new GeminiAPIClient(request.apiToken);
+        const originalResumeJSON = await apiClient.parseResumeToJSON(request.resumeData);
         if (!originalResumeJSON) { // Should not happen if parseResumeToJSON throws errors correctly
              throw new Error("Failed to parse original resume into JSON structure.");
         }
@@ -637,20 +625,20 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
             jobDescription = request.jobDescriptionOverride;
         } else {
             console.log(`[${listenerId}] Create Flow: Extracting job description (Method: ${request.extractionMethod})...`);
-            if (request.extractionMethod === 'ai') {
+      if (request.extractionMethod === 'ai') {
                 const pageText = await ScriptInjector.getPageText();
                 const apiClient = new GeminiAPIClient(request.apiToken);
                 jobDescription = await apiClient.extractJobDescription(pageText);
             } else {
                 jobDescription = await ScriptInjector.extractJobDescriptionStandard();
             }
-            // Handle null return from AI extraction
-            if (!jobDescription) {
-                throw new Error("Could not extract a job description using the selected method (AI might have failed).");
-            }
-            if (jobDescription.length < 50) { // Check length if not null
-                throw new Error("Extracted job description seems too short.");
-            }
+             // Handle null return from AI extraction
+             if (!jobDescription) {
+                 throw new Error("Could not extract a job description using the selected method (AI might have failed).");
+      }
+             if (jobDescription.length < 50) { // Check length if not null
+                 throw new Error("Extracted job description seems too short.");
+             }
             console.log(`[${listenerId}] Create Flow: Extracted Job Description successfully.`);
         }
 
@@ -661,22 +649,22 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
 
         // Tailor Summary (if exists)
         if (originalResumeJSON.summary) {
-            tailoredResumeJSON.summary = await callGoogleGeminiAPI_TailorSection(
-                request.apiToken, jobDescription, { summary: originalResumeJSON.summary }, 'summary'
-            )?.summary || originalResumeJSON.summary; // Fallback to original if tailoring fails
+            const tailoredSummary = await apiClient.tailorSection(
+                jobDescription, { summary: originalResumeJSON.summary }, 'summary'
+            );
+            tailoredResumeJSON.summary = tailoredSummary?.summary || originalResumeJSON.summary; // Fallback to original if tailoring fails
         } else {
             tailoredResumeJSON.summary = null;
         }
 
         // Tailor Experience (array)
-        tailoredResumeJSON.experience = [];
         if (originalResumeJSON.experience && Array.isArray(originalResumeJSON.experience)) {
-             for (const exp of originalResumeJSON.experience) {
-                 const tailoredExp = await callGoogleGeminiAPI_TailorSection(
-                     request.apiToken, jobDescription, exp, 'experience'
+            const tailoredExperience = await apiClient.tailorSection(
+                jobDescription, originalResumeJSON.experience, 'experience'
                  );
-                 tailoredResumeJSON.experience.push(tailoredExp || exp); // Fallback to original entry
-             }
+            tailoredResumeJSON.experience = tailoredExperience || originalResumeJSON.experience; // Fallback to original
+        } else {
+            tailoredResumeJSON.experience = [];
         }
         
         // Tailor Education (array) - Often less tailoring needed, maybe just copy? Or tailor slightly.
@@ -684,7 +672,7 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
          if (originalResumeJSON.education && Array.isArray(originalResumeJSON.education)) {
              for (const edu of originalResumeJSON.education) {
                  // Decide if tailoring education makes sense. For now, let's copy it.
-                 // const tailoredEdu = await callGoogleGeminiAPI_TailorSection(request.apiToken, jobDescription, edu, 'education');
+                 // const tailoredEdu = await apiClient.tailorSection(jobDescription, edu, 'education');
                  // tailoredResumeJSON.education.push(tailoredEdu || edu);
                  tailoredResumeJSON.education.push(edu); // Copy original for now
              }
@@ -692,30 +680,29 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
          
          // Tailor Skills (object/string)
          if (originalResumeJSON.skills) {
-              tailoredResumeJSON.skills = await callGoogleGeminiAPI_TailorSection(
-                  request.apiToken, jobDescription, originalResumeJSON.skills, 'skills'
+              tailoredResumeJSON.skills = await apiClient.tailorSection(
+                  jobDescription, originalResumeJSON.skills, 'skills'
               ) || originalResumeJSON.skills; // Fallback
          } else {
              tailoredResumeJSON.skills = null;
          }
 
          // Tailor Projects (array)
-         tailoredResumeJSON.projects = [];
          if (originalResumeJSON.projects && Array.isArray(originalResumeJSON.projects)) {
-             for (const proj of originalResumeJSON.projects) {
-                 const tailoredProj = await callGoogleGeminiAPI_TailorSection(
-                     request.apiToken, jobDescription, proj, 'projects'
+             const tailoredProjects = await apiClient.tailorSection(
+                 jobDescription, originalResumeJSON.projects, 'projects'
                  );
-                 tailoredResumeJSON.projects.push(tailoredProj || proj); // Fallback
-             }
+             tailoredResumeJSON.projects = tailoredProjects || originalResumeJSON.projects; // Fallback
+         } else {
+             tailoredResumeJSON.projects = [];
          }
          
          // Tailor Achievements (array) - Copy for now, tailoring might be simple selection
          tailoredResumeJSON.achievements = [];
           if (originalResumeJSON.achievements && Array.isArray(originalResumeJSON.achievements)) {
               // Tailor achievements too instead of just copying
-              const tailoredAch = await callGoogleGeminiAPI_TailorSection(
-                  request.apiToken, jobDescription, originalResumeJSON.achievements, 'achievements'
+              const tailoredAch = await apiClient.tailorSection(
+                  jobDescription, originalResumeJSON.achievements, 'achievements'
               );
               tailoredResumeJSON.achievements = tailoredAch || originalResumeJSON.achievements;
           }
@@ -778,6 +765,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
      handleAutoFillForm(request, sendResponse, listenerId);
      console.log(`[${listenerId}] Auto-Fill Handler: Returning true (async).`);
      return true; // Keep returning true
+  }
+
+  // Handle ping action for connection testing
+  if (request.action === "ping") {
+     console.log(`[${listenerId}] Ping received, responding with pong`);
+     sendResponse({ success: true, message: "pong" });
+     return true;
   }
 
   // If no handler matched

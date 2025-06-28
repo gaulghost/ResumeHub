@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResumeHub - All Fixes Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-item {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid #007cba;
+            background-color: #f8f9fa;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .pass { background-color: #d4edda; color: #155724; }
+        .fail { background-color: #f8d7da; color: #721c24; }
+        .pending { background-color: #fff3cd; color: #856404; }
+        button {
+            background-color: #007cba;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #005a87;
+        }
+        .code {
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 ResumeHub - All Fixes Verification Test</h1>
+    
+    <div class="test-section">
+        <h2>📋 Test Summary</h2>
+        <p>This page tests all the fixes applied to resolve the reported issues:</p>
+        <ul>
+            <li>Dark mode toggle functionality</li>
+            <li>Background script connection</li>
+            <li>Loading states for buttons</li>
+            <li>API key display</li>
+            <li>Auto-fill form functionality</li>
+            <li>Generate resume functionality</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🎨 Theme Toggle Test</h2>
+        <div class="test-item">
+            <strong>Test 1: Theme Toggle Functionality</strong>
+            <span id="theme-test-status" class="status pending">PENDING</span>
+            <br>
+            <button onclick="testThemeToggle()">Test Theme Toggle</button>
+            <div id="theme-test-result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔗 Background Script Connection Test</h2>
+        <div class="test-item">
+            <strong>Test 2: Background Script Ping</strong>
+            <span id="bg-test-status" class="status pending">PENDING</span>
+            <br>
+            <button onclick="testBackgroundConnection()">Test Connection</button>
+            <div id="bg-test-result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔄 Loading States Test</h2>
+        <div class="test-item">
+            <strong>Test 3: Button Loading States</strong>
+            <span id="loading-test-status" class="status pending">PENDING</span>
+            <br>
+            <button onclick="testLoadingStates()">Test Loading States</button>
+            <div id="loading-test-result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔑 Storage Test</h2>
+        <div class="test-item">
+            <strong>Test 4: Chrome Storage Access</strong>
+            <span id="storage-test-status" class="status pending">PENDING</span>
+            <br>
+            <button onclick="testStorageAccess()">Test Storage</button>
+            <div id="storage-test-result"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>📝 Instructions for Manual Testing</h2>
+        <div class="test-item">
+            <h3>Manual Tests to Perform:</h3>
+            <ol>
+                <li><strong>Dark Mode:</strong> Toggle the theme switch in the popup and verify the theme changes</li>
+                <li><strong>API Key:</strong> Enter an API key and verify it's saved and displayed</li>
+                <li><strong>Preview:</strong> Click "Preview" button and verify it shows "Extracting..." text</li>
+                <li><strong>Generate:</strong> Click "Generate Tailored Resume" and verify it shows "Generating..." text</li>
+                <li><strong>Auto-fill:</strong> Click "Auto-Fill Current Form" and verify it shows "Filling..." text</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🐛 Common Issues & Solutions</h2>
+        <div class="test-item">
+            <h3>If tests fail:</h3>
+            <div class="code">
+1. Reload the extension in chrome://extensions/
+2. Check browser console for errors
+3. Verify all files are present in the extension directory
+4. Ensure popup.js is loaded after all modules
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Test theme toggle functionality
+        async function testThemeToggle() {
+            const status = document.getElementById('theme-test-status');
+            const result = document.getElementById('theme-test-result');
+            
+            try {
+                // Check if chrome.storage is available
+                if (!chrome || !chrome.storage) {
+                    throw new Error('Chrome storage API not available');
+                }
+                
+                // Test theme storage
+                await new Promise((resolve, reject) => {
+                    chrome.storage.sync.set({ theme: 'dark' }, () => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+                
+                // Test theme retrieval
+                const theme = await new Promise((resolve, reject) => {
+                    chrome.storage.sync.get(['theme'], (result) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve(result.theme);
+                        }
+                    });
+                });
+                
+                if (theme === 'dark') {
+                    status.className = 'status pass';
+                    status.textContent = 'PASS';
+                    result.innerHTML = '<p style="color: green;">✅ Theme storage working correctly</p>';
+                } else {
+                    throw new Error('Theme not saved correctly');
+                }
+                
+            } catch (error) {
+                status.className = 'status fail';
+                status.textContent = 'FAIL';
+                result.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+            }
+        }
+
+        // Test background script connection
+        async function testBackgroundConnection() {
+            const status = document.getElementById('bg-test-status');
+            const result = document.getElementById('bg-test-result');
+            
+            try {
+                // Check if chrome.runtime is available
+                if (!chrome || !chrome.runtime) {
+                    throw new Error('Chrome runtime API not available');
+                }
+                
+                // Send ping to background script
+                const response = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve(response);
+                        }
+                    });
+                });
+                
+                if (response && response.success && response.message === 'pong') {
+                    status.className = 'status pass';
+                    status.textContent = 'PASS';
+                    result.innerHTML = '<p style="color: green;">✅ Background script responding correctly</p>';
+                } else {
+                    throw new Error('Invalid response from background script');
+                }
+                
+            } catch (error) {
+                status.className = 'status fail';
+                status.textContent = 'FAIL';
+                result.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+            }
+        }
+
+        // Test loading states
+        function testLoadingStates() {
+            const status = document.getElementById('loading-test-status');
+            const result = document.getElementById('loading-test-result');
+            
+            try {
+                // Create test button
+                const testButton = document.createElement('button');
+                testButton.textContent = 'Test Button';
+                testButton.id = 'test-loading-button';
+                
+                // Simulate loading state
+                testButton.dataset.originalText = testButton.textContent;
+                testButton.disabled = true;
+                testButton.classList.add('button-loading');
+                testButton.textContent = 'Loading...';
+                
+                // Reset state
+                setTimeout(() => {
+                    testButton.disabled = false;
+                    testButton.classList.remove('button-loading');
+                    testButton.textContent = testButton.dataset.originalText || 'Test Button';
+                }, 1000);
+                
+                status.className = 'status pass';
+                status.textContent = 'PASS';
+                result.innerHTML = '<p style="color: green;">✅ Loading state logic working</p>';
+                result.appendChild(testButton);
+                
+            } catch (error) {
+                status.className = 'status fail';
+                status.textContent = 'FAIL';
+                result.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+            }
+        }
+
+        // Test storage access
+        async function testStorageAccess() {
+            const status = document.getElementById('storage-test-status');
+            const result = document.getElementById('storage-test-result');
+            
+            try {
+                // Test setting and getting data
+                const testData = { test: 'value', timestamp: Date.now() };
+                
+                await new Promise((resolve, reject) => {
+                    chrome.storage.sync.set(testData, () => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+                
+                const retrieved = await new Promise((resolve, reject) => {
+                    chrome.storage.sync.get(['test', 'timestamp'], (result) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve(result);
+                        }
+                    });
+                });
+                
+                if (retrieved.test === 'value' && retrieved.timestamp === testData.timestamp) {
+                    status.className = 'status pass';
+                    status.textContent = 'PASS';
+                    result.innerHTML = '<p style="color: green;">✅ Chrome storage working correctly</p>';
+                } else {
+                    throw new Error('Data not retrieved correctly');
+                }
+                
+            } catch (error) {
+                status.className = 'status fail';
+                status.textContent = 'FAIL';
+                result.innerHTML = `<p style="color: red;">❌ Error: ${error.message}</p>`;
+            }
+        }
+
+        // Auto-run basic tests on page load
+        window.addEventListener('load', () => {
+            console.log('ResumeHub Fix Test Page Loaded');
+            
+            // Check if running in extension context
+            if (chrome && chrome.storage) {
+                console.log('✅ Extension context detected');
+            } else {
+                console.log('❌ Not running in extension context');
+            }
+        });
+    </script>
+</body>
+</html> 

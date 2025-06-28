@@ -518,4 +518,135 @@ body.theme-dark {
 /* Remove right margin from the last button in the group */
 .resume-section .card-content > .button:last-of-type {
     margin-right: 0;
+}
+
+/* Manual job description input area */
+.is-hidden {
+    display: none !important;
+}
+
+#manual-jd-input-area {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+#manual-jd-input-area label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+#manual-jd-textarea {
+    width: 100%;
+    min-height: 100px;
+    resize: vertical;
+}
+
+/* Drag and drop styles */
+.drag-over {
+    border-color: var(--color-primary) !important;
+    background-color: rgba(0, 122, 255, 0.05) !important;
+}
+
+/* Loading states - Match original implementation with text visible */
+.button-loading {
+    position: relative;
+    /* Remove color: transparent to show loading text like original */
+}
+
+/* Optional: Add a subtle loading indicator without hiding text */
+.button-loading::before {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    border-right-color: transparent;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Status message variants */
+.status-message.warning {
+    background-color: rgba(255, 149, 0, 0.1);
+    color: var(--color-warning);
+    border-left: 3px solid var(--color-warning);
+}
+
+.status-message.info {
+    background-color: rgba(0, 122, 255, 0.1);
+    color: var(--color-primary);
+    border-left: 3px solid var(--color-primary);
+}
+
+/* Auto-fill status styles - Use same styling as main status messages */
+#auto-fill-status.success {
+    background-color: rgba(52, 199, 89, 0.1);
+    color: var(--color-success);
+    border-left: 3px solid var(--color-success);
+}
+
+#auto-fill-status.error {
+    background-color: rgba(255, 59, 48, 0.1);
+    color: var(--color-danger);
+    border-left: 3px solid var(--color-danger);
+}
+
+#auto-fill-status.processing {
+    background-color: rgba(0, 122, 255, 0.1);
+    color: var(--color-primary);
+    border-left: 3px solid var(--color-primary);
+}
+
+/* Download buttons container */
+#download-buttons-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding: 12px;
+    background-color: rgba(52, 199, 89, 0.05);
+    border: 1px solid rgba(52, 199, 89, 0.2);
+    border-radius: 6px;
+}
+
+#download-buttons-container span {
+    font-weight: 500;
+    color: var(--text);
+}
+
+/* Accessibility improvements */
+.toggle-button:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Better focus states for inputs */
+input:focus,
+textarea:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-color: var(--color-primary);
+}
+
+/* Dark theme adjustments for new elements */
+body.theme-dark #download-buttons-container {
+    background-color: rgba(52, 199, 89, 0.1);
+    border-color: rgba(52, 199, 89, 0.3);
+}
+
+body.theme-dark .button-loading::after {
+    border-color: currentColor;
+    border-right-color: transparent;
 } 
