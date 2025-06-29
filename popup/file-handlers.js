@@ -214,113 +214,11 @@ class FileHandlers {
   /**
    * Convert resume JSON to formatted text
    */
+  /**
+   * Convert resume JSON to text using SharedUtilities
+   */
   convertResumeJSONToText(jsonData) {
-    if (!jsonData) return "Error: No resume data available to format.";
-
-    let text = "";
-    const newline = "\n";
-    const sectionSeparator = newline + newline;
-    const entrySeparator = newline;
-    const bulletIndent = "  ";
-
-    // Contact Info
-    if (jsonData.contact) {
-      const contactParts = [
-        jsonData.contact.name,
-        jsonData.contact.email,
-        jsonData.contact.phone,
-        jsonData.contact.linkedin,
-        jsonData.contact.github,
-        jsonData.contact.portfolio
-      ].filter(Boolean);
-      
-      if (contactParts.length > 0) {
-        if (jsonData.contact.name) {
-          const padding = Math.max(0, Math.floor((80 - jsonData.contact.name.length) / 2));
-          text += ' '.repeat(padding) + jsonData.contact.name.toUpperCase() + newline;
-          const otherContacts = contactParts.filter(p => p !== jsonData.contact.name);
-          if (otherContacts.length > 0) {
-            text += otherContacts.join(' | ') + newline;
-          }
-        } else {
-          text += contactParts.join(' | ') + newline;
-        }
-        text += sectionSeparator;
-      }
-    }
-
-    // Summary
-    if (jsonData.summary) {
-      text += "SUMMARY" + sectionSeparator;
-      text += jsonData.summary + sectionSeparator;
-    }
-
-    // Experience
-    text += this.formatSectionText("EXPERIENCE", jsonData.experience, (exp) => {
-      let entryText = "";
-      const titleLine = [exp.title, exp.company].filter(Boolean).join(' @ ');
-      const locationLine = [exp.location, exp.dates].filter(Boolean).join(' | ');
-      
-      if (titleLine) entryText += titleLine + newline;
-      if (locationLine) entryText += locationLine + newline;
-      
-      if (exp.bullets && Array.isArray(exp.bullets)) {
-        exp.bullets.forEach(bullet => {
-          entryText += bulletIndent + "• " + bullet + newline;
-        });
-      }
-      
-      return entryText;
-    });
-
-    // Education
-    text += this.formatSectionText("EDUCATION", jsonData.education, (edu) => {
-      let entryText = "";
-      const degreeLine = [edu.degree, edu.institution].filter(Boolean).join(' - ');
-      const locationLine = [edu.location, edu.dates].filter(Boolean).join(' | ');
-      
-      if (degreeLine) entryText += degreeLine + newline;
-      if (locationLine) entryText += locationLine + newline;
-      if (edu.details) entryText += bulletIndent + edu.details + newline;
-      
-      return entryText;
-    });
-
-    // Skills
-    if (jsonData.skills && Array.isArray(jsonData.skills)) {
-      text += "SKILLS" + sectionSeparator;
-      jsonData.skills.forEach(skillGroup => {
-        if (skillGroup.category) {
-          text += skillGroup.category + ": ";
-        }
-        if (skillGroup.items && Array.isArray(skillGroup.items)) {
-          text += skillGroup.items.join(', ') + newline;
-        }
-      });
-      text += newline;
-    }
-
-    // Projects
-    text += this.formatSectionText("PROJECTS", jsonData.projects, (proj) => {
-      let entryText = "";
-      if (proj.name) entryText += proj.name + newline;
-      if (proj.description) entryText += proj.description + newline;
-      if (proj.technologies && Array.isArray(proj.technologies)) {
-        entryText += "Technologies: " + proj.technologies.join(', ') + newline;
-      }
-      return entryText;
-    });
-
-    // Achievements
-    if (jsonData.achievements && Array.isArray(jsonData.achievements)) {
-      text += "ACHIEVEMENTS" + sectionSeparator;
-      jsonData.achievements.forEach(achievement => {
-        text += bulletIndent + "• " + achievement + newline;
-      });
-      text += newline;
-    }
-
-    return text;
+    return SharedUtilities.convertJSONToText(jsonData);
   }
 
   /**
@@ -698,40 +596,31 @@ class FileHandlers {
   }
 
   /**
-   * Generate filename with timestamp
+   * Generate filename with timestamp using SharedUtilities
    */
   generateFilename() {
-    const now = new Date();
-    const timestamp = now.toISOString().slice(0, 19).replace(/[:]/g, '-');
-    return `tailored_resume_${timestamp}`;
+    return SharedUtilities.generateTimestampedFilename('tailored_resume', '').replace(/\.$/, '');
   }
 
   /**
-   * Get file extension from filename
+   * Get file extension from filename using SharedUtilities
    */
   getFileExtension(filename) {
-    return filename.slice((filename.lastIndexOf(".") - 1 >>> 0) + 2);
+    return SharedUtilities.getFileExtension(filename);
   }
 
   /**
-   * Validate file type
+   * Validate file type using SharedUtilities
    */
   isValidFileType(filename, allowedTypes) {
-    const extension = '.' + this.getFileExtension(filename).toLowerCase();
-    return allowedTypes.includes(extension);
+    return SharedUtilities.validateFileType(filename, allowedTypes);
   }
 
   /**
-   * Format file size for display
+   * Format file size for display using SharedUtilities
    */
   formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return SharedUtilities.formatFileSize(bytes);
   }
 }
 

@@ -2,6 +2,7 @@
 
 // Import utility modules
 try {
+  importScripts('utils/shared-utilities.js');
   importScripts('utils/storage-manager.js');
   importScripts('utils/unified-error-handler.js');
   importScripts('utils/simple-rate-limiter.js');
@@ -10,7 +11,7 @@ try {
   importScripts('utils/parallel-processor.js');
   importScripts('utils/resume-cache-optimizer.js');
   
-  console.log('✅ All required classes found');
+  console.log('✅ All required utility modules loaded');
 } catch (error) {
   console.error('❌ Failed to load utility modules:', error.message);
 }
@@ -29,7 +30,7 @@ const FIELD_CATEGORIES = {
 const MAX_CONCURRENT_FIELD_CALLS = 3;
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await StorageManager.setSettings({ theme: 'light', extractionMethod: 'standard' });
+  await StorageManager.setSettings({ theme: 'light', extractionMethod: 'ai' });
 });
 
 // === Refactored Job Description Extraction Functions ===
@@ -153,7 +154,7 @@ async function getFormFieldsFromActiveTab() {
 async function mapResumeToFormFields(apiKey, resumeJSON, formFields) {
     try {
         // Step 1: Generate resume hash for cache invalidation
-        const resumeHash = generateResumeHash(resumeJSON);
+        const resumeHash = generateResumeHashFromJSON(resumeJSON);
         
         // Step 2: Check cache first
         const cacheResults = await checkFieldCache(formFields, resumeHash);
@@ -215,16 +216,16 @@ function logFieldCategories(fieldBatches) {
     }
 }
 
-// Generate hash for resume to detect changes
-function generateResumeHash(resumeJSON) {
+// Generate hash for resume JSON to detect changes
+function generateResumeHashFromJSON(resumeJSON) {
     const staticData = {
-        personal: resumeJSON.contact,
+        contact: resumeJSON.contact,
         // Exclude dynamic fields that change per job
     };
     return btoa(JSON.stringify(staticData)).substring(0, 16);
 }
 
-// Check cache for existing field mappings
+// Check cache for existing field mappings using StorageManager
 async function checkFieldCache(formFields, resumeHash) {
     try {
         const cache = await StorageManager.getValidCache(FIELD_CACHE_KEY) || {};
@@ -234,7 +235,7 @@ async function checkFieldCache(formFields, resumeHash) {
             const fieldKey = generateFieldCacheKey(field);
             const entry = cache[fieldKey];
             
-            if (entry && entry.resumeHash === resumeHash && !isCacheExpired(entry.timestamp)) {
+            if (entry && entry.resumeHash === resumeHash) {
                 results[field.id || field.name] = entry.mapping;
             }
         }
@@ -252,12 +253,7 @@ function generateFieldCacheKey(field) {
     return btoa(identifier).substring(0, 12);
 }
 
-// Check if cache entry is expired
-function isCacheExpired(timestamp) {
-    const now = Date.now();
-    const expiryMs = CACHE_EXPIRY_HOURS * 60 * 60 * 1000;
-    return (now - timestamp) > expiryMs;
-}
+// Cache expiration check moved to StorageManager utility
 
 // Batch fields by priority for processing
 function batchFieldsByPriority(fields) {
@@ -342,14 +338,7 @@ async function mapSingleFieldWithAI(field, apiKey, resumeJSON) {
     }
 }
 
-// Create compact resume data for individual field processing
-function createCompactResumeData(resumeJSON) {
-    return `Name: ${resumeJSON.contact?.name || 'N/A'}
-Email: ${resumeJSON.contact?.email || 'N/A'}
-Phone: ${resumeJSON.contact?.phone || 'N/A'}
-LinkedIn: ${resumeJSON.contact?.linkedin || 'N/A'}
-Summary: ${resumeJSON.summary || 'N/A'}`;
-}
+// Compact resume data creation moved to GeminiAPIClient utility
 
 // Apply pattern matching fallback for failed AI calls
 async function applyPatternFallback(failedFields, resumeJSON) {
@@ -360,16 +349,19 @@ async function applyPatternFallback(failedFields, resumeJSON) {
     return await basicPatternMapping(resumeJSON, failedFields);
 }
 
-// Cache successful field mappings
+// Cache successful field mappings using StorageManager
 async function cacheFieldMappings(mappings, resumeHash) {
     try {
-        const cache = await StorageManager.getCache(FIELD_CACHE_KEY) || {};
+        // Get existing valid cache or start with empty object
+        const existingCache = await StorageManager.getValidCache(FIELD_CACHE_KEY) || {};
         
         for (const mapping of mappings) {
             if (mapping && mapping.fieldId) {
-                // Find original field info (this is simplified)
-                const fieldKey = mapping.fieldId; // Simplified key generation
-                cache[fieldKey] = {
+                const fieldKey = generateFieldCacheKey({ 
+                    id: mapping.fieldId, 
+                    name: mapping.fieldId 
+                });
+                existingCache[fieldKey] = {
                     mapping: mapping,
                     resumeHash: resumeHash,
                     timestamp: Date.now()
@@ -377,8 +369,8 @@ async function cacheFieldMappings(mappings, resumeHash) {
             }
         }
         
-        await StorageManager.setCache(FIELD_CACHE_KEY, cache, CACHE_EXPIRY_HOURS);
-        console.log(`💾 Cached ${mappings.length} field mappings with 24h expiry`);
+        await StorageManager.setCache(FIELD_CACHE_KEY, existingCache, CACHE_EXPIRY_HOURS);
+        console.log(`💾 Cached ${mappings.length} field mappings with ${CACHE_EXPIRY_HOURS}h expiry using StorageManager`);
     } catch (error) {
         console.warn("Failed to cache field mappings:", error);
     }
@@ -444,75 +436,14 @@ async function fillFormFieldsOnPage(fieldMappings) {
     );
 }
 
-// === Helper function to estimate word and character count in the resume JSON ===
+// === Helper function to estimate word and character count using SharedUtilities ===
 function countResumeStats(resumeJSON) {
-    let wordCount = 0;
-    let charCount = 0;
-    
-    // Helper to count text
-    function countText(text) {
-        if (!text) return;
-        const trimmed = text.trim();
-        charCount += trimmed.length;
-        wordCount += trimmed.split(/\s+/).filter(Boolean).length;
-    }
-    
-    // Count summary
-    if (resumeJSON.summary) {
-        countText(resumeJSON.summary);
-    }
-    
-    // Count experience
-    if (resumeJSON.experience && Array.isArray(resumeJSON.experience)) {
-        resumeJSON.experience.forEach(exp => {
-            countText(exp.title);
-            countText(exp.company);
-            countText(exp.location);
-            countText(exp.dates);
-            if (exp.bullets && Array.isArray(exp.bullets)) {
-                exp.bullets.forEach(bullet => countText(bullet));
-            }
-        });
-    }
-    
-    // Count education
-    if (resumeJSON.education && Array.isArray(resumeJSON.education)) {
-        resumeJSON.education.forEach(edu => {
-            countText(edu.institution);
-            countText(edu.degree);
-            countText(edu.location);
-            countText(edu.dates);
-            countText(edu.details);
-        });
-    }
-    
-    // Count skills
-    if (resumeJSON.skills && Array.isArray(resumeJSON.skills)) {
-        resumeJSON.skills.forEach(skill => {
-            countText(skill.category);
-            if (skill.items && Array.isArray(skill.items)) {
-                skill.items.forEach(item => countText(item));
-            }
-        });
-    }
-    
-    // Count projects
-    if (resumeJSON.projects && Array.isArray(resumeJSON.projects)) {
-        resumeJSON.projects.forEach(proj => {
-            countText(proj.name);
-            countText(proj.description);
-            if (proj.technologies && Array.isArray(proj.technologies)) {
-                proj.technologies.forEach(tech => countText(tech));
-            }
-        });
-    }
-    
-    // Count achievements
-    if (resumeJSON.achievements && Array.isArray(resumeJSON.achievements)) {
-        resumeJSON.achievements.forEach(achievement => countText(achievement));
-    }
-    
-    return { wordCount, charCount };
+    // Convert resume to text and count using SharedUtilities
+    const resumeText = SharedUtilities.convertJSONToText(resumeJSON);
+    return {
+        wordCount: SharedUtilities.countWords(resumeText),
+        charCount: SharedUtilities.countCharacters(resumeText)
+    };
 }
 
 // === NEW Async Handler Function for Create Tailored Resume (JSON based) ===

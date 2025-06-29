@@ -160,7 +160,7 @@ class ParallelProcessor {
    * Utility delay function
    */
   delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return SharedUtilities.delay(ms);
   }
 
   /**

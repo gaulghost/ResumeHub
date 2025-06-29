@@ -288,7 +288,7 @@ Value:`;
     }
   }
 
-  // Helper method to create compact resume data
+  // Helper method to create compact resume data for field mapping
   createCompactResumeData(resumeJSON) {
     return `Name: ${resumeJSON.contact?.name || 'N/A'}
 Email: ${resumeJSON.contact?.email || 'N/A'}

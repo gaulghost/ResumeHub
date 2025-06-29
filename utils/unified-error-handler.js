@@ -388,7 +388,7 @@ class UnifiedErrorHandler {
    * Delay utility for retry mechanism
    */
   static delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return SharedUtilities.delay(ms);
   }
 
   /**

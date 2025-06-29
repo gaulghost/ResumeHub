@@ -114,12 +114,8 @@ class StateManager {
     this.setState('storedResume.content', content);
     this.setState('storedResume.mimeType', mimeType);
     
-    // Save to Chrome storage
-    chrome.storage.local.set({
-      resumeFilename: filename,
-      resumeContent: content,
-      resumeMimeType: mimeType
-    });
+    // Save to Chrome storage using StorageManager
+    StorageManager.setResume(filename, content, mimeType);
   }
 
   getResume() {
@@ -131,8 +127,8 @@ class StateManager {
     this.setState('storedResume.content', null);
     this.setState('storedResume.mimeType', null);
     
-    // Clear from Chrome storage
-    chrome.storage.local.remove(['resumeFilename', 'resumeContent', 'resumeMimeType']);
+    // Clear from Chrome storage using StorageManager
+    StorageManager.clearResume();
   }
 
   hasResume() {
@@ -146,11 +142,11 @@ class StateManager {
   setApiToken(token) {
     this.setState('apiToken', token);
     
-    // Save to Chrome storage
+    // Save to Chrome storage using StorageManager
     if (token) {
-      chrome.storage.local.set({ apiToken: token });
+      StorageManager.setAPIToken(token);
     } else {
-      chrome.storage.local.remove(['apiToken']);
+      StorageManager.clearAPIToken();
     }
   }
 
@@ -188,8 +184,8 @@ class StateManager {
   setExtractionMethod(method) {
     this.setState('selectedExtractionMethod', method);
     
-    // Save to Chrome storage
-    chrome.storage.sync.set({ extractionMethod: method });
+    // Save to Chrome storage using StorageManager
+    StorageManager.setSetting('extractionMethod', method);
   }
 
   getExtractionMethod() {
@@ -199,8 +195,8 @@ class StateManager {
   setTheme(theme) {
     this.setState('currentTheme', theme);
     
-    // Save to Chrome storage
-    chrome.storage.sync.set({ theme: theme });
+    // Save to Chrome storage using StorageManager
+    StorageManager.setSetting('theme', theme);
   }
 
   getTheme() {
@@ -227,44 +223,45 @@ class StateManager {
   }
 
   /**
-   * Load state from Chrome storage
+   * Load state from Chrome storage using StorageManager
    */
   async loadFromStorage() {
     try {
-      // Load sync storage (preferences)
-      const syncResult = await new Promise((resolve) => {
-        chrome.storage.sync.get(['theme', 'extractionMethod'], resolve);
-      });
+      // Load settings using StorageManager
+      const settings = await StorageManager.getSettings();
       
-      // Load local storage (data)
-      const localResult = await new Promise((resolve) => {
-        chrome.storage.local.get(['resumeFilename', 'resumeContent', 'resumeMimeType', 'apiToken'], resolve);
-      });
+      // Load resume data using StorageManager
+      const resumeData = await StorageManager.getResume();
       
-      // Apply sync settings
-      if (syncResult.theme) {
-        this.setState('currentTheme', syncResult.theme);
+      // Load API token using StorageManager
+      const apiToken = await StorageManager.getAPIToken();
+      
+      // Apply settings
+      if (settings.theme) {
+        this.setState('currentTheme', settings.theme);
       }
       
-      if (syncResult.extractionMethod) {
-        this.setState('selectedExtractionMethod', syncResult.extractionMethod);
+      if (settings.extractionMethod) {
+        this.setState('selectedExtractionMethod', settings.extractionMethod);
       }
       
-      // Apply local data
-      if (localResult.resumeFilename && localResult.resumeContent && localResult.resumeMimeType) {
-        this.setState('storedResume.filename', localResult.resumeFilename);
-        this.setState('storedResume.content', localResult.resumeContent);
-        this.setState('storedResume.mimeType', localResult.resumeMimeType);
+      // Apply resume data
+      if (resumeData.filename && resumeData.content && resumeData.mimeType) {
+        this.setState('storedResume.filename', resumeData.filename);
+        this.setState('storedResume.content', resumeData.content);
+        this.setState('storedResume.mimeType', resumeData.mimeType);
       }
       
-      if (localResult.apiToken) {
-        this.setState('apiToken', localResult.apiToken);
+      // Apply API token
+      if (apiToken) {
+        this.setState('apiToken', apiToken);
       }
       
+      console.log('✅ State loaded from Chrome storage using StorageManager');
       return true;
       
     } catch (error) {
-      console.error('Error loading state from storage:', error);
+      console.error('❌ Failed to load state from storage:', error);
       return false;
     }
   }
