@@ -73,7 +73,12 @@ Analyze the attached resume file content. Extract the information and structure 
 For the "skills" section, group related skills into logical categories (e.g., "Programming Languages", "Frameworks & Libraries", "Databases", "Tools", "Cloud Platforms", "AI/ML") and represent it as an array of objects, each with a "category" name and an array of "items".
 Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
 
-**IMPORTANT: The final resume must comply with a 570 word / 3650 character limit.** Focus on capturing the most relevant content while staying within these constraints.
+**IMPORTANT: The final resume must comply with a 500 word / 3000 character limit.** Focus on capturing the most relevant content while staying within these constraints.
+
+**SPACE OPTIMIZATION GUIDELINES:**
+- For skills: Limit to 4-5 categories maximum, with 3-6 items per category
+- Consolidate similar skills and remove redundant entries
+- Prioritize breadth over exhaustive lists
 
 **Target JSON Structure:**
 \`\`\`json
@@ -165,11 +170,14 @@ Analyze the following original resume section (\`${sectionType}\`) and the provi
 - Quantify achievements where possible based *only* on the original section data.
 - Maintain the original meaning and key information.
 - **Strictly do not add any skills or experiences not present in the original section data.**
-- **IMPORTANT: The final resume must not exceed 570 words or 3650 characters in total. This is a hard limit.**
+- **IMPORTANT: The final resume must not exceed 570 words or 3500 characters in total. This is a hard limit.**
+- **SPACE OPTIMIZATION: You may skip less relevant skills or consolidate similar skills to save space and stay within limits.**
 - Prioritize the most relevant content to the job description and remove less important details.
 ${sectionType === 'skills' ? 
-`- **Skills Focus**: ONLY include skills directly relevant to the job description. Remove any skills not mentioned in or related to the position requirements. Displaying too many skills dilutes impact, so focus on quality over quantity.
-- If needed, regroup skills into more job-relevant categories.` 
+`- **Skills Focus**: ONLY include skills directly relevant to the job description. Remove any skills not mentioned in or related to the position requirements.
+- **Aggressive Space Saving**: Skip entire skill categories if not relevant. Consolidate similar skills into single entries.
+- **Quality over Quantity**: Aim for 3-5 skill categories maximum, with 3-6 items per category.
+- If needed, regroup skills into more job-relevant categories and eliminate redundant entries.` 
 : ''}
 - Be concise and impactful - focus on quality over quantity.
 - Output the result as a JSON object that matches the structure of the original section data provided. Output *only* the valid JSON object.

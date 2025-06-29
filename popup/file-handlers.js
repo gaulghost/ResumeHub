@@ -243,22 +243,22 @@ class FileHandlers {
   generatePdfDefinition(jsonData) {
     console.log('Generating PDF from resume data...');
     
-    // Updated color scheme to match the professional design
+    // Aggressively optimized for maximum space utilization
     const accentColor = '#4285F4'; // Modern blue accent
     const greyColor = '#6c757d';   // Grey color for dates/secondary text
     const lineColor = '#e0e0e0';   // Light grey for separator lines
-    const headingFontSize = 14;
-    const sectionFontSize = 12;
-    const bodyFontSize = 10;
-    const smallFontSize = 9;
+    const headingFontSize = 12;    // Further reduced from 13
+    const sectionFontSize = 10;    // Further reduced from 11
+    const bodyFontSize = 9.5;      // Slightly reduced but still readable
+    const smallFontSize = 8.5;
 
     const content = [];
     
     // --- Helper function to add a horizontal line ---
     const addLineSeparator = () => {
       content.push({
-        canvas: [{ type: 'line', x1: 0, y1: 2, x2: 515, y2: 2, lineWidth: 0.5, lineColor: lineColor }],
-        margin: [0, 2, 0, 8] // Margin below line
+        canvas: [{ type: 'line', x1: 0, y1: 1, x2: 515, y2: 1, lineWidth: 0.5, lineColor: lineColor }],
+        margin: [0, 0, 0, 2] // Further reduced margin below line
       });
     };
 
@@ -271,42 +271,28 @@ class FileHandlers {
       // Job Title (role)
       content.push({ text: 'SOFTWARE DEVELOPER', style: 'jobTitleHeader', color: accentColor });
 
-      // Contact info line with proper spacing and alignment
-      const contactParts = [];
+      // Consolidate ALL contact info into a single line for maximum space efficiency
+      const allContactParts = [];
       
-      if (jsonData.contact.phone) contactParts.push(jsonData.contact.phone);
-      if (jsonData.contact.email) contactParts.push({ text: jsonData.contact.email, link: `mailto:${jsonData.contact.email}`, style: 'linkPlain' });
+      if (jsonData.contact.phone) allContactParts.push(jsonData.contact.phone);
+      if (jsonData.contact.email) allContactParts.push({ text: jsonData.contact.email, link: `mailto:${jsonData.contact.email}`, style: 'linkPlain' });
+      if (jsonData.contact.linkedin) allContactParts.push({ text: 'LinkedIn', link: jsonData.contact.linkedin, style: 'linkPlain' });
+      if (jsonData.contact.github) allContactParts.push({ text: 'GitHub', link: jsonData.contact.github, style: 'linkPlain' });
+      if (jsonData.contact.portfolio) allContactParts.push({ text: 'Portfolio', link: jsonData.contact.portfolio, style: 'linkPlain' });
       
-      // Improved separator handling
-      if (contactParts.length > 0) {
-        const contactLine = [];
-        contactParts.forEach((part, index) => {
-          contactLine.push(part);
-          if (index < contactParts.length - 1) {
-            contactLine.push({ text: ' | ', color: greyColor, margin: [2, 0] });
+      // Create single contact line with all information
+      if (allContactParts.length > 0) {
+        const singleContactLine = [];
+        allContactParts.forEach((part, index) => {
+          singleContactLine.push(part);
+          if (index < allContactParts.length - 1) {
+            singleContactLine.push({ text: ' | ', color: greyColor, margin: [1, 0] });
           }
         });
-        content.push({ text: contactLine, style: 'contactInfo', alignment: 'center' });
+        content.push({ text: singleContactLine, style: 'contactInfo', alignment: 'center' });
       }
       
-      // Add second line of contact info with LinkedIn and other links
-      const secondLineParts = [];
-      if (jsonData.contact.linkedin) secondLineParts.push({ text: 'LinkedIn', link: jsonData.contact.linkedin, style: 'linkPlain' });
-      if (jsonData.contact.github) secondLineParts.push({ text: 'GitHub', link: jsonData.contact.github, style: 'linkPlain' });
-      if (jsonData.contact.portfolio) secondLineParts.push({ text: 'Portfolio', link: jsonData.contact.portfolio, style: 'linkPlain' });
-      
-      if (secondLineParts.length > 0) {
-        const secondLine = [];
-        secondLineParts.forEach((part, index) => {
-          secondLine.push(part);
-          if (index < secondLineParts.length - 1) {
-            secondLine.push({ text: ' | ', color: greyColor, margin: [2, 0] });
-          }
-        });
-        content.push({ text: secondLine, style: 'contactInfo', alignment: 'center' });
-      }
-      
-      content.push({ text: ' ', margin: [0, 10] }); // Extra space after header
+      content.push({ text: ' ', margin: [0, 3] }); // Further reduced space after header
     }
 
     // --- 2. Education Section ---
@@ -337,7 +323,7 @@ class FileHandlers {
           content.push({ text: edu.details, style: 'details' });
         }
         
-        content.push({ text: ' ', margin: [0, 5] }); // Space between education entries
+        content.push({ text: ' ', margin: [0, 1] }); // Minimal space between education entries
       });
     }
 
@@ -355,12 +341,12 @@ class FileHandlers {
               { width: '*', text: skillCategory.items.join(' | '), style: 'skillItems' }
             ],
             columnGap: 10,
-            margin: [0, 1, 0, 4]
+            margin: [0, 0, 0, 1] // Further reduced from [0, 0, 0, 2]
           });
         }
       });
       content.push(...skillsContent);
-      content.push({ text: ' ', margin: [0, 5] });
+      content.push({ text: ' ', margin: [0, 1] }); // Minimal section spacing
     }
 
     // --- 4. Work Experience Section ---
@@ -386,13 +372,13 @@ class FileHandlers {
         // Bullets with proper indentation and spacing
         if (exp.bullets && exp.bullets.length > 0) {
           content.push({ 
-            ul: exp.bullets.map(bullet => ({text: bullet, margin: [0, 1]})),
+            ul: exp.bullets.map(bullet => ({text: bullet, margin: [0, 0.2]})), // Further reduced from [0, 0.5]
             style: 'list',
-            margin: [0, 3, 0, 0]
+            margin: [0, 1, 0, 0]  // Further reduced from [0, 2, 0, 0]
           });
         }
         
-        content.push({ text: ' ', margin: [0, 8] }); // Space between experience entries
+        content.push({ text: ' ', margin: [0, 0] }); // Zero space between experience entries
       });
     }
 
@@ -415,7 +401,7 @@ class FileHandlers {
 
         // Project description
         if (proj.description) {
-          content.push({ text: proj.description, style: 'paragraph', margin: [0, 2, 0, 3] });
+          content.push({ text: proj.description, style: 'paragraph', margin: [0, 0, 0, 1] }); // Further reduced margins
         }
         
         // Technologies used
@@ -425,11 +411,11 @@ class FileHandlers {
               {text: 'Technologies used: ', style: 'techLabel', italics: true, color: greyColor},
               {text: proj.technologies.join(', '), style: 'details'}
             ],
-            margin: [0, 0, 0, 3]
+            margin: [0, 0, 0, 1]  // Further reduced from 2
           });
         }
         
-        content.push({ text: ' ', margin: [0, 5] }); // Space between projects
+        content.push({ text: ' ', margin: [0, 0] }); // Zero space between projects
       });
     }
 
@@ -439,13 +425,13 @@ class FileHandlers {
       addLineSeparator();
       
       content.push({ 
-        ul: jsonData.achievements.map(achievement => ({text: achievement, margin: [0, 1]})),
+        ul: jsonData.achievements.map(achievement => ({text: achievement, margin: [0, 0.2]})), // Further reduced from [0, 0.5]
         style: 'list',
         margin: [0, 0, 0, 0]
       });
-      
-      content.push({ text: ' ', margin: [0, 5] });
-    }
+              
+        content.push({ text: ' ', margin: [0, 1] }); // Minimal section spacing
+      }
 
     console.log('PDF content structure created successfully');
 
@@ -453,15 +439,15 @@ class FileHandlers {
       content: content,
       styles: {
         nameHeader: { 
-          fontSize: 28, 
+          fontSize: 20,  // Further reduced from 22 
           bold: true, 
           alignment: 'center', 
-          margin: [0, 0, 0, 4] 
+          margin: [0, 0, 0, 1]  // Further reduced from 2
         },
         jobTitleHeader: { 
-          fontSize: 16, 
+          fontSize: 12,  // Further reduced from 14
           alignment: 'center', 
-          margin: [0, 0, 0, 10], 
+          margin: [0, 0, 0, 4],  // Further reduced from 6
           color: accentColor 
         },
         contactInfo: { 
@@ -473,17 +459,17 @@ class FileHandlers {
         sectionHeader: { 
           fontSize: headingFontSize, 
           bold: true, 
-          margin: [0, 12, 0, 2]
+          margin: [0, 6, 0, 0]  // Further reduced from [0, 8, 0, 1]
         },
         itemTitle: { 
           fontSize: bodyFontSize + 1, 
           bold: true, 
-          margin: [0, 0, 0, 2] 
+          margin: [0, 0, 0, 1]  // Reduced from 2
         },
         itemSubtitle: { 
           fontSize: bodyFontSize, 
           italics: true, 
-          margin: [0, 0, 0, 2] 
+          margin: [0, 0, 0, 1]  // Reduced from 2
         },
         locationDate: { 
           fontSize: smallFontSize, 
@@ -491,17 +477,17 @@ class FileHandlers {
         },
         paragraph: { 
           fontSize: bodyFontSize, 
-          margin: [0, 2, 0, 3], 
-          lineHeight: 1.2 
+          margin: [0, 0, 0, 1],  // Further reduced from [0, 1, 0, 2]
+          lineHeight: 1.1        // Further reduced from 1.15 for maximum compression
         },
         list: { 
           fontSize: bodyFontSize, 
-          margin: [10, 0, 0, 5] 
+          margin: [8, 0, 0, 2]  // Further reduced from [10, 0, 0, 3]
         },
         details: { 
           fontSize: smallFontSize, 
           color: 'black', 
-          margin: [0, 0, 0, 2] 
+          margin: [0, 0, 0, 1]   // Reduced from 2
         },
         techLabel: {
           fontSize: smallFontSize,
@@ -552,10 +538,10 @@ class FileHandlers {
       defaultStyle: {
         font: 'Roboto',
         fontSize: bodyFontSize,
-        lineHeight: 1.2
+        lineHeight: 1.05  // Further reduced from 1.1 for maximum compression
       },
       pageSize: 'A4',
-      pageMargins: [40, 30, 40, 30] // [left, top, right, bottom]
+      pageMargins: [25, 20, 25, 20] // Further reduced margins: [left, top, right, bottom]
     };
   }
 
