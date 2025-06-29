@@ -137,8 +137,8 @@ class ResumeProcessor {
       this.uiManager.updateStatus(`${error.title}: ${error.message}`, 'error');
       
       // Add suggestions if available
-      if (window.EnhancedErrorHandler && error.errorType) {
-        const suggestions = EnhancedErrorHandler.getErrorSuggestions(error.errorType);
+              if (window.UnifiedErrorHandler && error.errorType) {
+            const suggestions = UnifiedErrorHandler.getErrorSuggestions(error.errorType);
         if (suggestions.length > 0) {
           console.log('💡 Suggestions:', suggestions);
         }

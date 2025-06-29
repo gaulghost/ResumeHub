@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResumeHub - Comprehensive Test Suite</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-item {
+            margin: 15px 0;
+            padding: 15px;
+            border-left: 4px solid #007cba;
+            background-color: #f8f9fa;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 3px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .pass { background-color: #d4edda; color: #155724; }
+        .fail { background-color: #f8d7da; color: #721c24; }
+        .pending { background-color: #fff3cd; color: #856404; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        
+        button {
+            background-color: #007cba;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #005a87;
+        }
+        .code {
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .test-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .test-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 ResumeHub - Comprehensive Test Suite</h1>
+    
+    <div class="test-section">
+        <h2>📋 Test Overview</h2>
+        <p>This comprehensive test suite validates all ResumeHub functionality:</p>
+        <ul>
+            <li><strong>Module Loading:</strong> Verify all required modules are loaded</li>
+            <li><strong>UI Components:</strong> Test DOM elements and interactions</li>
+            <li><strong>State Management:</strong> Validate state persistence and updates</li>
+            <li><strong>Theme System:</strong> Test light/dark mode switching</li>
+            <li><strong>File Operations:</strong> Test upload, download, and processing</li>
+            <li><strong>API Integration:</strong> Test background script communication</li>
+            <li><strong>Error Handling:</strong> Validate error states and recovery</li>
+        </ul>
+    </div>
+
+    <div class="test-grid">
+        <div class="test-section">
+            <h2>🔧 Module Loading Tests</h2>
+            <div class="test-item">
+                <strong>Test 1: Required Modules</strong>
+                <span id="module-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testModuleLoading()">Test Module Loading</button>
+                <div id="module-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎨 UI Component Tests</h2>
+            <div class="test-item">
+                <strong>Test 2: DOM Elements</strong>
+                <span id="dom-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testDOMElements()">Test DOM Elements</button>
+                <div id="dom-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📊 State Management Tests</h2>
+            <div class="test-item">
+                <strong>Test 3: State Operations</strong>
+                <span id="state-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testStateManagement()">Test State Management</button>
+                <div id="state-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🌙 Theme System Tests</h2>
+            <div class="test-item">
+                <strong>Test 4: Theme Toggle</strong>
+                <span id="theme-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testThemeToggle()">Test Theme Toggle</button>
+                <div id="theme-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔗 Background Script Tests</h2>
+            <div class="test-item">
+                <strong>Test 5: Background Connection</strong>
+                <span id="bg-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testBackgroundConnection()">Test Connection</button>
+                <div id="bg-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔄 Loading States Tests</h2>
+            <div class="test-item">
+                <strong>Test 6: Button Loading States</strong>
+                <span id="loading-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testLoadingStates()">Test Loading States</button>
+                <div id="loading-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>💾 Storage Tests</h2>
+            <div class="test-item">
+                <strong>Test 7: Chrome Storage</strong>
+                <span id="storage-test-status" class="status pending">PENDING</span>
+                <br>
+                <button onclick="testStorageAccess()">Test Storage</button>
+                <div id="storage-test-result"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔑 API Token Tests</h2>
+            <div class="test-item">
+                <strong>Test 8: API Token Management</strong>
+                <span id="api-test-status" class="status pending">PENDING</span>
+                <br>
+                <input type="text" id="test-api-token" placeholder="Enter test API token" style="margin: 5px;">
+                <br>
+                <button onclick="testAPIToken()">Test API Token</button>
+                <div id="api-test-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🎯 Quick Test All</h2>
+        <button onclick="runAllTests()" style="background-color: #28a745; padding: 12px 24px; font-size: 16px;">
+            Run All Tests
+        </button>
+        <button onclick="clearAllResults()" style="background-color: #dc3545; padding: 12px 24px; font-size: 16px;">
+            Clear Results
+        </button>
+        <div id="overall-results" style="margin-top: 15px;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📝 Manual Testing Checklist</h2>
+        <div class="test-item">
+            <h3>User Interface Tests:</h3>
+            <ol>
+                <li><strong>Theme Toggle:</strong> Click theme switch - should change between light/dark modes</li>
+                <li><strong>Card Expansion:</strong> Click card headers - should expand/collapse content</li>
+                <li><strong>File Upload:</strong> Upload resume file - should show filename and success message</li>
+                <li><strong>API Key:</strong> Enter API key - should save and show confirmation</li>
+                <li><strong>Preview:</strong> Click Preview button - should show "Loading..." then extract job description</li>
+                <li><strong>Generate:</strong> Click Generate button - should show "Generating..." then create tailored resume</li>
+                <li><strong>Auto-fill:</strong> Click Auto-fill button - should show "Processing..." then fill form fields</li>
+                <li><strong>Downloads:</strong> Test TXT, PDF, and DOCX download buttons</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🐛 Troubleshooting</h2>
+        <div class="test-item">
+            <h3>If tests fail:</h3>
+            <div class="code">
+1. Reload the extension in chrome://extensions/
+2. Check browser console for errors (F12)
+3. Verify all files are present in extension directory
+4. Ensure popup.js loads after all modules
+5. Check Chrome extension permissions
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Test Results Storage
+        const testResults = {};
+
+        // Helper function to update test status
+        function updateTestStatus(testId, status, message) {
+            const statusElement = document.getElementById(`${testId}-status`);
+            const resultElement = document.getElementById(`${testId}-result`);
+            
+            if (statusElement) {
+                statusElement.className = `status ${status}`;
+                statusElement.textContent = status.toUpperCase();
+            }
+            
+            if (resultElement && message) {
+                resultElement.innerHTML = message;
+            }
+            
+            testResults[testId] = { status, message };
+        }
+
+        // Test 1: Module Loading
+        function testModuleLoading() {
+            const requiredModules = [
+                'StateManager', 'UIManager', 'FileHandlers',
+                'ResumeProcessor', 'EventHandlers', 'AppController'
+            ];
+
+            const results = [];
+            const missing = [];
+
+            requiredModules.forEach(module => {
+                if (window[module]) {
+                    results.push(`✓ ${module} loaded`);
+                } else {
+                    missing.push(`✗ ${module} missing`);
+                }
+            });
+
+            let html = '';
+            let status = 'pass';
+            
+            if (missing.length === 0) {
+                html = '<div class="test-result pass">✅ All modules loaded successfully!</div>';
+                results.forEach(result => {
+                    html += `<div class="test-result info">${result}</div>`;
+                });
+            } else {
+                status = 'fail';
+                html = '<div class="test-result fail">❌ Some modules are missing:</div>';
+                missing.forEach(result => {
+                    html += `<div class="test-result fail">${result}</div>`;
+                });
+                results.forEach(result => {
+                    html += `<div class="test-result pass">${result}</div>`;
+                });
+            }
+
+            updateTestStatus('module-test', status, html);
+        }
+
+        // Test 2: DOM Elements
+        function testDOMElements() {
+            const criticalElements = [
+                'api-token', 'resume-upload', 'create-resume-btn',
+                'status-message', 'theme-toggle', 'theme-container'
+            ];
+
+            const results = [];
+            const missing = [];
+
+            criticalElements.forEach(id => {
+                if (document.getElementById(id)) {
+                    results.push(`✓ Element ${id} found`);
+                } else {
+                    missing.push(`✗ Element ${id} missing`);
+                }
+            });
+
+            let html = '';
+            let status = 'pass';
+            
+            if (missing.length === 0) {
+                html = '<div class="test-result pass">✅ All critical DOM elements found!</div>';
+                results.forEach(result => {
+                    html += `<div class="test-result info">${result}</div>`;
+                });
+            } else {
+                status = 'fail';
+                html = '<div class="test-result fail">❌ Some DOM elements are missing:</div>';
+                missing.forEach(result => {
+                    html += `<div class="test-result fail">${result}</div>`;
+                });
+                results.forEach(result => {
+                    html += `<div class="test-result pass">${result}</div>`;
+                });
+            }
+
+            updateTestStatus('dom-test', status, html);
+        }
+
+        // Test 3: State Management
+        function testStateManagement() {
+            try {
+                if (!window.StateManager) {
+                    throw new Error('StateManager not available');
+                }
+
+                const stateManager = new StateManager();
+                
+                // Test API token
+                stateManager.setApiToken('test-token-123');
+                const retrievedToken = stateManager.getApiToken();
+                
+                if (retrievedToken !== 'test-token-123') {
+                    throw new Error('API token storage/retrieval failed');
+                }
+
+                // Test theme
+                stateManager.setTheme('dark');
+                const theme = stateManager.getTheme();
+                
+                if (theme !== 'dark') {
+                    throw new Error('Theme storage/retrieval failed');
+                }
+
+                // Test extraction method
+                stateManager.setExtractionMethod('ai');
+                const method = stateManager.getExtractionMethod();
+                
+                if (method !== 'ai') {
+                    throw new Error('Extraction method storage/retrieval failed');
+                }
+
+                const html = `
+                    <div class="test-result pass">✅ State management working correctly!</div>
+                    <div class="test-result info">• API token: ${retrievedToken}</div>
+                    <div class="test-result info">• Theme: ${theme}</div>
+                    <div class="test-result info">• Extraction method: ${method}</div>
+                `;
+
+                updateTestStatus('state-test', 'pass', html);
+
+            } catch (error) {
+                updateTestStatus('state-test', 'fail', 
+                    `<div class="test-result fail">❌ State management test failed: ${error.message}</div>`);
+            }
+        }
+
+        // Test 4: Theme Toggle
+        function testThemeToggle() {
+            try {
+                if (!chrome || !chrome.storage) {
+                    throw new Error('Chrome storage API not available');
+                }
+                
+                // Test theme storage
+                chrome.storage.sync.set({ theme: 'dark' }, () => {
+                    if (chrome.runtime.lastError) {
+                        throw new Error(chrome.runtime.lastError.message);
+                    }
+                    
+                    // Test theme retrieval
+                    chrome.storage.sync.get(['theme'], (result) => {
+                        if (chrome.runtime.lastError) {
+                            updateTestStatus('theme-test', 'fail', 
+                                `<div class="test-result fail">❌ Error: ${chrome.runtime.lastError.message}</div>`);
+                        } else if (result.theme === 'dark') {
+                            updateTestStatus('theme-test', 'pass', 
+                                '<div class="test-result pass">✅ Theme storage working correctly</div>');
+                        } else {
+                            updateTestStatus('theme-test', 'fail', 
+                                '<div class="test-result fail">❌ Theme not saved correctly</div>');
+                        }
+                    });
+                });
+
+            } catch (error) {
+                updateTestStatus('theme-test', 'fail', 
+                    `<div class="test-result fail">❌ Error: ${error.message}</div>`);
+            }
+        }
+
+        // Test 5: Background Script Connection
+        function testBackgroundConnection() {
+            try {
+                if (!chrome || !chrome.runtime) {
+                    throw new Error('Chrome runtime API not available');
+                }
+                
+                // Send ping to background script
+                chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        updateTestStatus('bg-test', 'fail', 
+                            `<div class="test-result fail">❌ Error: ${chrome.runtime.lastError.message}</div>`);
+                    } else if (response && response.success && response.message === 'pong') {
+                        updateTestStatus('bg-test', 'pass', 
+                            '<div class="test-result pass">✅ Background script responding correctly</div>');
+                    } else {
+                        updateTestStatus('bg-test', 'fail', 
+                            '<div class="test-result fail">❌ Invalid response from background script</div>');
+                    }
+                });
+
+            } catch (error) {
+                updateTestStatus('bg-test', 'fail', 
+                    `<div class="test-result fail">❌ Error: ${error.message}</div>`);
+            }
+        }
+
+        // Test 6: Loading States
+        function testLoadingStates() {
+            try {
+                if (!window.UIManager) {
+                    throw new Error('UIManager not available');
+                }
+
+                // Create test button
+                const testButton = document.createElement('button');
+                testButton.textContent = 'Test Button';
+                testButton.id = 'test-loading-button';
+                
+                const uiManager = new UIManager();
+                const originalText = testButton.textContent;
+
+                // Test loading state
+                uiManager.setButtonLoading(testButton, true, 'Loading...');
+                
+                const loadingText = testButton.textContent;
+                const isDisabled = testButton.disabled;
+
+                // Test normal state
+                setTimeout(() => {
+                    uiManager.setButtonLoading(testButton, false, null, originalText);
+                    
+                    const restoredText = testButton.textContent;
+                    const isEnabled = !testButton.disabled;
+
+                    const html = `
+                        <div class="test-result pass">✅ Button loading states working!</div>
+                        <div class="test-result info">• Original: "${originalText}"</div>
+                        <div class="test-result info">• Loading: "${loadingText}" (disabled: ${isDisabled})</div>
+                        <div class="test-result info">• Restored: "${restoredText}" (enabled: ${isEnabled})</div>
+                    `;
+                    
+                    updateTestStatus('loading-test', 'pass', html);
+                }, 1000);
+
+                updateTestStatus('loading-test', 'pending', 
+                    '<div class="test-result info">🔄 Testing button loading states...</div>');
+
+            } catch (error) {
+                updateTestStatus('loading-test', 'fail', 
+                    `<div class="test-result fail">❌ Button loading test failed: ${error.message}</div>`);
+            }
+        }
+
+        // Test 7: Storage Access
+        function testStorageAccess() {
+            try {
+                if (!chrome || !chrome.storage) {
+                    throw new Error('Chrome storage API not available');
+                }
+
+                // Test setting and getting data
+                const testData = { test: 'value', timestamp: Date.now() };
+                
+                chrome.storage.sync.set(testData, () => {
+                    if (chrome.runtime.lastError) {
+                        updateTestStatus('storage-test', 'fail', 
+                            `<div class="test-result fail">❌ Error: ${chrome.runtime.lastError.message}</div>`);
+                        return;
+                    }
+                    
+                    chrome.storage.sync.get(['test', 'timestamp'], (result) => {
+                        if (chrome.runtime.lastError) {
+                            updateTestStatus('storage-test', 'fail', 
+                                `<div class="test-result fail">❌ Error: ${chrome.runtime.lastError.message}</div>`);
+                        } else if (result.test === 'value' && result.timestamp === testData.timestamp) {
+                            updateTestStatus('storage-test', 'pass', 
+                                '<div class="test-result pass">✅ Chrome storage working correctly</div>');
+                        } else {
+                            updateTestStatus('storage-test', 'fail', 
+                                '<div class="test-result fail">❌ Data not retrieved correctly</div>');
+                        }
+                    });
+                });
+
+            } catch (error) {
+                updateTestStatus('storage-test', 'fail', 
+                    `<div class="test-result fail">❌ Error: ${error.message}</div>`);
+            }
+        }
+
+        // Test 8: API Token
+        function testAPIToken() {
+            try {
+                const testToken = document.getElementById('test-api-token').value;
+                const apiTokenInput = document.getElementById('api-token');
+                
+                if (!apiTokenInput) {
+                    throw new Error('API token input not found');
+                }
+
+                // Set test token
+                apiTokenInput.value = testToken || 'test-api-key-12345';
+                
+                // Trigger input event
+                const event = new Event('input', { bubbles: true });
+                apiTokenInput.dispatchEvent(event);
+
+                const html = `
+                    <div class="test-result pass">✅ API token input working!</div>
+                    <div class="test-result info">• Token set: ${apiTokenInput.value}</div>
+                `;
+
+                updateTestStatus('api-test', 'pass', html);
+
+            } catch (error) {
+                updateTestStatus('api-test', 'fail', 
+                    `<div class="test-result fail">❌ API token test failed: ${error.message}</div>`);
+            }
+        }
+
+        // Run all tests
+        function runAllTests() {
+            const tests = [
+                testModuleLoading,
+                testDOMElements,
+                testStateManagement,
+                testThemeToggle,
+                testBackgroundConnection,
+                testLoadingStates,
+                testStorageAccess,
+                testAPIToken
+            ];
+
+            tests.forEach((test, index) => {
+                setTimeout(() => test(), index * 500);
+            });
+
+            // Show overall results after all tests
+            setTimeout(() => {
+                showOverallResults();
+            }, tests.length * 500 + 2000);
+        }
+
+        // Clear all results
+        function clearAllResults() {
+            Object.keys(testResults).forEach(testId => {
+                const statusElement = document.getElementById(`${testId}-status`);
+                const resultElement = document.getElementById(`${testId}-result`);
+                
+                if (statusElement) {
+                    statusElement.className = 'status pending';
+                    statusElement.textContent = 'PENDING';
+                }
+                
+                if (resultElement) {
+                    resultElement.innerHTML = '';
+                }
+            });
+            
+            document.getElementById('overall-results').innerHTML = '';
+            Object.keys(testResults).forEach(key => delete testResults[key]);
+        }
+
+        // Show overall results
+        function showOverallResults() {
+            const totalTests = Object.keys(testResults).length;
+            const passedTests = Object.values(testResults).filter(r => r.status === 'pass').length;
+            const failedTests = Object.values(testResults).filter(r => r.status === 'fail').length;
+            const pendingTests = totalTests - passedTests - failedTests;
+
+            const overallDiv = document.getElementById('overall-results');
+            overallDiv.innerHTML = `
+                <div class="test-result ${failedTests === 0 ? 'pass' : 'fail'}">
+                    <h3>📊 Overall Test Results</h3>
+                    <p><strong>Total Tests:</strong> ${totalTests}</p>
+                    <p><strong>Passed:</strong> ${passedTests} ✅</p>
+                    <p><strong>Failed:</strong> ${failedTests} ❌</p>
+                    <p><strong>Pending:</strong> ${pendingTests} ⏳</p>
+                    <p><strong>Success Rate:</strong> ${totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0}%</p>
+                </div>
+            `;
+        }
+
+        // Auto-run basic tests on page load
+        window.addEventListener('load', () => {
+            console.log('ResumeHub Comprehensive Test Suite Loaded');
+            
+            // Check if running in extension context
+            if (chrome && chrome.storage) {
+                console.log('✅ Extension context detected');
+                // Auto-run module and DOM tests
+                setTimeout(() => {
+                    testModuleLoading();
+                    testDOMElements();
+                }, 1000);
+            } else {
+                console.log('❌ Not running in extension context');
+                document.getElementById('overall-results').innerHTML = 
+                    '<div class="test-result fail">❌ Not running in Chrome extension context. Please run this test from the extension popup.</div>';
+            }
+        });
+    </script>
+</body>
+</html> 

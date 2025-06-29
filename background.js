@@ -3,12 +3,12 @@
 // Import utility modules
 try {
   importScripts('utils/storage-manager.js');
-  importScripts('utils/error-handler.js');
+  importScripts('utils/unified-error-handler.js');
+  importScripts('utils/simple-rate-limiter.js');
   importScripts('utils/script-injector.js');
   importScripts('utils/api-client.js');
   importScripts('utils/parallel-processor.js');
   importScripts('utils/resume-cache-optimizer.js');
-  importScripts('utils/enhanced-error-handler.js');
   
   console.log('✅ All required classes found');
 } catch (error) {
@@ -141,7 +141,7 @@ async function handleAutoFillForm(request, sendResponse, listenerId) {
 
 async function getFormFieldsFromActiveTab() {
     console.log("Getting form fields from active tab...");
-    return await ErrorHandler.safeChromeOperation(
+    return await UnifiedErrorHandler.safeChromeOperation(
         () => ScriptInjector.getFormFields(),
         'form field extraction'
     );
@@ -321,7 +321,7 @@ async function mapSingleFieldWithAI(field, apiKey, resumeJSON) {
     console.log(`🔍 Fetching details for: ${fieldDisplayName} (${field.name || field.id})`);
     
     try {
-        const result = await ErrorHandler.safeAPICall(async () => {
+        const result = await UnifiedErrorHandler.safeAPICall(async () => {
             const apiClient = new GeminiAPIClient(apiKey);
             return await apiClient.mapFieldToResume(field, resumeJSON);
         }, `field mapping for ${field.name || field.id}`);
@@ -438,7 +438,7 @@ async function basicPatternMapping(resumeJSON, formFields) {
 
 // Function to fill form fields on the page
 async function fillFormFieldsOnPage(fieldMappings) {
-    return await ErrorHandler.safeChromeOperation(
+    return await UnifiedErrorHandler.safeChromeOperation(
         () => ScriptInjector.fillFormFields(fieldMappings),
         'form field filling'
     );

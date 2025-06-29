@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResumeHub - Manual Testing Guide</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+        }
+        .guide-section {
+            background: white;
+            margin: 20px 0;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-step {
+            margin: 15px 0;
+            padding: 15px;
+            border-left: 4px solid #28a745;
+            background-color: #f8f9fa;
+        }
+        .warning-step {
+            border-left-color: #ffc107;
+            background-color: #fff3cd;
+        }
+        .error-step {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .checklist {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .checklist li {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            position: relative;
+            padding-left: 40px;
+        }
+        .checklist li::before {
+            content: "☐";
+            position: absolute;
+            left: 15px;
+            font-size: 16px;
+            color: #007cba;
+        }
+        .code-block {
+            background-color: #f1f1f1;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .expected-result {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .troubleshooting {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 10px;
+            font-size: 12px;
+        }
+        .status-pass { background-color: #d4edda; color: #155724; }
+        .status-fail { background-color: #f8d7da; color: #721c24; }
+        .status-warning { background-color: #fff3cd; color: #856404; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        @media (max-width: 768px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>📋 ResumeHub - Manual Testing Guide</h1>
+    
+    <div class="guide-section">
+        <h2>🎯 Testing Overview</h2>
+        <p>This guide provides comprehensive manual testing procedures for ResumeHub extension functionality. Follow each section step-by-step to validate all features work correctly.</p>
+        
+        <div class="test-step">
+            <strong>Prerequisites:</strong>
+            <ul>
+                <li>Chrome browser with ResumeHub extension installed</li>
+                <li>Valid Google Gemini API key</li>
+                <li>Sample resume file (PDF, DOC, DOCX, or TXT)</li>
+                <li>Job posting webpage for testing</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🔧 Pre-Testing Setup</h2>
+        
+        <div class="test-step">
+            <h3>Step 1: Extension Installation Verification</h3>
+            <ol>
+                <li>Navigate to <code>chrome://extensions/</code></li>
+                <li>Verify ResumeHub extension is enabled</li>
+                <li>Click the extension icon in the toolbar</li>
+                <li>Popup should open without errors</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Popup opens showing all interface cards (API Key, Resume Upload, etc.)
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>Step 2: Console Monitoring Setup</h3>
+            <ol>
+                <li>Open Chrome DevTools (F12)</li>
+                <li>Go to Console tab</li>
+                <li>Clear console and monitor for errors during testing</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> No error messages in console during normal operation
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🎨 User Interface Testing</h2>
+        
+        <div class="feature-grid">
+            <div class="test-step">
+                <h3>Theme Toggle Test</h3>
+                <ol>
+                    <li>Locate theme toggle switch in header</li>
+                    <li>Click to switch from light to dark mode</li>
+                    <li>Verify background and text colors change</li>
+                    <li>Click again to switch back to light mode</li>
+                    <li>Reload extension popup</li>
+                    <li>Verify theme preference is saved</li>
+                </ol>
+                <div class="expected-result">
+                    <strong>Expected:</strong> Immediate theme change with persistent preference
+                </div>
+            </div>
+
+            <div class="test-step">
+                <h3>Card Expansion Test</h3>
+                <ol>
+                    <li>Click on each card header (API Key, Resume Upload, etc.)</li>
+                    <li>Verify cards expand and collapse</li>
+                    <li>Test clicking toggle arrows</li>
+                    <li>Verify smooth animation</li>
+                </ol>
+                <div class="expected-result">
+                    <strong>Expected:</strong> Cards expand/collapse with smooth animation
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🔑 API Key Management Testing</h2>
+        
+        <div class="test-step">
+            <h3>API Key Input and Validation</h3>
+            <ol>
+                <li>Click on "API Key Configuration" card to expand</li>
+                <li>Enter a valid Google Gemini API key</li>
+                <li>Press Tab or click outside input field</li>
+                <li>Verify "Saved" status message appears</li>
+                <li>Verify card collapses automatically</li>
+                <li>Reload popup and verify key is remembered</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Green "Saved" message, card auto-collapse, persistent storage
+            </div>
+        </div>
+
+        <div class="test-step warning-step">
+            <h3>Invalid API Key Handling</h3>
+            <ol>
+                <li>Enter an invalid or empty API key</li>
+                <li>Try to use features requiring API key</li>
+                <li>Verify appropriate error messages</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Clear error messages about API key requirement
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>📄 Resume Upload Testing</h2>
+        
+        <div class="test-step">
+            <h3>File Upload Process</h3>
+            <ol>
+                <li>Click on "Resume Upload" card to expand</li>
+                <li>Click "Choose File" button</li>
+                <li>Select a resume file (PDF, DOC, DOCX, or TXT)</li>
+                <li>Verify file name appears</li>
+                <li>Verify "Using: [filename]" status message</li>
+                <li>Test "Clear Resume" button</li>
+                <li>Test "Download Original" button</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> File name display, status message, working clear/download buttons
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>Drag and Drop Upload</h3>
+            <ol>
+                <li>Drag a resume file over the resume upload card</li>
+                <li>Verify visual feedback (highlight/border change)</li>
+                <li>Drop the file</li>
+                <li>Verify file is processed same as manual upload</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Visual drag feedback and successful file processing
+            </div>
+        </div>
+
+        <div class="test-step warning-step">
+            <h3>Invalid File Handling</h3>
+            <ol>
+                <li>Try uploading unsupported file types (e.g., .jpg, .exe)</li>
+                <li>Try uploading files larger than 10MB</li>
+                <li>Verify appropriate error messages</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Clear error messages for invalid files
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🔍 Job Description Extraction Testing</h2>
+        
+        <div class="test-step">
+            <h3>Standard Extraction Method</h3>
+            <ol>
+                <li>Navigate to a job posting webpage</li>
+                <li>Open ResumeHub popup</li>
+                <li>Ensure "Standard" extraction method is selected</li>
+                <li>Click "Preview Job Description" button</li>
+                <li>Verify button shows "Loading..." text</li>
+                <li>Verify extracted job description appears in preview area</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Loading indicator, then job description text in preview box
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>AI Extraction Method</h3>
+            <ol>
+                <li>Select "AI-Powered" extraction method</li>
+                <li>Ensure valid API key is entered</li>
+                <li>Click "Preview Job Description" button</li>
+                <li>Verify longer loading time with "Extracting..." text</li>
+                <li>Verify cleaner, more focused job description</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> AI-processed job description with better formatting
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>Manual Input Method</h3>
+            <ol>
+                <li>Select "Manual Input" extraction method</li>
+                <li>Verify manual input textarea appears</li>
+                <li>Paste or type job description text</li>
+                <li>Verify text is used for resume generation</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Textarea appears, manual text is processed
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>⚡ Resume Generation Testing</h2>
+        
+        <div class="test-step">
+            <h3>Complete Generation Workflow</h3>
+            <ol>
+                <li>Ensure API key and resume are uploaded</li>
+                <li>Extract or input job description</li>
+                <li>Click "Generate Tailored Resume" button</li>
+                <li>Verify button shows "Generating..." text</li>
+                <li>Wait for generation to complete (30-60 seconds)</li>
+                <li>Verify success message appears</li>
+                <li>Verify download buttons become available</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Loading indicator, success message, download buttons appear
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>Download Options Testing</h3>
+            <ol>
+                <li>After successful generation, test each download format:</li>
+                <li>Click "Download as TXT" - verify text file downloads</li>
+                <li>Click "Download as PDF" - verify PDF file downloads</li>
+                <li>Click "Download as DOCX" - verify Word document downloads</li>
+                <li>Open each downloaded file to verify content</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> All three formats download with tailored resume content
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>📝 Auto-Fill Form Testing</h2>
+        
+        <div class="test-step">
+            <h3>Form Detection and Filling</h3>
+            <ol>
+                <li>Navigate to a job application form webpage</li>
+                <li>Ensure resume is uploaded and API key is set</li>
+                <li>Click "Auto-Fill Current Form" button</li>
+                <li>Verify button shows "Processing..." text</li>
+                <li>Verify form fields are automatically filled</li>
+                <li>Check filled fields for accuracy</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Form fields filled with relevant resume data
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>Auto-Fill Status Messages</h3>
+            <ol>
+                <li>Monitor status messages during auto-fill process</li>
+                <li>Verify processing status appears</li>
+                <li>Verify success/error messages are clear</li>
+                <li>Check that status appears in Auto-Fill Forms card area</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Clear status messages with appropriate styling
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🔄 Loading States and Button Behavior</h2>
+        
+        <div class="test-step">
+            <h3>Button Loading States Verification</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Button</th>
+                        <th>Loading Text</th>
+                        <th>Expected Behavior</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Preview Job Description</td>
+                        <td>"Loading..." or "Extracting..."</td>
+                        <td>Text visible with small spinner</td>
+                    </tr>
+                    <tr>
+                        <td>Generate Tailored Resume</td>
+                        <td>"Generating..."</td>
+                        <td>Text visible, button disabled</td>
+                    </tr>
+                    <tr>
+                        <td>Auto-Fill Current Form</td>
+                        <td>"Processing..."</td>
+                        <td>Text visible, processing indicator</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="test-step warning-step">
+                <strong>Important:</strong> All loading states should show descriptive text, not just spinners
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🧪 Retry and Rate Limiting Testing</h2>
+        
+        <div class="test-step">
+            <h3>API Rate Limit Simulation</h3>
+            <ol>
+                <li>Perform multiple rapid API operations (generate, auto-fill)</li>
+                <li>Monitor console for rate limiting messages</li>
+                <li>Verify retry attempts are logged</li>
+                <li>Verify operations eventually succeed</li>
+            </ol>
+            <div class="code-block">
+Console Output Example:
+⏳ Rate limit reached, waiting before retry...
+🔄 Retrying operation (attempt 2/3)...
+✅ Operation completed successfully
+            </div>
+        </div>
+
+        <div class="test-step">
+            <h3>Network Error Handling</h3>
+            <ol>
+                <li>Temporarily disconnect internet</li>
+                <li>Try to perform API operations</li>
+                <li>Verify appropriate error messages</li>
+                <li>Reconnect internet and retry</li>
+                <li>Verify operations work after reconnection</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Clear network error messages and successful retry after reconnection
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>⌨️ Keyboard Shortcuts Testing</h2>
+        
+        <div class="test-step">
+            <h3>Keyboard Navigation</h3>
+            <ul class="checklist">
+                <li><strong>Ctrl+Enter:</strong> Generate tailored resume</li>
+                <li><strong>Ctrl+P:</strong> Preview job description</li>
+                <li><strong>Tab navigation:</strong> Move between form fields</li>
+                <li><strong>Enter:</strong> Submit forms and trigger buttons</li>
+                <li><strong>Escape:</strong> Cancel operations (if implemented)</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🐛 Error Scenarios Testing</h2>
+        
+        <div class="test-step error-step">
+            <h3>Common Error Conditions</h3>
+            <ol>
+                <li><strong>Missing API Key:</strong> Try operations without API key</li>
+                <li><strong>Missing Resume:</strong> Try generation without uploaded resume</li>
+                <li><strong>Invalid Job Description:</strong> Use very short or empty job description</li>
+                <li><strong>Page with No Forms:</strong> Try auto-fill on page without forms</li>
+                <li><strong>Background Script Unavailable:</strong> Test with extension partially loaded</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Expected:</strong> Clear, actionable error messages for each scenario
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>🔧 Troubleshooting Guide</h2>
+        
+        <div class="troubleshooting">
+            <h3>If Tests Fail:</h3>
+            <ol>
+                <li><strong>Reload Extension:</strong> Go to chrome://extensions/, disable and re-enable ResumeHub</li>
+                <li><strong>Check Console:</strong> Look for JavaScript errors in browser console (F12)</li>
+                <li><strong>Verify Files:</strong> Ensure all extension files are present and not corrupted</li>
+                <li><strong>Clear Storage:</strong> Clear extension storage and re-enter API key</li>
+                <li><strong>Test in Incognito:</strong> Try testing in incognito mode to rule out conflicts</li>
+                <li><strong>Update Chrome:</strong> Ensure Chrome browser is up to date</li>
+            </ol>
+        </div>
+
+        <div class="troubleshooting">
+            <h3>Common Issues and Solutions:</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Issue</th>
+                        <th>Possible Cause</th>
+                        <th>Solution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Popup won't open</td>
+                        <td>Extension not loaded properly</td>
+                        <td>Reload extension in chrome://extensions/</td>
+                    </tr>
+                    <tr>
+                        <td>API operations fail</td>
+                        <td>Invalid API key or quota exceeded</td>
+                        <td>Check API key and billing status</td>
+                    </tr>
+                    <tr>
+                        <td>File upload fails</td>
+                        <td>File too large or unsupported format</td>
+                        <td>Use supported formats under 10MB</td>
+                    </tr>
+                    <tr>
+                        <td>Auto-fill doesn't work</td>
+                        <td>No form fields detected</td>
+                        <td>Ensure page has fillable form fields</td>
+                    </tr>
+                    <tr>
+                        <td>Theme doesn't persist</td>
+                        <td>Storage permission issue</td>
+                        <td>Check extension permissions</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2>✅ Testing Completion Checklist</h2>
+        
+        <ul class="checklist">
+            <li>Theme toggle works and persists across sessions</li>
+            <li>All cards expand and collapse properly</li>
+            <li>API key saves and loads correctly</li>
+            <li>Resume upload works for all supported formats</li>
+            <li>Drag and drop file upload functions</li>
+            <li>Job description extraction works for all methods</li>
+            <li>Resume generation completes successfully</li>
+            <li>All download formats (TXT, PDF, DOCX) work</li>
+            <li>Auto-fill detects and fills form fields</li>
+            <li>Loading states show descriptive text</li>
+            <li>Error messages are clear and helpful</li>
+            <li>Keyboard shortcuts work as expected</li>
+            <li>Extension handles network errors gracefully</li>
+            <li>Rate limiting and retry mechanisms function</li>
+            <li>All status messages appear in correct locations</li>
+        </ul>
+        
+        <div class="test-step">
+            <h3>Final Validation</h3>
+            <p>After completing all tests, perform one complete end-to-end workflow:</p>
+            <ol>
+                <li>Fresh browser session</li>
+                <li>Install/reload extension</li>
+                <li>Configure API key</li>
+                <li>Upload resume</li>
+                <li>Navigate to job posting</li>
+                <li>Extract job description</li>
+                <li>Generate tailored resume</li>
+                <li>Download in preferred format</li>
+                <li>Test auto-fill on application form</li>
+            </ol>
+            <div class="expected-result">
+                <strong>Success Criteria:</strong> Complete workflow without errors, producing usable tailored resume and successful form auto-fill
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add interactive checklist functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const checklistItems = document.querySelectorAll('.checklist li');
+            
+            checklistItems.forEach(item => {
+                item.style.cursor = 'pointer';
+                item.addEventListener('click', function() {
+                    if (this.style.textDecoration === 'line-through') {
+                        this.style.textDecoration = 'none';
+                        this.style.opacity = '1';
+                        this.querySelector('::before') ? this.querySelector('::before').textContent = '☐' : null;
+                    } else {
+                        this.style.textDecoration = 'line-through';
+                        this.style.opacity = '0.6';
+                    }
+                });
+            });
+            
+            console.log('Manual Testing Guide loaded - click checklist items to mark as complete');
+        });
+    </script>
+</body>
+</html> 
