@@ -2,3 +2,12 @@ node_modules/
 .DS_Store
 *.log
 *.tmp
+
+# Build directories and files
+build_resumehub/
+temp_build/
+dist/
+*.zip
+
+# npm lock file
+package-lock.json

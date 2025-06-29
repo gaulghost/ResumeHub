@@ -1,0 +1,23 @@
+{
+  "name": "resumehub-build-tools",
+  "version": "1.0.0",
+  "description": "Build tools for ResumeHub extension",
+  "private": true,
+  "scripts": {
+    "build": "./build.sh",
+    "install-deps": "npm install -g terser clean-css-cli",
+    "test-build": "node -e \"console.log('Build tools check:', process.version)\""
+  },
+  "devDependencies": {
+    "terser": "^5.24.0",
+    "clean-css-cli": "^5.6.2"
+  },
+  "keywords": [
+    "browser-extension",
+    "build-tools",
+    "minification",
+    "obfuscation"
+  ],
+  "author": "Pradhuman Singh",
+  "license": "MIT"
+} 
