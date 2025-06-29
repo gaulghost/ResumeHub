@@ -38,6 +38,17 @@ class FileHandlers {
       // Read file as base64
       const base64Content = await this.readFileAsBase64(file);
       
+      // Invalidate old resume cache before storing new one
+      if (window.ResumeCacheOptimizer) {
+        try {
+          const tempOptimizer = new ResumeCacheOptimizer(null); // Don't need API client for cache invalidation
+          await tempOptimizer.invalidateResumeCache(); // Invalidate all resume caches
+          console.log('🗑️ Invalidated previous resume caches');
+        } catch (cacheError) {
+          console.warn('⚠️ Failed to invalidate cache:', cacheError);
+        }
+      }
+      
       // Store in state
       this.stateManager.setResume(file.name, base64Content, file.type);
       

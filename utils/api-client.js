@@ -34,7 +34,7 @@ class GeminiAPIClient {
       }
 
       const responseData = await response.json();
-      console.log('API call successful');
+      // API call successful - detailed logging removed to reduce console noise
       return responseData;
     } catch (error) {
       console.error('API call failed:', error);
@@ -43,7 +43,7 @@ class GeminiAPIClient {
   }
 
   // Specialized method for resume parsing
-  async parseResumeToJSON(resumeData) {
+  async parseResumeToJSON(resumeData, options = {}) {
     const targetJsonStructure = `{
   "contact": { "name": "string|null", "email": "string|null", "phone": "string|null", "linkedin": "string|null", "github": "string|null", "portfolio": "string|null" },
   "summary": "string|null",
@@ -54,7 +54,8 @@ class GeminiAPIClient {
   "achievements": [ "string", "..." ]
 }`;
 
-    const prompt = `**Instruction:**
+    // Use custom prompt if provided, otherwise use default
+    const prompt = options.customPrompt || `**Instruction:**
 Analyze the attached resume file content. Extract the information and structure it precisely according to the following JSON format. If a section or field is not present in the resume, represent it as 'null' (for objects/strings) or an empty array [] (for arrays like bullets/achievements).
 For the "skills" section, group related skills into logical categories (e.g., "Programming Languages", "Frameworks & Libraries", "Databases", "Tools", "Cloud Platforms", "AI/ML") and represent it as an array of objects, each with a "category" name and an array of "items".
 Do not add any information not present in the resume. Output *only* the valid JSON object, starting with { and ending with }.
@@ -85,7 +86,7 @@ Parse the attached file and generate the JSON output.`;
       ],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.1
+        temperature: options.temperature || 0.1
       },
       safetySettings: this.getSafetySettings()
     };

@@ -13,6 +13,16 @@ class ResumeProcessor {
    * Generate tailored resume
    */
   async generateTailoredResume() {
+    // Start progress tracking
+    const operationId = 'generate_resume_' + Date.now();
+    if (window.progressFeedback) {
+      window.progressFeedback.startOperation(operationId, '🎯 Generating Tailored Resume', {
+        cancellable: false,
+        indeterminate: true,
+        initialMessage: 'Validating inputs...'
+      });
+    }
+    
     try {
       // Validate state
       const validation = this.stateManager.validateForResumeGeneration();
@@ -33,12 +43,14 @@ class ResumeProcessor {
         true, 
         'Generating...'
       );
-      console.log('Generate button set to loading state');
-
       // Clear previous results
       this.uiManager.updateStatus('', 'info');
       this.uiManager.toggleDownloadButtons(false);
       this.stateManager.clearGeneratedResume();
+
+      if (window.progressFeedback) {
+        window.progressFeedback.updateMessage(operationId, 'Preparing job description...');
+      }
 
       // Get job description
       const jobDescription = await this.getJobDescriptionForGeneration();
@@ -49,6 +61,10 @@ class ResumeProcessor {
         `Processing (using ${methodForStatus})... Generating a tailored resume with max 570 words, focusing on most relevant skills`,
         'processing'
       );
+
+      if (window.progressFeedback) {
+        window.progressFeedback.updateMessage(operationId, 'Processing with AI (parallel optimization)...');
+      }
 
       console.log(`Sending request to background (method: ${methodForStatus})...`);
 
@@ -63,10 +79,41 @@ class ResumeProcessor {
 
       // Handle response
       await this.handleGenerationResponse(response);
+      
+      if (window.progressFeedback) {
+        window.progressFeedback.completeOperation(operationId, 
+          `Resume generated successfully in ${Math.round((response.processingTime || 0) / 1000)}s`);
+      }
 
     } catch (error) {
       console.error('Error generating tailored resume:', error);
-      this.handleGenerationError(error);
+      
+      // Use enhanced error handling
+      let userFriendlyError = error;
+      if (window.EnhancedErrorHandler) {
+        userFriendlyError = EnhancedErrorHandler.createUserFriendlyError(error, {
+          operation: 'resume_generation',
+          component: 'ResumeProcessor'
+        });
+        
+        // Log error for debugging
+        await EnhancedErrorHandler.logError(error, {
+          operation: 'generateTailoredResume',
+          inputs: {
+            hasResume: !!this.stateManager.getResume().content,
+            hasApiToken: !!this.stateManager.getApiToken(),
+            extractionMethod: this.stateManager.getExtractionMethod()
+          }
+        });
+      }
+      
+      if (window.progressFeedback) {
+        window.progressFeedback.failOperation(operationId, userFriendlyError, {
+          retryable: userFriendlyError.retryable !== false
+        });
+      }
+      
+      this.handleGenerationError(userFriendlyError);
     } finally {
       // Reset processing state
       this.stateManager.setProcessing(false);
@@ -74,7 +121,6 @@ class ResumeProcessor {
         this.uiManager.elements.createResumeBtn, 
         false
       );
-      console.log('Generate button loading state reset');
     }
   }
 
@@ -140,7 +186,21 @@ class ResumeProcessor {
    * Handle generation error
    */
   handleGenerationError(error) {
-    this.uiManager.updateStatus(`Error: ${error.message}`, 'error');
+    // Use enhanced error display if available
+    if (error.title && error.message && error.action) {
+      this.uiManager.updateStatus(`${error.title}: ${error.message}`, 'error');
+      
+      // Add suggestions if available
+      if (window.EnhancedErrorHandler && error.errorType) {
+        const suggestions = EnhancedErrorHandler.getErrorSuggestions(error.errorType);
+        if (suggestions.length > 0) {
+          console.log('💡 Suggestions:', suggestions);
+        }
+      }
+    } else {
+      this.uiManager.updateStatus(`Error: ${error.message || error.toString()}`, 'error');
+    }
+    
     this.stateManager.clearGeneratedResume();
   }
 
@@ -162,7 +222,6 @@ class ResumeProcessor {
         true,
         'Loading...'
       );
-      console.log('Preview button set to loading state');
 
       // Clear previous preview
       if (this.uiManager.elements.previewOutput) {
@@ -200,7 +259,6 @@ class ResumeProcessor {
         this.uiManager.elements.previewBtn,
         false
       );
-      console.log('Preview button loading state reset');
     }
   }
 
@@ -253,7 +311,6 @@ class ResumeProcessor {
         true,
         'Processing...'
       );
-      console.log('Auto-fill button set to loading state');
 
       // Update auto-fill status in its local area
       this.uiManager.updateAutoFillStatus('🔄 Analyzing form fields and filling data...', 'processing');
@@ -279,7 +336,6 @@ class ResumeProcessor {
         this.uiManager.elements.autoFillBtn,
         false
       );
-      console.log('Auto-fill button loading state reset');
     }
   }
 

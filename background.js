@@ -16,6 +16,15 @@ try {
   importScripts('utils/api-client.js');
   console.log('GeminiAPIClient loaded:', typeof GeminiAPIClient);
   
+  importScripts('utils/parallel-processor.js');
+  console.log('ParallelProcessor loaded:', typeof ParallelProcessor);
+  
+  importScripts('utils/resume-cache-optimizer.js');
+  console.log('ResumeCacheOptimizer loaded:', typeof ResumeCacheOptimizer);
+  
+  importScripts('utils/enhanced-error-handler.js');
+  console.log('EnhancedErrorHandler loaded:', typeof EnhancedErrorHandler);
+  
   console.log('All utility modules loaded successfully');
 } catch (error) {
   console.error('Failed to load utility modules:', error);
@@ -604,14 +613,22 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
         console.log(`[${listenerId}] Create Flow: Received resume data: ${request.resumeData.filename}`);
         console.log(`[${listenerId}] Create Flow: API token provided.`);
 
-        // --- Step 1: Parse Original Resume to JSON ---
-        console.log(`[${listenerId}] Create Flow: Parsing original resume to JSON...`);
+        // --- Step 1: Parse Original Resume to JSON (with Multi-Pass Optimization) ---
+        console.log(`[${listenerId}] Create Flow: Parsing original resume to JSON with optimization...`);
         const apiClient = new GeminiAPIClient(request.apiToken);
-        const originalResumeJSON = await apiClient.parseResumeToJSON(request.resumeData);
-        if (!originalResumeJSON) { // Should not happen if parseResumeToJSON throws errors correctly
+        const resumeCacheOptimizer = new ResumeCacheOptimizer(apiClient);
+        
+        const optimizationResult = await resumeCacheOptimizer.getOptimizedResumeJSON(request.resumeData);
+        const originalResumeJSON = optimizationResult.resumeJSON;
+        
+        if (!originalResumeJSON) {
              throw new Error("Failed to parse original resume into JSON structure.");
         }
-        console.log(`[${listenerId}] Create Flow: Original resume parsed successfully.`);
+        
+        console.log(`[${listenerId}] Create Flow: Resume parsed successfully (${optimizationResult.metadata.source})`);
+        if (optimizationResult.metadata.source === 'generated') {
+            console.log(`[${listenerId}] Multi-pass optimization: ${optimizationResult.metadata.variantsGenerated} variants, ${optimizationResult.metadata.optimization}`);
+        }
         // console.log("Parsed Original Resume JSON:", JSON.stringify(originalResumeJSON, null, 2)); // Optional: Log parsed structure
 
         // Get initial stats
@@ -642,73 +659,34 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
             console.log(`[${listenerId}] Create Flow: Extracted Job Description successfully.`);
         }
 
-        // --- Step 3: Tailor Each Section ---
-        console.log(`[${listenerId}] Create Flow: Starting section-by-section tailoring...`);
+        // --- Step 3: Parallel Section Tailoring ---
+        console.log(`[${listenerId}] Create Flow: Starting parallel section tailoring...`);
         console.log(`[${listenerId}] Create Flow: Note - Tailoring with 570 words/3650 characters limit`);
-        const tailoredResumeJSON = {}; // Initialize the final object
-
-        // Tailor Summary (if exists)
-        if (originalResumeJSON.summary) {
-            const tailoredSummary = await apiClient.tailorSection(
-                jobDescription, { summary: originalResumeJSON.summary }, 'summary'
-            );
-            tailoredResumeJSON.summary = tailoredSummary?.summary || originalResumeJSON.summary; // Fallback to original if tailoring fails
-        } else {
-            tailoredResumeJSON.summary = null;
-        }
-
-        // Tailor Experience (array)
-        if (originalResumeJSON.experience && Array.isArray(originalResumeJSON.experience)) {
-            const tailoredExperience = await apiClient.tailorSection(
-                jobDescription, originalResumeJSON.experience, 'experience'
-                 );
-            tailoredResumeJSON.experience = tailoredExperience || originalResumeJSON.experience; // Fallback to original
-        } else {
-            tailoredResumeJSON.experience = [];
-        }
         
-        // Tailor Education (array) - Often less tailoring needed, maybe just copy? Or tailor slightly.
-         tailoredResumeJSON.education = [];
-         if (originalResumeJSON.education && Array.isArray(originalResumeJSON.education)) {
-             for (const edu of originalResumeJSON.education) {
-                 // Decide if tailoring education makes sense. For now, let's copy it.
-                 // const tailoredEdu = await apiClient.tailorSection(jobDescription, edu, 'education');
-                 // tailoredResumeJSON.education.push(tailoredEdu || edu);
-                 tailoredResumeJSON.education.push(edu); // Copy original for now
-             }
-         }
-         
-         // Tailor Skills (object/string)
-         if (originalResumeJSON.skills) {
-              tailoredResumeJSON.skills = await apiClient.tailorSection(
-                  jobDescription, originalResumeJSON.skills, 'skills'
-              ) || originalResumeJSON.skills; // Fallback
-         } else {
-             tailoredResumeJSON.skills = null;
-         }
+        // Initialize parallel processor
+        const parallelProcessor = new ParallelProcessor(apiClient, {
+            maxConcurrency: 3,
+            batchDelay: 500,
+            retryAttempts: 2
+        });
 
-         // Tailor Projects (array)
-         if (originalResumeJSON.projects && Array.isArray(originalResumeJSON.projects)) {
-             const tailoredProjects = await apiClient.tailorSection(
-                 jobDescription, originalResumeJSON.projects, 'projects'
-                 );
-             tailoredResumeJSON.projects = tailoredProjects || originalResumeJSON.projects; // Fallback
-         } else {
-             tailoredResumeJSON.projects = [];
-         }
-         
-         // Tailor Achievements (array) - Copy for now, tailoring might be simple selection
-         tailoredResumeJSON.achievements = [];
-          if (originalResumeJSON.achievements && Array.isArray(originalResumeJSON.achievements)) {
-              // Tailor achievements too instead of just copying
-              const tailoredAch = await apiClient.tailorSection(
-                  jobDescription, originalResumeJSON.achievements, 'achievements'
-              );
-              tailoredResumeJSON.achievements = tailoredAch || originalResumeJSON.achievements;
-          }
+        // Send progress updates to popup
+        const progressCallback = (progress) => {
+                    // Progress callback - detailed logging removed to reduce console noise
+        };
 
-         // Copy Contact Info (no tailoring needed)
-         tailoredResumeJSON.contact = originalResumeJSON.contact || null;
+        // Process all sections in parallel
+        const sectionResults = await parallelProcessor.processSectionsInParallel(
+            jobDescription, 
+            originalResumeJSON, 
+            progressCallback
+        );
+
+        // Combine results with fallbacks
+        const tailoredResumeJSON = parallelProcessor.combineResults(originalResumeJSON, sectionResults);
+
+        // Always preserve education (copy as-is for now)
+        tailoredResumeJSON.education = originalResumeJSON.education || [];
 
         // Check final word/character count
         const finalStats = countResumeStats(tailoredResumeJSON);
@@ -723,7 +701,6 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
         // --- Step 4: Send Success Response with JSON ---
         console.log(`[${listenerId}] Create Flow: Sending success response to popup...`);
         sendResponse({ success: true, tailoredResumeJSON: tailoredResumeJSON }); // Send JSON object
-      console.log(`[${listenerId}] Create Flow: Success response sent.`);
 
     } catch (error) {
         console.error(`[${listenerId}] Error in createTailoredResume (JSON flow):`, error);

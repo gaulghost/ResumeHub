@@ -304,11 +304,9 @@ class EventHandlers {
 
     // Handle visibility changes
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        console.log('Popup hidden');
-      } else {
-        console.log('Popup visible');
-        // Could refresh state or check for updates
+      // Removed redundant logging - visibility changes are too frequent and not useful for debugging
+      if (!document.hidden) {
+        // Could refresh state or check for updates when popup becomes visible
       }
     });
   }
