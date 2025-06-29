@@ -13,17 +13,9 @@ class ResumeProcessor {
    * Generate tailored resume
    */
   async generateTailoredResume() {
-    // Start progress tracking
-    const operationId = 'generate_resume_' + Date.now();
-    if (window.progressFeedback) {
-      window.progressFeedback.startOperation(operationId, '🎯 Generating Tailored Resume', {
-        cancellable: false,
-        indeterminate: true,
-        initialMessage: 'Validating inputs...'
-      });
-    }
-    
     try {
+      console.log('🚀 User clicked create tailored resume');
+      
       // Validate state
       const validation = this.stateManager.validateForResumeGeneration();
       if (!validation.isValid) {
@@ -32,7 +24,6 @@ class ResumeProcessor {
 
       // Check if already processing
       if (this.stateManager.isProcessing()) {
-        console.log('Resume generation already in progress');
         return;
       }
 
@@ -48,10 +39,6 @@ class ResumeProcessor {
       this.uiManager.toggleDownloadButtons(false);
       this.stateManager.clearGeneratedResume();
 
-      if (window.progressFeedback) {
-        window.progressFeedback.updateMessage(operationId, 'Preparing job description...');
-      }
-
       // Get job description
       const jobDescription = await this.getJobDescriptionForGeneration();
       const methodForStatus = this.getMethodForStatus(jobDescription);
@@ -61,12 +48,6 @@ class ResumeProcessor {
         `Processing (using ${methodForStatus})... Generating a tailored resume with max 570 words, focusing on most relevant skills`,
         'processing'
       );
-
-      if (window.progressFeedback) {
-        window.progressFeedback.updateMessage(operationId, 'Processing with AI (parallel optimization)...');
-      }
-
-      console.log(`Sending request to background (method: ${methodForStatus})...`);
 
       // Send message to background script
       const response = await this.sendBackgroundMessage({
@@ -79,41 +60,10 @@ class ResumeProcessor {
 
       // Handle response
       await this.handleGenerationResponse(response);
-      
-      if (window.progressFeedback) {
-        window.progressFeedback.completeOperation(operationId, 
-          `Resume generated successfully in ${Math.round((response.processingTime || 0) / 1000)}s`);
-      }
 
     } catch (error) {
-      console.error('Error generating tailored resume:', error);
-      
-      // Use enhanced error handling
-      let userFriendlyError = error;
-      if (window.EnhancedErrorHandler) {
-        userFriendlyError = EnhancedErrorHandler.createUserFriendlyError(error, {
-          operation: 'resume_generation',
-          component: 'ResumeProcessor'
-        });
-        
-        // Log error for debugging
-        await EnhancedErrorHandler.logError(error, {
-          operation: 'generateTailoredResume',
-          inputs: {
-            hasResume: !!this.stateManager.getResume().content,
-            hasApiToken: !!this.stateManager.getApiToken(),
-            extractionMethod: this.stateManager.getExtractionMethod()
-          }
-        });
-      }
-      
-      if (window.progressFeedback) {
-        window.progressFeedback.failOperation(operationId, userFriendlyError, {
-          retryable: userFriendlyError.retryable !== false
-        });
-      }
-      
-      this.handleGenerationError(userFriendlyError);
+      console.error(`❌ Resume generation failed: ${error.message}`);
+      this.handleGenerationError(error);
     } finally {
       // Reset processing state
       this.stateManager.setProcessing(false);
@@ -164,16 +114,12 @@ class ResumeProcessor {
    */
   async handleGenerationResponse(response) {
     if (response && response.success && response.tailoredResumeJSON) {
-      console.log("Received successful JSON response from background script.");
-      
       // Store generated resume
       this.stateManager.setGeneratedResume(response.tailoredResumeJSON);
       
       // Update UI
       this.uiManager.updateStatus('Tailored resume generated successfully!', 'success');
       this.uiManager.toggleDownloadButtons(true);
-      
-      console.log("Stored tailored resume JSON:", response.tailoredResumeJSON);
       
     } else if (response && response.error) {
       throw new Error(response.error);
@@ -209,9 +155,10 @@ class ResumeProcessor {
    */
   async previewJobDescription() {
     try {
+      console.log('👁️ User clicked preview job description');
+      
       // Check if already previewing
       if (this.stateManager.isPreviewing()) {
-        console.log('Job description preview already in progress');
         return;
       }
 
@@ -237,8 +184,6 @@ class ResumeProcessor {
         throw new Error('API Key is required for AI extraction preview.');
       }
 
-      console.log(`Starting job description preview (method: ${extractionMethod})...`);
-
       // Send message to background script
       const response = await this.sendBackgroundMessage({
         action: "getJobDescription",
@@ -250,7 +195,7 @@ class ResumeProcessor {
       this.handlePreviewResponse(response);
 
     } catch (error) {
-      console.error('Error previewing job description:', error);
+      console.error(`❌ Job description preview failed: ${error.message}`);
       this.handlePreviewError(error);
     } finally {
       // Reset previewing state
@@ -267,7 +212,7 @@ class ResumeProcessor {
    */
   handlePreviewResponse(response) {
     if (response && response.success && response.jobDescription) {
-      console.log('Job description extracted successfully');
+      console.log(`✅ Job description extracted: "${response.jobDescription.substring(0, 100)}..."`);
       
       if (this.uiManager.elements.previewOutput) {
         this.uiManager.elements.previewOutput.value = response.jobDescription;
@@ -298,6 +243,8 @@ class ResumeProcessor {
    */
   async autoFillForm() {
     try {
+      console.log('🤖 User clicked auto-fill form');
+      
       // Validate state
       const validation = this.stateManager.validateForAutoFill();
       if (!validation.isValid) {
@@ -315,8 +262,6 @@ class ResumeProcessor {
       // Update auto-fill status in its local area
       this.uiManager.updateAutoFillStatus('🔄 Analyzing form fields and filling data...', 'processing');
 
-      console.log('Starting auto-fill process...');
-
       // Send message to background script
       const response = await this.sendBackgroundMessage({
         action: "autoFillForm",
@@ -328,7 +273,7 @@ class ResumeProcessor {
       this.handleAutoFillResponse(response);
 
     } catch (error) {
-      console.error('Error auto-filling form:', error);
+      console.error(`❌ Auto-fill failed: ${error.message}`);
       this.handleAutoFillError(error);
     } finally {
       // Reset loading state
@@ -344,10 +289,19 @@ class ResumeProcessor {
    */
   handleAutoFillResponse(response) {
     if (response && response.success) {
-      const message = `✅ Form auto-filled successfully! ${response.fieldsFound || 0} fields detected, ${response.fieldsFilled || 0} fields filled.`;
+      // Log detected fields and their responses
+      if (response.fieldMappings) {
+        console.log('🔍 Detected form fields:');
+        Object.keys(response.fieldMappings).forEach(fieldName => {
+          const value = response.fieldMappings[fieldName];
+          console.log(`  • ${fieldName}: "${value.substring(0, 50)}${value.length > 50 ? '...' : ''}"`);
+        });
+      }
       
+      console.log('✅ Auto form filling completed');
+      
+      const message = `✅ Form auto-filled successfully! ${response.fieldsFound || 0} fields detected, ${response.fieldsFilled || 0} fields filled.`;
       this.uiManager.updateAutoFillStatus(message, 'success');
-      console.log('Auto-fill completed successfully:', response);
       
     } else if (response && response.error) {
       throw new Error(response.error);

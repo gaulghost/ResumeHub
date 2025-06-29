@@ -33,8 +33,6 @@ class AppController {
    */
   async _performInitialization() {
     try {
-      console.log('🚀 Starting ResumeHub popup initialization...');
-
       // Step 1: Initialize core modules
       await this.initializeModules();
 
@@ -51,7 +49,6 @@ class AppController {
       await this.finalizeInitialization();
 
       this.initialized = true;
-      console.log('✅ ResumeHub popup initialized successfully');
 
       // Perform post-initialization tasks
       this.performPostInitializationTasks();
@@ -67,8 +64,6 @@ class AppController {
    * Initialize all modules
    */
   async initializeModules() {
-    console.log('Initializing modules...');
-
     try {
       // Initialize StateManager first (other modules depend on it)
       this.modules.stateManager = new StateManager();
@@ -93,8 +88,6 @@ class AppController {
         this.modules.resumeProcessor
       );
 
-      console.log('All modules initialized successfully');
-
     } catch (error) {
       console.error('Error initializing modules:', error);
       throw new Error(`Module initialization failed: ${error.message}`);
@@ -105,15 +98,8 @@ class AppController {
    * Load initial state from Chrome storage
    */
   async loadInitialState() {
-    console.log('Loading initial state...');
-
     try {
-      const success = await this.modules.stateManager.loadFromStorage();
-      if (success) {
-        console.log('Initial state loaded from storage');
-      } else {
-        console.log('Could not load state from storage, using defaults');
-      }
+      await this.modules.stateManager.loadFromStorage();
     } catch (error) {
       console.error('Error loading initial state:', error);
       // Don't throw - continue with default state
@@ -124,8 +110,6 @@ class AppController {
    * Initialize UI components
    */
   async initializeUI() {
-    console.log('Initializing UI...');
-
     try {
       // Apply theme
       const theme = this.modules.stateManager.getTheme();
@@ -133,8 +117,6 @@ class AppController {
 
       // Update UI based on current state
       this.updateUIFromState();
-
-      console.log('UI initialized');
 
     } catch (error) {
       console.error('Error initializing UI:', error);
@@ -146,11 +128,8 @@ class AppController {
    * Initialize event handlers
    */
   async initializeEventHandlers() {
-    console.log('Initializing event handlers...');
-
     try {
       this.modules.eventHandlers.initialize();
-      console.log('Event handlers initialized');
 
     } catch (error) {
       console.error('Error initializing event handlers:', error);
@@ -162,8 +141,6 @@ class AppController {
    * Finalize initialization
    */
   async finalizeInitialization() {
-    console.log('Finalizing initialization...');
-
     try {
       // Check background script availability
       const backgroundAvailable = await this.modules.resumeProcessor.checkBackgroundScript();
@@ -180,8 +157,6 @@ class AppController {
 
       // Setup global error handling
       this.setupGlobalErrorHandling();
-
-      console.log('Initialization finalized');
 
     } catch (error) {
       console.error('Error finalizing initialization:', error);
@@ -246,8 +221,6 @@ class AppController {
       console.error('Missing critical UI elements:', missing);
       throw new Error(`Critical UI elements missing: ${missing.join(', ')}`);
     }
-
-    console.log('All critical elements validated');
   }
 
   /**
@@ -269,7 +242,7 @@ class AppController {
       // Don't show UI error for every script error, just log it
     });
 
-    console.log('Global error handling setup');
+
   }
 
   /**

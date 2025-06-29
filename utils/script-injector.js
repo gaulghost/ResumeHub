@@ -252,4 +252,9 @@ if (typeof window !== 'undefined') {
   window.ScriptInjector = ScriptInjector;
 } else if (typeof self !== 'undefined') {
   self.ScriptInjector = ScriptInjector;
-} 
+} else if (typeof global !== 'undefined') {
+  global.ScriptInjector = ScriptInjector;
+} else {
+  // For service workers and other environments
+  this.ScriptInjector = ScriptInjector;
+}

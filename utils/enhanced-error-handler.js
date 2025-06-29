@@ -109,10 +109,10 @@ class EnhancedErrorHandler extends ErrorHandler {
   static classifyError(error) {
     const message = error.message.toLowerCase();
     
-    // API-related errors
+    // API-related errors with specific 429 handling
+    if (message.includes('429') || (message.includes('rate limit') || message.includes('too many requests'))) return 'RATE_LIMITED';
     if (message.includes('quota') || message.includes('limit exceeded')) return 'API_QUOTA_EXCEEDED';
     if (message.includes('api key') || message.includes('unauthorized') || message.includes('invalid key')) return 'INVALID_API_KEY';
-    if (message.includes('rate limit') || message.includes('too many requests')) return 'RATE_LIMITED';
     if (message.includes('blocked') || message.includes('content policy')) return 'CONTENT_BLOCKED';
     
     // Network errors
@@ -135,6 +135,30 @@ class EnhancedErrorHandler extends ErrorHandler {
   }
 
   /**
+   * Create a clean, single-line error message for console
+   */
+  static createCleanErrorMessage(error, context = {}) {
+    const errorType = this.classifyError(error);
+    const attempt = context.attempt || 1;
+    const maxAttempts = context.maxAttempts || 3;
+    
+    switch (errorType) {
+      case 'RATE_LIMITED':
+        return `❌ API rate limit exceeded - request queued for retry (attempt ${attempt}/${maxAttempts})`;
+      case 'API_QUOTA_EXCEEDED':
+        return `❌ API quota exceeded - check your billing or try again tomorrow`;
+      case 'INVALID_API_KEY':
+        return `❌ Invalid API key - please check your Google API key`;
+      case 'NETWORK_ERROR':
+        return `❌ Network error - check your internet connection (attempt ${attempt}/${maxAttempts})`;
+      case 'CONTENT_BLOCKED':
+        return `❌ Content blocked by AI safety filters - try different content`;
+      default:
+        return `❌ ${errorType.toLowerCase().replace(/_/g, ' ')} - ${error.message}`;
+    }
+  }
+
+  /**
    * Generate unique error ID for tracking
    */
   static generateErrorId() {
@@ -151,8 +175,8 @@ class EnhancedErrorHandler extends ErrorHandler {
       error: error.message,
       stack: error.stack,
       context,
-      userAgent: navigator.userAgent,
-      url: window.location.href,
+      userAgent: (typeof navigator !== 'undefined' && navigator.userAgent) || 'unknown',
+      url: (typeof window !== 'undefined' && window.location?.href) || 'service-worker',
       extensionVersion: chrome.runtime.getManifest()?.version || 'unknown'
     };
 

@@ -17,6 +17,8 @@ class FileHandlers {
    */
   async handleResumeUpload(file) {
     try {
+      console.log(`📁 User clicked upload resume: ${file.name}`);
+      
       if (!file) {
         throw new Error('No file selected');
       }
@@ -33,8 +35,6 @@ class FileHandlers {
         throw new Error('File size too large. Maximum size is 10MB.');
       }
 
-      console.log(`Processing file upload: ${file.name} (${file.type}, ${file.size} bytes)`);
-
       // Read file as base64
       const base64Content = await this.readFileAsBase64(file);
       
@@ -43,16 +43,15 @@ class FileHandlers {
         try {
           const tempOptimizer = new ResumeCacheOptimizer(null); // Don't need API client for cache invalidation
           await tempOptimizer.invalidateResumeCache(); // Invalidate all resume caches
-          console.log('🗑️ Invalidated previous resume caches');
         } catch (cacheError) {
-          console.warn('⚠️ Failed to invalidate cache:', cacheError);
+          // Silent failure for cache invalidation
         }
       }
       
       // Store in state
       this.stateManager.setResume(file.name, base64Content, file.type);
       
-      console.log('Resume uploaded successfully');
+      console.log('✅ Successfully stored resume');
       return {
         success: true,
         filename: file.name,
@@ -61,7 +60,7 @@ class FileHandlers {
       };
 
     } catch (error) {
-      console.error('Error uploading resume:', error);
+      console.error(`❌ Resume upload failed: ${error.message}`);
       throw error;
     }
   }
@@ -92,6 +91,8 @@ class FileHandlers {
    */
   downloadOriginalResume() {
     try {
+      console.log('📥 User clicked download resume');
+      
       const resume = this.stateManager.getResume();
       
       if (!resume.filename || !resume.content || !resume.mimeType) {
@@ -119,11 +120,11 @@ class FileHandlers {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      console.log('Original resume downloaded:', resume.filename);
+      console.log('✅ Successfully downloaded resume');
       return true;
 
     } catch (error) {
-      console.error('Error downloading original resume:', error);
+      console.error(`❌ Resume download failed: ${error.message}`);
       throw error;
     }
   }
@@ -167,7 +168,7 @@ class FileHandlers {
     const url = URL.createObjectURL(blob);
     
     this.downloadBlob(url, `${baseFilename}.txt`);
-    console.log('Resume downloaded as TXT');
+    console.log('✅ Successfully downloaded TXT resume');
     return true;
   }
 
@@ -184,11 +185,11 @@ class FileHandlers {
       const docDefinition = this.generatePdfDefinition(resumeJSON);
       
       pdfMake.createPdf(docDefinition).download(`${baseFilename}.pdf`);
-      console.log('Resume downloaded as PDF');
+      console.log('✅ Successfully downloaded PDF resume');
       return true;
 
     } catch (error) {
-      console.error('Error generating PDF:', error);
+      console.error(`❌ PDF generation failed: ${error.message}`);
       throw new Error('Failed to generate PDF. Please try TXT format instead.');
     }
   }

@@ -6,9 +6,9 @@
 class ParallelProcessor {
   constructor(apiClient, options = {}) {
     this.apiClient = apiClient;
-    this.maxConcurrency = options.maxConcurrency || 3;
-    this.batchDelay = options.batchDelay || 500; // ms between batches
-    this.retryAttempts = options.retryAttempts || 2;
+    this.maxConcurrency = 3; // Fixed at 3, rate limiter handles the rest
+    this.batchDelay = 500; // ms between batches
+    // Removed retryAttempts - rate limiter handles all retries now
     this.activeRequests = new Set();
     this.requestQueue = [];
     this.results = new Map();
@@ -18,12 +18,8 @@ class ParallelProcessor {
    * Process multiple resume sections in parallel
    */
   async processSectionsInParallel(jobDescription, resumeSections, progressCallback) {
-    console.log('🔄 Starting parallel section processing...');
-    
     const sectionTasks = this.prepareSectionTasks(jobDescription, resumeSections);
     const batches = this.createBatches(sectionTasks, this.maxConcurrency);
-    
-    console.log(`📊 Processing ${sectionTasks.length} sections in ${batches.length} batches`);
     
     const results = new Map();
     let processedSections = 0;
@@ -31,7 +27,6 @@ class ParallelProcessor {
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
-      console.log(`🚀 Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} sections`);
       
       // Update progress
       if (progressCallback) {
@@ -45,7 +40,7 @@ class ParallelProcessor {
         });
       }
 
-      // Process batch in parallel
+      // Process batch in parallel (rate limiter handles the queuing)
       const batchPromises = batch.map(task => 
         this.processTaskWithRetry(task)
           .then(result => ({
@@ -70,13 +65,15 @@ class ParallelProcessor {
           results.set(value.sectionType, value);
           processedSections++;
           
-          // Only log failures, successes are logged in batch summary
-          if (!value.success) {
+          if (value.success) {
+            console.log(`🔧 Optimizing section: ${value.sectionType}`);
+            console.log(`✅ Optimized: ${value.sectionType}`);
+          } else {
             console.error(`❌ ${value.sectionType} failed: ${value.error}`);
           }
         });
 
-        // Add delay between batches to respect rate limits
+        // Add delay between batches
         if (batchIndex < batches.length - 1) {
           await this.delay(this.batchDelay);
         }
@@ -96,7 +93,6 @@ class ParallelProcessor {
       });
     }
 
-    console.log(`🎉 Parallel processing complete: ${processedSections}/${totalSections} sections processed`);
     return results;
   }
 
@@ -122,43 +118,30 @@ class ParallelProcessor {
       }
     });
     
-    console.log(`📋 Prepared ${tasks.length} section tasks:`, tasks.map(t => t.sectionType));
     return tasks;
   }
 
   /**
-   * Process individual task with retry logic
+   * Process individual task (retry logic handled by rate limiter)
    */
   async processTaskWithRetry(task) {
     const requestId = task.id;
     this.activeRequests.add(requestId);
 
     try {
-      for (let attempt = 0; attempt <= this.retryAttempts; attempt++) {
-                 try {
-           const result = await this.apiClient.tailorSection(
-             task.jobDescription,
-             task.data,
-             task.sectionType
-           );
-          
-          this.activeRequests.delete(requestId);
-          return result;
-          
-        } catch (error) {
-          console.warn(`⚠️ ${task.sectionType} attempt ${attempt + 1} failed:`, error.message);
-          
-          if (attempt === this.retryAttempts) {
-            throw error;
-          }
-          
-                     // Exponential backoff
-           const backoffDelay = Math.pow(2, attempt) * 1000;
-           await this.delay(backoffDelay);
-        }
-      }
-    } finally {
+      // No retry loop needed - SimpleRateLimiter handles all retries with proper count tracking
+      const result = await this.apiClient.tailorSection(
+        task.jobDescription,
+        task.data,
+        task.sectionType
+      );
+      
       this.activeRequests.delete(requestId);
+      return result;
+      
+    } catch (error) {
+      this.activeRequests.delete(requestId);
+      throw error;
     }
   }
 
@@ -197,7 +180,7 @@ class ParallelProcessor {
       activeRequests: this.activeRequests.size,
       queuedRequests: this.requestQueue.length,
       maxConcurrency: this.maxConcurrency,
-      retryAttempts: this.retryAttempts
+      retryHandling: 'Handled by SimpleRateLimiter'
     };
   }
 

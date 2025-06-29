@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Retry Count Functionality</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 5px; }
+        .console-output { 
+            background: #1e1e1e; 
+            color: #fff; 
+            padding: 10px; 
+            margin: 10px 0; 
+            border-radius: 5px; 
+            font-family: 'Courier New', monospace; 
+            max-height: 400px; 
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>ResumeHub-v1 Retry Count Test</h1>
+    
+    <p>This test simulates API rate limiting to verify retry count logging.</p>
+    
+    <button onclick="testRetryCount()">Test Retry Count Logging</button>
+    <button onclick="clearConsole()">Clear Console</button>
+    
+    <div id="console-output" class="console-output"></div>
+
+    <!-- Load required modules -->
+    <script src="utils/simple-rate-limiter.js"></script>
+    <script src="utils/error-handler.js"></script>
+    <script src="utils/api-client.js"></script>
+
+    <script>
+        // Override console.log and console.error to show in our div
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        const consoleOutput = document.getElementById('console-output');
+        
+        function logToDiv(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : '#4ecdc4';
+            consoleOutput.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            logToDiv(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalConsoleError.apply(console, args);
+            logToDiv(args.join(' '), 'error');
+        };
+
+        // Mock API function that simulates rate limiting
+        function createMockAPICall(fieldName, shouldFail = true) {
+            return async () => {
+                if (shouldFail) {
+                    throw new Error('429 rate limit exceeded');
+                } else {
+                    return { success: true, data: `Mock data for ${fieldName}` };
+                }
+            };
+        }
+
+        async function testRetryCount() {
+            console.log('🧪 Starting retry count test...');
+            
+            try {
+                // Create a mock field
+                const mockField = {
+                    name: 'first_name',
+                    id: 'firstName',
+                    label: 'First Name',
+                    type: 'text'
+                };
+                
+                // Test with rate limiter
+                const rateLimiter = window.simpleRateLimiter;
+                if (rateLimiter) {
+                    console.log('✅ Rate limiter found, testing retry functionality...');
+                    
+                    // Queue a request that will fail with rate limiting
+                    try {
+                        await rateLimiter.queueRequest(
+                            createMockAPICall('first_name', true),
+                            `field mapping for ${mockField.name}`
+                        );
+                    } catch (error) {
+                        console.log('📝 Test completed - check the retry count messages above');
+                    }
+                } else {
+                    console.error('❌ Rate limiter not found!');
+                }
+                
+            } catch (error) {
+                console.error('❌ Test failed:', error.message);
+            }
+        }
+
+        function clearConsole() {
+            consoleOutput.innerHTML = '';
+        }
+
+        // Initialize
+        console.log('🚀 Test environment ready');
+        console.log('📋 Rate limiter status:', window.simpleRateLimiter ? '✅ Available' : '❌ Not found');
+    </script>
+</body>
+</html> 

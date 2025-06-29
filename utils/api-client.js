@@ -5,7 +5,24 @@ class GeminiAPIClient {
     this.baseURL = 'https://generativelanguage.googleapis.com/v1beta/models';
   }
 
-  async callAPI(model, prompt, config = {}) {
+  async callAPI(model, prompt, config = {}, operation = 'API call') {
+    // Use simple rate limiter if available
+    const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) || 
+                       (typeof self !== 'undefined' && self.simpleRateLimiter) ||
+                       (typeof global !== 'undefined' && global.simpleRateLimiter);
+                       
+    if (rateLimiter) {
+      return await rateLimiter.queueRequest(
+        () => this._makeAPICall(model, prompt, config),
+        operation
+      );
+    } else {
+      // Fallback to direct call if rate limiter not available
+      return await this._makeAPICall(model, prompt, config);
+    }
+  }
+
+  async _makeAPICall(model, prompt, config = {}) {
     const endpoint = `${this.baseURL}/${model}:generateContent?key=${this.apiKey}`;
     const defaultConfig = {
       temperature: 0.3,
@@ -20,7 +37,6 @@ class GeminiAPIClient {
     };
 
     try {
-      console.log(`Calling Gemini API: ${model}`);
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -29,15 +45,12 @@ class GeminiAPIClient {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`API Error (${response.status}):`, errorText);
         throw new Error(`API request failed: ${response.status}`);
       }
 
       const responseData = await response.json();
-      // API call successful - detailed logging removed to reduce console noise
       return responseData;
     } catch (error) {
-      console.error('API call failed:', error);
       throw error;
     }
   }
@@ -91,7 +104,7 @@ Parse the attached file and generate the JSON output.`;
       safetySettings: this.getSafetySettings()
     };
 
-    const response = await this.callAPIWithCustomBody('gemini-2.5-flash', requestBody);
+    const response = await this.callAPIWithCustomBody('gemini-2.5-flash', requestBody, 'resume parsing');
     
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
       const jsonText = response.candidates[0].content.parts[0].text;
@@ -128,7 +141,7 @@ ${pageTextContent}
     const response = await this.callAPI('gemini-2.5-flash', prompt, {
       temperature: 0.2,
       responseMimeType: "text/plain"
-    });
+    }, 'job description extraction');
 
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
       const extractedText = response.candidates[0].content.parts[0].text.trim();
@@ -146,8 +159,6 @@ ${pageTextContent}
 
   // Specialized method for section tailoring
   async tailorSection(jobDescription, originalSectionData, sectionType) {
-    console.log(`Tailoring section: ${sectionType}`);
-    
     const prompt = `**Instruction:**
 Analyze the following original resume section (\`${sectionType}\`) and the provided job description. Generate a tailored version of *only this section*, highlighting skills and experiences relevant to the job description.
 - Use strong action verbs.
@@ -178,18 +189,16 @@ ${JSON.stringify(originalSectionData, null, 2)}
     const response = await this.callAPI('gemini-2.5-flash', prompt, {
       temperature: 0.4,
       responseMimeType: "application/json"
-    });
+    }, `section tailoring for ${sectionType}`);
 
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
       const jsonText = response.candidates[0].content.parts[0].text;
       try {
         return JSON.parse(jsonText);
       } catch (parseError) {
-        console.error(`Failed to parse JSON response for ${sectionType}:`, parseError);
         return null;
       }
     } else {
-      console.error(`Could not find JSON text in ${sectionType} tailoring response`);
       return null;
     }
   }
@@ -219,11 +228,12 @@ Instructions:
 
 Value:`;
 
+    const fieldName = field.name || field.id || 'unknown field';
     const response = await this.callAPI('gemini-2.5-flash', prompt, {
       temperature: 0.1,
       maxOutputTokens: 100,
       responseMimeType: "text/plain"
-    });
+    }, `field mapping for ${fieldName}`);
 
     const value = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
     
@@ -240,7 +250,24 @@ Value:`;
   }
 
   // Helper method for custom request body
-  async callAPIWithCustomBody(model, requestBody) {
+  async callAPIWithCustomBody(model, requestBody, operation = 'API call') {
+    // Use simple rate limiter if available
+    const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) || 
+                       (typeof self !== 'undefined' && self.simpleRateLimiter) ||
+                       (typeof global !== 'undefined' && global.simpleRateLimiter);
+                       
+    if (rateLimiter) {
+      return await rateLimiter.queueRequest(
+        () => this._makeAPICallWithCustomBody(model, requestBody),
+        operation
+      );
+    } else {
+      // Fallback to direct call if rate limiter not available
+      return await this._makeAPICallWithCustomBody(model, requestBody);
+    }
+  }
+
+  async _makeAPICallWithCustomBody(model, requestBody) {
     const endpoint = `${this.baseURL}/${model}:generateContent?key=${this.apiKey}`;
     
     try {
@@ -252,13 +279,11 @@ Value:`;
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`API Error (${response.status}):`, errorText);
         throw new Error(`API request failed: ${response.status}`);
       }
 
       return await response.json();
     } catch (error) {
-      console.error('API call failed:', error);
       throw error;
     }
   }
@@ -287,4 +312,9 @@ if (typeof window !== 'undefined') {
   window.GeminiAPIClient = GeminiAPIClient;
 } else if (typeof self !== 'undefined') {
   self.GeminiAPIClient = GeminiAPIClient;
-} 
+} else if (typeof global !== 'undefined') {
+  global.GeminiAPIClient = GeminiAPIClient;
+} else {
+  // For service workers and other environments
+  this.GeminiAPIClient = GeminiAPIClient;
+}

@@ -61,6 +61,10 @@ class UIManager {
    * Apply theme to the interface
    */
   applyTheme(theme, isInitialLoad = false) {
+    if (!isInitialLoad) {
+      console.log(`🎨 User clicked change theme to: ${theme}`);
+    }
+    
     this.state.currentTheme = theme;
     
     // Apply theme to document.body like original implementation
@@ -72,11 +76,9 @@ class UIManager {
     }
     
     if (!isInitialLoad) {
-      console.log('Theme applied to body:', theme);
       // Save theme preference to storage
-      chrome.storage.sync.set({ theme: theme }, () => {
-        console.log('Theme saved to storage:', theme);
-      });
+      chrome.storage.sync.set({ theme: theme });
+      console.log(`✅ Theme updated successfully to ${theme}`);
     }
   }
 
@@ -93,8 +95,6 @@ class UIManager {
     const isCollapsed = cardElement.classList.contains('is-collapsed');
     const shouldCollapse = forceCollapse !== null ? forceCollapse : !isCollapsed;
     const button = cardElement.querySelector('.toggle-button');
-    
-    console.log(`Toggling card ${cardId}, currently collapsed: ${isCollapsed}, setting to: ${shouldCollapse}`);
     
     if (shouldCollapse) {
       cardElement.classList.add('is-collapsed');
@@ -121,8 +121,6 @@ class UIManager {
     
     this.elements.statusMessageDiv.textContent = message;
     this.elements.statusMessageDiv.className = `status-message ${type}`;
-    
-    console.log(`Status updated: ${type} - ${message}`);
   }
 
   /**
@@ -174,8 +172,6 @@ class UIManager {
     
     this.elements.autoFillStatus.textContent = message;
     this.elements.autoFillStatus.className = `status-message ${type}`;
-    
-    console.log(`Auto-fill status updated: ${type} - ${message}`);
   }
 
   /**

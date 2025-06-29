@@ -4,8 +4,6 @@
  */
 
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log('ResumeHub popup loaded - starting initialization...');
-    
     try {
         // Check if all required classes are available
         const requiredClasses = ['StateManager', 'UIManager', 'FileHandlers', 'ResumeProcessor', 'EventHandlers', 'AppController'];
@@ -18,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         console.log('✅ All required classes found');
+        console.log('🚀 Starting ResumeHub popup initialization...');
         
         // Initialize the application
         const app = new AppController();
@@ -26,6 +25,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Expose for debugging
         window.ResumeHubApp = app;
         
+        console.log('✅ ResumeHub popup initialized successfully');
         console.log('✅ ResumeHub initialized successfully');
         
     } catch (error) {

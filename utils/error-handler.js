@@ -9,7 +9,7 @@ class ErrorHandler {
   }
 
   static handleAPIError(error, operation) {
-    console.error(`API Error during ${operation}:`, error);
+    // Error logging is now handled in safeAPICall method
     
     // Check for specific API error patterns
     if (error.message.includes('API key') || error.message.includes('401')) {
@@ -40,7 +40,7 @@ class ErrorHandler {
   }
 
   static handleChromeError(error, operation) {
-    console.error(`Chrome API Error during ${operation}:`, error);
+    // Only log severe Chrome errors, not all of them
     
     if (error.message.includes('activeTab') || error.message.includes('Cannot access')) {
       return 'Cannot access the current tab. Please refresh the page and try again.';
@@ -66,7 +66,7 @@ class ErrorHandler {
   }
 
   static handleFileError(error, operation) {
-    console.error(`File Error during ${operation}:`, error);
+    // File errors are logged at the component level
 
     if (error.message.includes('type') || error.message.includes('format')) {
       return 'Unsupported file format. Please use PDF, DOCX, or TXT files.';
@@ -87,7 +87,6 @@ class ErrorHandler {
     try {
       return await operation();
     } catch (error) {
-      console.error(errorMessage, error);
       throw this.createError(errorMessage, 'SAFE_EXECUTE_ERROR', { 
         originalError: error.message,
         ...context 
@@ -99,12 +98,48 @@ class ErrorHandler {
     try {
       return await apiCall();
     } catch (error) {
+      // Create clean error message directly
+      const cleanMessage = this.createCleanAPIErrorMessage(error, operation);
+      if (cleanMessage) {
+        console.error(cleanMessage);
+      }
+      
       const userMessage = this.handleAPIError(error, operation);
       throw this.createError(userMessage, 'API_ERROR', { 
         operation,
         originalError: error.message 
       });
     }
+  }
+
+  // Create clean API error messages
+  static createCleanAPIErrorMessage(error, operation) {
+    const message = error.message.toLowerCase();
+    
+    // Check for specific error types
+    if (message.includes('429') || message.includes('rate limit') || message.includes('too many requests')) {
+      // Rate limiting is now handled by SimpleRateLimiter with retry counts
+      return null; // Don't log here, let SimpleRateLimiter handle it
+    }
+    
+    if (message.includes('quota') || message.includes('limit exceeded')) {
+      return `❌ API quota exceeded - check your billing or try again tomorrow`;
+    }
+    
+    if (message.includes('api key') || message.includes('unauthorized') || message.includes('invalid key')) {
+      return `❌ Invalid API key - please check your Google API key`;
+    }
+    
+    if (message.includes('network') || message.includes('fetch') || message.includes('connection')) {
+      return `❌ Network error - check your internet connection`;
+    }
+    
+    if (message.includes('blocked') || message.includes('content policy')) {
+      return `❌ Content blocked by AI safety filters - try different content`;
+    }
+    
+    // Default clean message for other API errors
+    return `❌ API error during ${operation}: ${error.message}`;
   }
 
   static async safeChromeOperation(chromeCall, operation) {

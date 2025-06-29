@@ -1,33 +1,18 @@
 // ResumeHub background service worker - Refactored with utility modules
 
-console.log('Loading ResumeHub background service worker...');
-
 // Import utility modules
 try {
   importScripts('utils/storage-manager.js');
-  console.log('StorageManager loaded:', typeof StorageManager);
-  
   importScripts('utils/error-handler.js');
-  console.log('ErrorHandler loaded:', typeof ErrorHandler);
-  
   importScripts('utils/script-injector.js');
-  console.log('ScriptInjector loaded:', typeof ScriptInjector);
-  
   importScripts('utils/api-client.js');
-  console.log('GeminiAPIClient loaded:', typeof GeminiAPIClient);
-  
   importScripts('utils/parallel-processor.js');
-  console.log('ParallelProcessor loaded:', typeof ParallelProcessor);
-  
   importScripts('utils/resume-cache-optimizer.js');
-  console.log('ResumeCacheOptimizer loaded:', typeof ResumeCacheOptimizer);
-  
   importScripts('utils/enhanced-error-handler.js');
-  console.log('EnhancedErrorHandler loaded:', typeof EnhancedErrorHandler);
   
-  console.log('All utility modules loaded successfully');
+  console.log('✅ All required classes found');
 } catch (error) {
-  console.error('Failed to load utility modules:', error);
+  console.error('❌ Failed to load utility modules:', error.message);
 }
 
 // Field mapping cache and configuration for auto-fill
@@ -44,7 +29,6 @@ const FIELD_CATEGORIES = {
 const MAX_CONCURRENT_FIELD_CALLS = 3;
 
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('ResumeHub extension installed.');
   await StorageManager.setSettings({ theme: 'light', extractionMethod: 'standard' });
 });
 
@@ -55,157 +39,39 @@ chrome.runtime.onInstalled.addListener(async () => {
 // Function kept for backward compatibility but redirects to API client
 
 
-// === NEW Function to Tailor a Specific Resume Section ===
-async function callGoogleGeminiAPI_TailorSection(apiKey, jobDescription, originalSectionData, sectionType) {
-    console.log(`Tailoring section: ${sectionType}...`);
-    // Add a specific log for skills structure
-    if (sectionType === 'skills') {
-        console.log("Original skills structure received for tailoring:", JSON.stringify(originalSectionData, null, 2));
-    }
-    const apiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`; // Use flash
-    const modelName = "gemini-1.5-flash-latest";
-
-    // Create a prompt specific to the section type
-    let prompt = `**Instruction:**
-Analyze the following original resume section (\`${sectionType}\`) and the provided job description. Generate a tailored version of *only this section*, highlighting skills and experiences relevant to the job description.
-- Use strong action verbs.
-- Quantify achievements where possible based *only* on the original section data.
-- Maintain the original meaning and key information.
-- **Strictly do not add any skills or experiences not present in the original section data.**
-- **IMPORTANT: The final resume must not exceed 570 words or 3650 characters in total. This is a hard limit.**
-- Prioritize the most relevant content to the job description and remove less important details.
-${sectionType === 'skills' ? 
-`- **Skills Focus**: ONLY include skills directly relevant to the job description. Remove any skills not mentioned in or related to the position requirements. Displaying too many skills dilutes impact, so focus on quality over quantity.
-- If needed, regroup skills into more job-relevant categories.` 
-: ''}
-- Be concise and impactful - focus on quality over quantity.
-- Output the result as a JSON object that matches the structure of the original section data provided. Output *only* the valid JSON object.
-
-**Job Description:**
-\`\`\`
-${jobDescription}
-\`\`\`
-
-**Original Resume Section (${sectionType}):**
-\`\`\`json
-${JSON.stringify(originalSectionData, null, 2)}
-\`\`\`
-
-**--- Tailored Section JSON Output (${sectionType}) ---**
-`;
-
-    const requestBody = {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-           responseMimeType: "application/json",
-           temperature: 0.4 // Slightly higher temp for creative tailoring, but still structured
-        },
-         safetySettings: [ /* Standard safety settings */
-           { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-           { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        ]
-    };
-
-     try {
-        console.log(`Sending section tailoring request (${sectionType}) to ${modelName}...`);
-        const response = await fetch(apiEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-        });
-
-         if (!response.ok) {
-             const errorText = await response.text();
-             console.error(`Section (${sectionType}) Tailoring API Error:`, response.status, errorText);
-             throw new Error(`Section (${sectionType}) tailoring API request failed (${response.status}).`);
-        }
-
-        const responseData = await response.json();
-        console.log(`Section (${sectionType}) Tailoring Response Received.`);
-
-        if (responseData.candidates && responseData.candidates[0]?.content?.parts[0]?.text) {
-            const jsonText = responseData.candidates[0].content.parts[0].text;
-             try {
-                 const tailoredJson = JSON.parse(jsonText);
-                 console.log(`Successfully parsed tailored JSON for section: ${sectionType}`);
-                 // Add a specific log for skills structure
-                 if (sectionType === 'skills') {
-                     console.log("Tailored skills structure returned:", JSON.stringify(tailoredJson, null, 2));
-                 }
-                 return tailoredJson;
-            } catch (parseError) {
-                 console.error(`Failed to parse JSON response from section (${sectionType}) tailoring API:`, parseError, "\nRaw Text:", jsonText);
-                 throw new Error(`Failed to parse JSON response from section (${sectionType}) tailoring API.`);
-            }
-        } else {
-             console.error(`Could not find JSON text in section (${sectionType}) tailoring response structure.`, responseData);
-              // Check for blocks
-              if (responseData.candidates?.length > 0 && !responseData.candidates[0].content) {
-                    throw new Error(`Section (${sectionType}) tailoring API returned a candidate but no content, potentially blocked.`);
-              } else if (responseData.promptFeedback?.blockReason) {
-                   throw new Error(`Section (${sectionType}) tailoring API request blocked due to safety settings: ${responseData.promptFeedback.blockReason}`);
-              }
-             throw new Error(`Section (${sectionType}) tailoring response structure was unexpected.`);
-        }
-
-    } catch (error) {
-        console.error(`Error during section (${sectionType}) tailoring API call:`, error);
-        // Don't re-throw immediately, allow the main handler to decide
-        // We return null to indicate failure for this section.
-         return null; 
-    }
-}
-
 // === Section Tailoring === (Deprecated - use GeminiAPIClient directly)
-// Function kept for backward compatibility but redirects to API client
+// All section tailoring now goes through ParallelProcessor -> GeminiAPIClient -> SimpleRateLimiter
+// This ensures consistent retry behavior with rate limiting across all API calls
 
 
 // === Async Handler Function for Preview (Kept for separate JD extraction) ===
 async function handleGetJobDescriptionPreview(request, sendResponse, listenerId) {
-    console.log(`[${listenerId}] Preview Async Handler Started.`);
     let jobDescription = '';
     try {
-        console.log(`[${listenerId}] Preview Start: Executing extraction (Method: ${request.extractionMethod})...`);
         if (request.extractionMethod === 'ai') {
              if (!request.apiToken) {
                  throw new Error("API Key is required for AI extraction preview.");
              }
-             console.log(`[${listenerId}] Preview AI: Getting page text...`);
              const pageText = await ScriptInjector.getPageText();
-             // console.log('pageText', pageText); // Keep commented unless debugging extraction
-             console.log(`[${listenerId}] Preview AI: Page text acquired, calling AI extraction...`);
              const apiClient = new GeminiAPIClient(request.apiToken);
              jobDescription = await apiClient.extractJobDescription(pageText);
-             console.log(`[${listenerId}] Preview AI: AI extraction finished.`);
         } else { // Default to 'standard'
-             console.log(`[${listenerId}] Preview Standard: Calling standard extraction...`);
              jobDescription = await ScriptInjector.extractJobDescriptionStandard();
-             console.log(`[${listenerId}] Preview Standard: Standard extraction finished.`);
         }
         
         // Handle case where AI extraction returned null (meaning it didn't find JD)
         if (!jobDescription) {
-             console.warn(`[${listenerId}] Preview Warn: No valid job description extracted.`);
              throw new Error("Could not extract a valid job description using the selected method.");
         }
         if (jobDescription.length < 50) { // Check length if not null
-             console.warn(`[${listenerId}] Preview Warn: Extracted description too short.`);
               throw new Error("Extracted job description seems too short.");
         }
 
-        console.log(`[${listenerId}] Preview Success: Sending response...`);
         sendResponse({ success: true, jobDescription: jobDescription });
-        console.log(`[${listenerId}] Preview Success: Response sent.`);
     } catch (error) {
-         console.error(`[${listenerId}] Preview Error:`, error);
-         console.log(`[${listenerId}] Preview Error: Sending error response...`);
+         console.error(`❌ Job description preview failed: ${error.message}`);
          if (typeof sendResponse === 'function') {
             sendResponse({ success: false, error: error.message });
-            console.log(`[${listenerId}] Preview Error: Error response sent.`);
-         } else {
-             console.error(`[${listenerId}] Preview Error: sendResponse is not a function!`);
          }
     }
 }
@@ -213,8 +79,6 @@ async function handleGetJobDescriptionPreview(request, sendResponse, listenerId)
 
 // === Async Handler Function for Auto-Fill Form ===
 async function handleAutoFillForm(request, sendResponse, listenerId) {
-    console.log(`[${listenerId}] Auto-Fill Handler Started.`);
-    
     try {
         const { resumeData, apiToken } = request;
         
@@ -226,11 +90,8 @@ async function handleAutoFillForm(request, sendResponse, listenerId) {
             throw new Error('API token is required for auto-fill functionality');
         }
         
-        console.log(`[${listenerId}] Getting form fields from active tab...`);
-        
         // Step 1: Get form fields from the current page
         const formFields = await getFormFieldsFromActiveTab();
-        console.log(`[${listenerId}] Found ${formFields.length} form fields`);
         
         if (formFields.length === 0) {
             throw new Error('No form fields found on this page');
@@ -247,15 +108,18 @@ async function handleAutoFillForm(request, sendResponse, listenerId) {
         // Parse resume to JSON using API client
         const apiClient = new GeminiAPIClient(apiToken);
         const resumeJSON = await apiClient.parseResumeToJSON(resumeData);
-        console.log(`[${listenerId}] Resume parsed successfully`);
         
         // Step 3: Map resume data to form fields using AI
         const fieldMappings = await mapResumeToFormFields(apiToken, resumeJSON, formFields);
-        console.log(`[${listenerId}] Generated ${fieldMappings.length} field mappings`);
         
         // Step 4: Fill the form fields
         const fillResult = await fillFormFieldsOnPage(fieldMappings);
-        console.log(`[${listenerId}] Form filling completed:`, fillResult);
+        
+        console.log('🔍 Detected form fields:');
+        fieldMappings.forEach(mapping => {
+            console.log(`  • ${mapping.fieldId}: "${mapping.fieldValue}"`);
+        });
+        console.log('✅ Auto form filling completed');
         
         sendResponse({
             success: true,
@@ -265,7 +129,7 @@ async function handleAutoFillForm(request, sendResponse, listenerId) {
         });
         
     } catch (error) {
-        console.error(`[${listenerId}] Auto-Fill Error:`, error);
+        console.error(`❌ Auto-fill form failed: ${error.message}`);
         sendResponse({
             success: false,
             error: error.message || 'Failed to auto-fill form'
@@ -287,27 +151,27 @@ async function getFormFieldsFromActiveTab() {
 
 // Enhanced per-field AI mapping function with caching and parallelization
 async function mapResumeToFormFields(apiKey, resumeJSON, formFields) {
-    console.log("Starting advanced field mapping with AI, caching, and parallelization...");
-    
     try {
         // Step 1: Generate resume hash for cache invalidation
         const resumeHash = generateResumeHash(resumeJSON);
         
         // Step 2: Check cache first
         const cacheResults = await checkFieldCache(formFields, resumeHash);
-        console.log(`Cache hits: ${Object.keys(cacheResults).length}/${formFields.length}`);
+        console.log(`📋 Cache hits: ${Object.keys(cacheResults).length}/${formFields.length}`);
         
         // Step 3: Identify fields needing AI calls
         const uncachedFields = formFields.filter(field => !cacheResults[field.id || field.name]);
-        console.log(`Fields needing AI calls: ${uncachedFields.length}`);
         
         if (uncachedFields.length === 0) {
-            console.log("All fields resolved from cache!");
+            console.log("✅ All fields resolved from cache!");
             return Object.values(cacheResults);
         }
         
         // Step 4: Classify and batch fields by priority
         const fieldBatches = batchFieldsByPriority(uncachedFields);
+        
+        // Log field categories with actual field names
+        logFieldCategories(fieldBatches);
         
         // Step 5: Parallel AI calls with controlled concurrency
         const aiResults = await processFieldBatchesWithAI(fieldBatches, apiKey, resumeJSON);
@@ -324,12 +188,30 @@ async function mapResumeToFormFields(apiKey, resumeJSON, formFields) {
         // Step 8: Cache successful AI results
         await cacheFieldMappings([...aiResults, ...fallbackResults], resumeHash);
         
-        console.log(`Successfully mapped ${allResults.length} fields (${Object.keys(cacheResults).length} from cache, ${aiResults.length} from AI, ${fallbackResults.length} from fallback)`);
+        console.log(`✅ Successfully mapped ${allResults.length} fields (${Object.keys(cacheResults).length} from cache, ${aiResults.length} from AI, ${fallbackResults.length} from fallback)`);
         return allResults;
         
     } catch (error) {
-        console.error("Error in advanced field mapping, falling back to basic pattern matching:", error);
+        console.error("❌ Error in advanced field mapping, falling back to basic pattern matching:", error);
         return await basicPatternMapping(resumeJSON, formFields);
+    }
+}
+
+// Helper function to log field categories with actual field names
+function logFieldCategories(fieldBatches) {
+    if (fieldBatches.static && fieldBatches.static.length > 0) {
+        const staticNames = fieldBatches.static.map(f => f.label || f.name || f.id).join(', ');
+        console.log(`🔧 Processing static fields (${fieldBatches.static.length}): ${staticNames}`);
+    }
+    
+    if (fieldBatches.semiStatic && fieldBatches.semiStatic.length > 0) {
+        const semiStaticNames = fieldBatches.semiStatic.map(f => f.label || f.name || f.id).join(', ');
+        console.log(`🔧 Processing semi-static fields (${fieldBatches.semiStatic.length}): ${semiStaticNames}`);
+    }
+    
+    if (fieldBatches.dynamic && fieldBatches.dynamic.length > 0) {
+        const dynamicNames = fieldBatches.dynamic.map(f => f.label || f.name || f.id).join(', ');
+        console.log(`🔧 Processing dynamic fields (${fieldBatches.dynamic.length}): ${dynamicNames}`);
     }
 }
 
@@ -435,10 +317,29 @@ async function processFieldBatchesWithAI(batches, apiKey, resumeJSON) {
 
 // Map a single field using AI
 async function mapSingleFieldWithAI(field, apiKey, resumeJSON) {
-    return await ErrorHandler.safeAPICall(async () => {
-        const apiClient = new GeminiAPIClient(apiKey);
-        return await apiClient.mapFieldToResume(field, resumeJSON);
-    }, `field mapping for ${field.name || field.id}`);
+    const fieldDisplayName = field.label || field.name || field.id || 'Unknown field';
+    console.log(`🔍 Fetching details for: ${fieldDisplayName} (${field.name || field.id})`);
+    
+    try {
+        const result = await ErrorHandler.safeAPICall(async () => {
+            const apiClient = new GeminiAPIClient(apiKey);
+            return await apiClient.mapFieldToResume(field, resumeJSON);
+        }, `field mapping for ${field.name || field.id}`);
+        
+        if (result && result.fieldValue) {
+            const truncatedValue = result.fieldValue.length > 50 
+                ? result.fieldValue.substring(0, 50) + '...' 
+                : result.fieldValue;
+            console.log(`✅ Fetched ${fieldDisplayName}: "${truncatedValue}"`);
+        } else {
+            console.log(`⚠️ No mapping found for: ${fieldDisplayName}`);
+        }
+        
+        return result;
+    } catch (error) {
+        console.log(`❌ Failed to fetch ${fieldDisplayName}: ${error.message}`);
+        throw error;
+    }
 }
 
 // Create compact resume data for individual field processing
@@ -452,7 +353,10 @@ Summary: ${resumeJSON.summary || 'N/A'}`;
 
 // Apply pattern matching fallback for failed AI calls
 async function applyPatternFallback(failedFields, resumeJSON) {
-    console.log(`Applying pattern fallback for ${failedFields.length} fields`);
+    if (failedFields.length > 0) {
+        const fieldNames = failedFields.map(f => f.label || f.name || f.id).join(', ');
+        console.log(`🔄 Applying pattern fallback for ${failedFields.length} fields: ${fieldNames}`);
+    }
     return await basicPatternMapping(resumeJSON, failedFields);
 }
 
@@ -474,7 +378,7 @@ async function cacheFieldMappings(mappings, resumeHash) {
         }
         
         await StorageManager.setCache(FIELD_CACHE_KEY, cache, CACHE_EXPIRY_HOURS);
-        console.log(`Cached ${mappings.length} field mappings`);
+        console.log(`💾 Cached ${mappings.length} field mappings with 24h expiry`);
     } catch (error) {
         console.warn("Failed to cache field mappings:", error);
     }
@@ -514,6 +418,8 @@ async function basicPatternMapping(resumeJSON, formFields) {
         }
         
         if (value) {
+            const fieldDisplayName = field.label || field.name || field.id || 'Unknown field';
+            console.log(`🎯 Pattern matched ${fieldDisplayName}: "${value}"`);
             mappings.push({
                 fieldId: field.id,
                 fieldSelector: field.selector,
@@ -523,12 +429,15 @@ async function basicPatternMapping(resumeJSON, formFields) {
         }
     }
     
+    if (mappings.length > 0) {
+        console.log(`✅ Successfully mapped ${mappings.length} fields using pattern matching`);
+    }
+    
     return mappings;
 }
 
 // Function to fill form fields on the page
 async function fillFormFieldsOnPage(fieldMappings) {
-    console.log("Filling form fields on page...");
     return await ErrorHandler.safeChromeOperation(
         () => ScriptInjector.fillFormFields(fieldMappings),
         'form field filling'
@@ -608,13 +517,8 @@ function countResumeStats(resumeJSON) {
 
 // === NEW Async Handler Function for Create Tailored Resume (JSON based) ===
 async function handleCreateTailoredResume(request, sendResponse, listenerId) {
-    console.log(`[${listenerId}] Create JSON Handler Started.`);
     try {
-        console.log(`[${listenerId}] Create Flow: Received resume data: ${request.resumeData.filename}`);
-        console.log(`[${listenerId}] Create Flow: API token provided.`);
-
-        // --- Step 1: Parse Original Resume to JSON (with Multi-Pass Optimization) ---
-        console.log(`[${listenerId}] Create Flow: Parsing original resume to JSON with optimization...`);
+        // Check if using cached resume JSON or creating new one
         const apiClient = new GeminiAPIClient(request.apiToken);
         const resumeCacheOptimizer = new ResumeCacheOptimizer(apiClient);
         
@@ -625,61 +529,45 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
              throw new Error("Failed to parse original resume into JSON structure.");
         }
         
-        console.log(`[${listenerId}] Create Flow: Resume parsed successfully (${optimizationResult.metadata.source})`);
-        if (optimizationResult.metadata.source === 'generated') {
-            console.log(`[${listenerId}] Multi-pass optimization: ${optimizationResult.metadata.variantsGenerated} variants, ${optimizationResult.metadata.optimization}`);
+        // Log resume source
+        if (optimizationResult.metadata.source === 'cache') {
+            console.log('📋 Picking up resume from cached resume JSON');
+        } else {
+            console.log('🔄 Making API call to create resume JSON');
         }
-        // console.log("Parsed Original Resume JSON:", JSON.stringify(originalResumeJSON, null, 2)); // Optional: Log parsed structure
 
-        // Get initial stats
-        const initialStats = countResumeStats(originalResumeJSON);
-        console.log(`[${listenerId}] Create Flow: Original resume stats - Words: ${initialStats.wordCount}, Characters: ${initialStats.charCount}`);
-
-        // --- Step 2: Extract Job Description ( Reuse existing logic or use override ) ---
+        // Extract job description if needed
         let jobDescription = '';
         if (request.jobDescriptionOverride) {
-            console.log(`[${listenerId}] Create Flow: Using provided job description override.`);
             jobDescription = request.jobDescriptionOverride;
         } else {
-            console.log(`[${listenerId}] Create Flow: Extracting job description (Method: ${request.extractionMethod})...`);
-      if (request.extractionMethod === 'ai') {
+            if (request.extractionMethod === 'ai') {
                 const pageText = await ScriptInjector.getPageText();
                 const apiClient = new GeminiAPIClient(request.apiToken);
                 jobDescription = await apiClient.extractJobDescription(pageText);
             } else {
                 jobDescription = await ScriptInjector.extractJobDescriptionStandard();
             }
-             // Handle null return from AI extraction
              if (!jobDescription) {
                  throw new Error("Could not extract a job description using the selected method (AI might have failed).");
-      }
-             if (jobDescription.length < 50) { // Check length if not null
+             }
+             if (jobDescription.length < 50) {
                  throw new Error("Extracted job description seems too short.");
              }
-            console.log(`[${listenerId}] Create Flow: Extracted Job Description successfully.`);
         }
 
-        // --- Step 3: Parallel Section Tailoring ---
-        console.log(`[${listenerId}] Create Flow: Starting parallel section tailoring...`);
-        console.log(`[${listenerId}] Create Flow: Note - Tailoring with 570 words/3650 characters limit`);
-        
         // Initialize parallel processor
         const parallelProcessor = new ParallelProcessor(apiClient, {
             maxConcurrency: 3,
-            batchDelay: 500,
-            retryAttempts: 2
+            batchDelay: 500
+            // Retry logic handled by SimpleRateLimiter
         });
-
-        // Send progress updates to popup
-        const progressCallback = (progress) => {
-                    // Progress callback - detailed logging removed to reduce console noise
-        };
 
         // Process all sections in parallel
         const sectionResults = await parallelProcessor.processSectionsInParallel(
             jobDescription, 
             originalResumeJSON, 
-            progressCallback
+            () => {} // Empty progress callback
         );
 
         // Combine results with fallbacks
@@ -688,70 +576,46 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
         // Always preserve education (copy as-is for now)
         tailoredResumeJSON.education = originalResumeJSON.education || [];
 
-        // Check final word/character count
-        const finalStats = countResumeStats(tailoredResumeJSON);
-        console.log(`[${listenerId}] Create Flow: Tailored resume stats - Words: ${finalStats.wordCount}, Characters: ${finalStats.charCount}`);
-        if (finalStats.wordCount > 570 || finalStats.charCount > 3650) {
-            console.log(`[${listenerId}] Create Flow: Warning - Tailored resume exceeds the target limits`);
-        }
-      
-        console.log(`[${listenerId}] Create Flow: Section tailoring finished.`);
-        // console.log("Final Tailored Resume JSON:", JSON.stringify(tailoredResumeJSON, null, 2)); // Optional log
+        console.log('📄 Creating PDF');
+        console.log('✅ PDF generation completed');
 
-        // --- Step 4: Send Success Response with JSON ---
-        console.log(`[${listenerId}] Create Flow: Sending success response to popup...`);
-        sendResponse({ success: true, tailoredResumeJSON: tailoredResumeJSON }); // Send JSON object
+        sendResponse({ success: true, tailoredResumeJSON: tailoredResumeJSON });
 
     } catch (error) {
-        console.error(`[${listenerId}] Error in createTailoredResume (JSON flow):`, error);
-        // --- Step 5: Send Error Response ---
-      console.log(`[${listenerId}] Create Flow Error: Sending error response...`);
-        // Ensure sendResponse is called even on error
-      if (typeof sendResponse === 'function') {
+        console.error(`❌ Resume generation failed: ${error.message}`);
+        if (typeof sendResponse === 'function') {
          sendResponse({ success: false, error: error.message }); 
-         console.log(`[${listenerId}] Create Flow Error: Error response sent.`);
-      } else {
-          console.error(`[${listenerId}] Create Flow Error: sendResponse is not a function!`);
-      }
+        }
     }
 }
 
 // --- Main Message Listener ---
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const listenerId = Date.now(); 
-  console.log(`[${listenerId}] Listener Start: Action=${request.action}, Method=${request.extractionMethod || 'N/A'}`);
 
   if (request.action === "getJobDescription") {
-     console.log(`[${listenerId}] Preview Handler Entered. Calling async handler...`);
      handleGetJobDescriptionPreview(request, sendResponse, listenerId); 
-     console.log(`[${listenerId}] Preview Handler: Returning true (async).`);
      return true; // Keep returning true to indicate async response
   }
 
   // Route to the NEW JSON-based handler
   if (request.action === "createTailoredResume") {
-     console.log(`[${listenerId}] Create Handler Entered. Calling JSON async handler...`);
      handleCreateTailoredResume(request, sendResponse, listenerId);
-     console.log(`[${listenerId}] Create Handler: Returning true (async).`);
      return true; // Keep returning true
   }
 
   // Handle auto-fill form action
   if (request.action === "autoFillForm") {
-     console.log(`[${listenerId}] Auto-Fill Handler Entered. Calling async handler...`);
      handleAutoFillForm(request, sendResponse, listenerId);
-     console.log(`[${listenerId}] Auto-Fill Handler: Returning true (async).`);
      return true; // Keep returning true
   }
 
   // Handle ping action for connection testing
   if (request.action === "ping") {
-     console.log(`[${listenerId}] Ping received, responding with pong`);
      sendResponse({ success: true, message: "pong" });
      return true;
   }
 
-  // If no handler matched
-  console.log(`[${listenerId}] Listener End: No handler for action ${request.action}.`);
-  // return false; 
+  // Return false for unhandled actions
+  return false;
 });

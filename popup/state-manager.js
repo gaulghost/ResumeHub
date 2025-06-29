@@ -86,8 +86,6 @@ class StateManager {
     
     // Notify listeners
     this.notify(key, value, oldValue);
-    
-    console.log(`State updated: ${key} =`, value);
   }
 
   /**
@@ -263,7 +261,6 @@ class StateManager {
         this.setState('apiToken', localResult.apiToken);
       }
       
-      console.log('State loaded from storage');
       return true;
       
     } catch (error) {

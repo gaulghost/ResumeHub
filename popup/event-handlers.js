@@ -108,6 +108,7 @@ class EventHandlers {
         
         // Update status
         if (token) {
+          console.log('🔑 Successfully added Google API key');
           this.uiManager.updateApiTokenStatus('API Key entered.', true);
           this.uiManager.toggleCard(this.elements.apiKeyCard, true);
         } else {
@@ -131,7 +132,7 @@ class EventHandlers {
           this.stateManager.setExtractionMethod(method);
           this.uiManager.updateExtractionMethodUI(method);
           
-          console.log("Extraction method changed to:", method);
+          console.log(`🔧 User selected ${method === 'ai' ? 'AI Powered' : 'Standard'} extraction method`);
         }
       });
     });
@@ -287,7 +288,6 @@ class EventHandlers {
       // Escape to cancel operations (if possible)
       if (event.key === 'Escape') {
         // Could implement cancellation logic here
-        console.log('Escape pressed - cancellation not implemented');
       }
     });
   }
@@ -298,13 +298,11 @@ class EventHandlers {
   initializeWindowEvents() {
     // Handle popup close
     window.addEventListener('beforeunload', () => {
-      console.log('Popup closing...');
       // Could save any unsaved state here
     });
 
     // Handle visibility changes
     document.addEventListener('visibilitychange', () => {
-      // Removed redundant logging - visibility changes are too frequent and not useful for debugging
       if (!document.hidden) {
         // Could refresh state or check for updates when popup becomes visible
       }
@@ -347,7 +345,6 @@ class EventHandlers {
       if (file) {
         try {
           await this.fileHandlers.handleResumeUpload(file);
-          console.log('File dropped and uploaded successfully');
         } catch (error) {
           console.error('Drag and drop upload error:', error);
           this.uiManager.updateStatus(`Upload error: ${error.message}`, 'error');
@@ -398,16 +395,12 @@ class EventHandlers {
    * Initialize all events (main entry point)
    */
   initialize() {
-    console.log('Starting event handlers initialization...');
-    
     this.initializeAllEvents();
     this.initializeKeyboardShortcuts();
     this.initializeWindowEvents();
     this.initializeDragAndDrop();
     this.initializeFormValidation();
     this.initializeAccessibility();
-    
-    console.log('Event handlers fully initialized');
   }
 
   /**
@@ -418,8 +411,6 @@ class EventHandlers {
     document.removeEventListener('keydown', this.handleKeyboardShortcuts);
     window.removeEventListener('beforeunload', this.handleWindowClose);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
-    
-    console.log('Event handlers cleaned up');
   }
 
   /**
