@@ -109,26 +109,26 @@ class StateManager {
   /**
    * Resume management methods
    */
-  setResume(filename, content, mimeType) {
+  async setResume(filename, content, mimeType) {
     this.setState('storedResume.filename', filename);
     this.setState('storedResume.content', content);
     this.setState('storedResume.mimeType', mimeType);
     
     // Save to Chrome storage using StorageManager
-    StorageManager.setResume(filename, content, mimeType);
+    await StorageManager.setResume(filename, content, mimeType);
   }
 
   getResume() {
     return this.getState('storedResume');
   }
 
-  clearResume() {
+  async clearResume() {
     this.setState('storedResume.filename', null);
     this.setState('storedResume.content', null);
     this.setState('storedResume.mimeType', null);
     
     // Clear from Chrome storage using StorageManager
-    StorageManager.clearResume();
+    await StorageManager.clearResume();
   }
 
   hasResume() {
@@ -139,14 +139,14 @@ class StateManager {
   /**
    * API Token management
    */
-  setApiToken(token) {
+  async setApiToken(token) {
     this.setState('apiToken', token);
     
     // Save to Chrome storage using StorageManager
     if (token) {
-      StorageManager.setAPIToken(token);
+      await StorageManager.setAPIToken(token);
     } else {
-      StorageManager.clearAPIToken();
+      await StorageManager.clearAPIToken();
     }
   }
 
@@ -181,22 +181,22 @@ class StateManager {
   /**
    * Settings management
    */
-  setExtractionMethod(method) {
+  async setExtractionMethod(method) {
     this.setState('selectedExtractionMethod', method);
     
     // Save to Chrome storage using StorageManager
-    StorageManager.setSetting('extractionMethod', method);
+    await StorageManager.setSetting('extractionMethod', method);
   }
 
   getExtractionMethod() {
     return this.getState('selectedExtractionMethod');
   }
 
-  setTheme(theme) {
+  async setTheme(theme) {
     this.setState('currentTheme', theme);
     
     // Save to Chrome storage using StorageManager
-    StorageManager.setSetting('theme', theme);
+    await StorageManager.setSetting('theme', theme);
   }
 
   getTheme() {

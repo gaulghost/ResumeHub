@@ -23,16 +23,16 @@ class FileHandlers {
         throw new Error('No file selected');
       }
 
-      // Validate file type (match original validation)
+      // Validate file using SharedUtilities
       const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-      if (!allowedTypes.includes(file.type)) {
+      if (!SharedUtilities.validateFileType(file.name, allowedTypes)) {
         throw new Error('Invalid type. Use PDF, DOCX, or TXT.');
       }
 
       // Validate file size (10MB limit)
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      const maxSize = 10 * 1024 * 1024;
       if (file.size > maxSize) {
-        throw new Error('File size too large. Maximum size is 10MB.');
+        throw new Error(`File size too large. Maximum size is ${SharedUtilities.formatFileSize(maxSize)}.`);
       }
 
       // Read file as base64
@@ -49,7 +49,7 @@ class FileHandlers {
       }
       
       // Store in state
-      this.stateManager.setResume(file.name, base64Content, file.type);
+      await this.stateManager.setResume(file.name, base64Content, file.type);
       
       console.log('✅ Successfully stored resume');
       return {
@@ -560,26 +560,7 @@ class FileHandlers {
   }
 
   /**
-   * Trigger file download
-   */
-  triggerDownload(content, mimeType, extension) {
-    const link = document.createElement('a');
-    link.href = content;
-    link.download = `resume.${extension}`;
-    link.style.display = 'none';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // Clean up object URL if it was created
-    if (content.startsWith('blob:')) {
-      URL.revokeObjectURL(content);
-    }
-  }
-
-  /**
-   * Download blob with filename
+   * Unified download function for all file types
    */
   downloadBlob(url, filename) {
     const link = document.createElement('a');
@@ -591,7 +572,7 @@ class FileHandlers {
     link.click();
     document.body.removeChild(link);
     
-    // Clean up
+    // Clean up object URL
     URL.revokeObjectURL(url);
   }
 

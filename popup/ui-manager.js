@@ -76,8 +76,7 @@ class UIManager {
     }
     
     if (!isInitialLoad) {
-      // Save theme preference to storage
-      chrome.storage.sync.set({ theme: theme });
+      // Theme will be saved by StateManager when setTheme is called
       console.log(`✅ Theme updated successfully to ${theme}`);
     }
   }
@@ -248,18 +247,12 @@ class UIManager {
 
   /**
    * Initialize theme toggle event listener
+   * Note: This will be handled by EventHandlers through StateManager
    */
   initializeThemeEvents() {
-    if (this.elements.themeToggle) {
-      this.elements.themeToggle.addEventListener('change', (event) => {
-        const newTheme = event.target.checked ? 'dark' : 'light';
-        console.log('Theme toggle clicked, new theme:', newTheme);
-        this.applyTheme(newTheme);
-      });
-      console.log('Theme toggle event listener initialized');
-    } else {
-      console.error('Theme toggle element not found!');
-    }
+    // Theme events are now handled by EventHandlers through StateManager
+    // This method is kept for backward compatibility but functionality moved
+    console.log('Theme toggle event handling moved to EventHandlers');
   }
 
   /**

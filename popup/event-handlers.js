@@ -72,8 +72,8 @@ class EventHandlers {
 
     // Clear resume button
     if (this.elements.clearResumeBtn) {
-      this.elements.clearResumeBtn.addEventListener('click', () => {
-        this.stateManager.clearResume();
+      this.elements.clearResumeBtn.addEventListener('click', async () => {
+        await this.stateManager.clearResume();
         
         // Reset file input
         if (this.elements.resumeUploadInput) {
@@ -102,9 +102,9 @@ class EventHandlers {
    */
   initializeApiTokenEvents() {
     if (this.elements.apiTokenInput) {
-      this.elements.apiTokenInput.addEventListener('input', () => {
+      this.elements.apiTokenInput.addEventListener('input', async () => {
         const token = this.elements.apiTokenInput.value.trim();
-        this.stateManager.setApiToken(token);
+        await this.stateManager.setApiToken(token);
         
         // Update status
         if (token) {
@@ -126,10 +126,10 @@ class EventHandlers {
     // Extraction method change handlers
     const extractionMethodRadios = document.querySelectorAll('input[name="extractionMethod"]');
     extractionMethodRadios.forEach(radio => {
-      radio.addEventListener('change', (event) => {
+      radio.addEventListener('change', async (event) => {
         if (event.target.checked) {
           const method = event.target.value;
-          this.stateManager.setExtractionMethod(method);
+          await this.stateManager.setExtractionMethod(method);
           this.uiManager.updateExtractionMethodUI(method);
           
           console.log(`🔧 User selected ${method === 'ai' ? 'AI Powered' : 'Standard'} extraction method`);
@@ -257,6 +257,15 @@ class EventHandlers {
         this.elements.previewBtn.disabled = isPreviewing;
       }
     });
+
+    // Theme toggle event
+    if (this.elements.themeToggle) {
+      this.elements.themeToggle.addEventListener('change', async (event) => {
+        const newTheme = event.target.checked ? 'dark' : 'light';
+        console.log('Theme toggle clicked, new theme:', newTheme);
+        await this.stateManager.setTheme(newTheme);
+      });
+    }
 
     // Generated resume state changes
     this.stateManager.subscribe('currentGeneratedResumeJSON', (resumeJSON) => {

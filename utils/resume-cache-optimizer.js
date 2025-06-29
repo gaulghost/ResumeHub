@@ -351,18 +351,10 @@ ${JSON.stringify(json, null, 2)}
 
   /**
    * Generate hash for resume data
+   * Uses SharedUtilities for consistent hashing across the application
    */
   generateResumeHash(resumeData) {
-    const hashInput = JSON.stringify({
-      filename: resumeData.filename,
-      mimeType: resumeData.mimeType,
-      contentLength: resumeData.content.length,
-      // Use first and last 100 chars for content fingerprint
-      contentFingerprint: resumeData.content.substring(0, 100) + 
-                         resumeData.content.substring(resumeData.content.length - 100)
-    });
-    
-    return btoa(hashInput).replace(/[^a-zA-Z0-9]/g, '').substring(0, 16);
+    return SharedUtilities.generateResumeHash(resumeData);
   }
 
   /**

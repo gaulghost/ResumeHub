@@ -306,6 +306,42 @@ class SharedUtilities {
     const expiryMs = expiryHours * 60 * 60 * 1000;
     return (now - timestamp) > expiryMs;
   }
+
+  /**
+   * Generate consistent hash for resume data
+   * @param {Object} resumeData - Resume data object (can be JSON or raw data)
+   * @returns {string} Consistent hash string
+   */
+  static generateResumeHash(resumeData) {
+    try {
+      let dataToHash;
+      
+      if (typeof resumeData === 'string') {
+        // If it's a string, use as-is
+        dataToHash = resumeData;
+      } else if (resumeData && resumeData.content) {
+        // If it's a file data object with content
+        dataToHash = resumeData.content;
+      } else if (resumeData && typeof resumeData === 'object') {
+        // If it's a JSON object, extract static parts for consistent hashing
+        const staticData = {
+          contact: resumeData.contact || null,
+          // Only include non-dynamic fields for cache consistency
+        };
+        dataToHash = JSON.stringify(staticData);
+      } else {
+        // Fallback
+        dataToHash = JSON.stringify(resumeData || {});
+      }
+      
+      // Generate base64 hash (consistent with existing implementation)
+      return btoa(dataToHash).substring(0, 16);
+    } catch (error) {
+      console.warn('Error generating resume hash:', error);
+      // Fallback hash
+      return btoa(Date.now().toString()).substring(0, 16);
+    }
+  }
 }
 
 // Make SharedUtilities available globally

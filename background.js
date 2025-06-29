@@ -33,16 +33,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   await StorageManager.setSettings({ theme: 'light', extractionMethod: 'ai' });
 });
 
-// === Refactored Job Description Extraction Functions ===
-// (Functions moved to utility modules)
-
-// === Resume Parsing === (Deprecated - use GeminiAPIClient directly)
-// Function kept for backward compatibility but redirects to API client
-
-
-// === Section Tailoring === (Deprecated - use GeminiAPIClient directly)
-// All section tailoring now goes through ParallelProcessor -> GeminiAPIClient -> SimpleRateLimiter
-// This ensures consistent retry behavior with rate limiting across all API calls
+// === Core Handler Functions ===
+// All processing delegated to utility modules for better separation of concerns
 
 
 // === Async Handler Function for Preview (Kept for separate JD extraction) ===
@@ -218,11 +210,11 @@ function logFieldCategories(fieldBatches) {
 
 // Generate hash for resume JSON to detect changes
 function generateResumeHashFromJSON(resumeJSON) {
-    const staticData = {
-        contact: resumeJSON.contact,
-        // Exclude dynamic fields that change per job
-    };
-    return btoa(JSON.stringify(staticData)).substring(0, 16);
+    // Use SharedUtilities for consistent hash generation
+    if (typeof SharedUtilities === 'undefined') {
+        importScripts('./utils/shared-utilities.js');
+    }
+    return SharedUtilities.generateResumeHash(resumeJSON);
 }
 
 // Check cache for existing field mappings using StorageManager
@@ -253,7 +245,7 @@ function generateFieldCacheKey(field) {
     return btoa(identifier).substring(0, 12);
 }
 
-// Cache expiration check moved to StorageManager utility
+// Cache management delegated to StorageManager
 
 // Batch fields by priority for processing
 function batchFieldsByPriority(fields) {
@@ -338,7 +330,7 @@ async function mapSingleFieldWithAI(field, apiKey, resumeJSON) {
     }
 }
 
-// Compact resume data creation moved to GeminiAPIClient utility
+// Resume data compaction handled by GeminiAPIClient
 
 // Apply pattern matching fallback for failed AI calls
 async function applyPatternFallback(failedFields, resumeJSON) {
@@ -520,33 +512,22 @@ async function handleCreateTailoredResume(request, sendResponse, listenerId) {
     }
 }
 
-// --- Main Message Listener ---
+// --- Optimized Message Listener ---
+const ACTION_HANDLERS = {
+  'getJobDescription': handleGetJobDescriptionPreview,
+  'createTailoredResume': handleCreateTailoredResume,
+  'autoFillForm': handleAutoFillForm,
+  'ping': (request, sendResponse) => {
+    sendResponse({ success: true, message: "pong" });
+  }
+};
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  const listenerId = Date.now(); 
-
-  if (request.action === "getJobDescription") {
-     handleGetJobDescriptionPreview(request, sendResponse, listenerId); 
-     return true; // Keep returning true to indicate async response
+  const handler = ACTION_HANDLERS[request.action];
+  if (handler) {
+    const listenerId = Date.now();
+    handler(request, sendResponse, listenerId);
+    return true; // Async response
   }
-
-  // Route to the NEW JSON-based handler
-  if (request.action === "createTailoredResume") {
-     handleCreateTailoredResume(request, sendResponse, listenerId);
-     return true; // Keep returning true
-  }
-
-  // Handle auto-fill form action
-  if (request.action === "autoFillForm") {
-     handleAutoFillForm(request, sendResponse, listenerId);
-     return true; // Keep returning true
-  }
-
-  // Handle ping action for connection testing
-  if (request.action === "ping") {
-     sendResponse({ success: true, message: "pong" });
-     return true;
-  }
-
-  // Return false for unhandled actions
-  return false;
+  return false; // Unhandled action
 });
