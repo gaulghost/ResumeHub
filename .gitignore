@@ -11,3 +11,5 @@ dist/
 
 # npm lock file
 package-lock.json
+
+.model-context

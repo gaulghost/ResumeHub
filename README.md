@@ -6,7 +6,7 @@
 
 > **Tailor your resume to any job description and auto-fill job forms using AI.**
 
-ResumeHub is a powerful Chrome extension that leverages Google's Gemini AI to automatically customize your resume for specific job postings and intelligently fill out job application forms.
+ResumeHub is a sophisticated Chrome extension designed to streamline the job application process. It leverages Google's Gemini AI to automatically tailor a user's resume to a specific job description, ensuring that the most relevant skills and experiences are highlighted. Key features include AI-powered resume analysis, section-by-section optimization, intelligent form auto-filling on application pages, and advanced job description extraction.
 
 ## ✨ Features
 
@@ -54,43 +54,44 @@ ResumeHub is a powerful Chrome extension that leverages Google's Gemini AI to au
 
 ## 🏗️ Architecture
 
-ResumeHub features a clean **4-layer modular architecture**:
+The project is built on a clean, **4-layer modular architecture** to ensure separation of concerns, maintainability, and scalability.
 
-### Frontend Layer (Popup)
-- **StateManager**: Centralized state with pub/sub pattern
-- **UIManager**: Theme, cards, status messages, button states  
-- **FileHandlers**: Upload/download, format conversion
-- **ResumeProcessor**: Core business logic coordination
-- **EventHandlers**: User interactions and event management
-- **AppController**: Module orchestration and initialization
+### 1. Frontend Layer (Popup)
+This layer is responsible for the user interface and local interactions within the extension's popup. It's built with vanilla JavaScript, HTML, and CSS, and it's composed of several coordinated modules:
+- **`AppController`**: Orchestrates the initialization and communication between popup modules.
+- **`StateManager`**: A centralized, reactive state store that manages all application data (resume, API key, UI state, etc.) and uses a publish/subscribe pattern to notify other modules of changes.
+- **`UIManager`**: Manages all DOM manipulations, including theme changes, status updates, and dynamic UI components.
+- **`FileHandlers`**: Handles all file-related operations, such as resume uploads and downloads in various formats.
+- **`ResumeProcessor`**: Coordinates the core business logic, like initiating resume tailoring or form filling.
+- **`EventHandlers`**: Manages all user interactions and events within the popup.
 
-### Backend Layer (Service Worker)
-- **background.js**: Message router with specialized handlers
-- **Job Description Handler**: Extraction and processing
-- **Resume Tailoring Handler**: AI-powered customization
-- **Auto-Fill Handler**: Form detection and filling
+### 2. Backend Layer (Service Worker)
+This layer runs in the background (`background.js`) and handles tasks that require persistence or communication with external APIs.
+- It acts as a message router, receiving commands from the frontend.
+- Handles all communication with the Google Gemini API for tasks like resume tailoring, job description extraction, and form-field mapping.
+- Manages long-running processes to avoid blocking the UI.
 
-### Utility Layer
-- **GeminiAPIClient**: Unified AI API operations
-- **StorageManager**: Chrome storage abstraction
-- **ScriptInjector**: Page interaction and script injection
-- **ErrorHandler**: Standardized error management with retry logic
-- **ParallelProcessor**: Concurrent section processing
-- **ResumeCacheOptimizer**: Intelligent resume parsing cache
-- **SimpleRateLimiter**: API rate limiting with exponential backoff
+### 3. Utility Layer
+A collection of shared, reusable modules that provide core functionality across the extension.
+- **`api-client.js`**: A dedicated client for all interactions with the Google Gemini API.
+- **`storage-manager.js`**: An abstraction layer for all `chrome.storage` operations.
+- **`script-injector.js`**: Manages interactions with the active web page, such as extracting text or filling forms.
+- **`unified-error-handler.js`**: A centralized system for classifying, handling, and displaying errors.
+- **`parallel-processor.js`**: Optimizes performance by running multiple API calls concurrently.
+- **`resume-cache-optimizer.js`**: An intelligent caching system to reduce redundant API calls.
+- **`simple-rate-limiter.js`**: Manages API call frequency to avoid hitting rate limits.
 
-### External Integration
-- Google Gemini API for AI operations
-- Chrome Extension APIs (storage, scripting, tabs)
-- Web page DOM manipulation
+### 4. External Integration Layer
+This layer represents the external services the extension relies on.
+- **Google Gemini API**: For all AI-powered features.
+- **Chrome Extension APIs**: For storage, scripting, messaging, and other browser-level interactions.
 
 ## 📊 Performance Features
 
-- **87% Reduction** in code duplication through modular design
-- **70% Fewer API Calls** via intelligent caching system
-- **Parallel Processing** for faster resume generation
-- **Rate Limiting** with automatic retry and exponential backoff
-- **Memory Optimization** with proper cleanup and resource management
+- **Optimized for Speed**: The UI loads instantly and remains responsive by offloading long-running tasks to the background service worker. Resume generation is accelerated using parallel processing for API calls.
+- **Efficient API Usage**: API interactions are carefully managed by a `SimpleRateLimiter` (10 requests/minute, 3 concurrent) to prevent hitting rate limits. An intelligent `ResumeCacheOptimizer` significantly reduces redundant API calls, lowering costs and improving speed on subsequent runs.
+- **Low Resource Consumption**: The extension is designed for a low memory footprint, with a 10MB limit on resume uploads to ensure smooth performance.
+- **Maintainable by Design**: The modular architecture has led to an **87% reduction** in code duplication and makes the system easier to maintain and extend.
 
 ## 🧪 Testing
 
@@ -120,6 +121,12 @@ tests/manual-test-guide.html
 
 ## 🔧 Development
 
+### Technology Stack
+- **Core**: JavaScript (ES6+), HTML5, CSS3
+- **Platform**: Chrome Extension (Manifest V3)
+- **Key Libraries**: `pdfmake.js` for client-side PDF generation
+- **Build Tooling**: `Terser`, `clean-css-cli`, and a custom Bash script (`build.sh`) for creating production-ready builds.
+
 ### Prerequisites
 - Chrome Browser (latest version)
 - Google Gemini API key
@@ -136,41 +143,46 @@ tests/manual-test-guide.html
 ```
 ResumeHub-v1/
 ├── manifest.json              # Extension configuration
-├── popup.html                 # Main UI
-├── popup.js                   # Entry point
-├── background.js              # Service worker
+├── popup.html                 # Main UI popup
+├── popup.js                   # Main entry point for the popup
+├── background.js              # Background service worker
 ├── css/
-│   └── popup_modern.css       # Styling
-├── popup/                     # Frontend modules
-│   ├── app-controller.js
-│   ├── state-manager.js
-│   ├── ui-manager.js
-│   ├── file-handlers.js
-│   ├── resume-processor.js
-│   └── event-handlers.js
-├── utils/                     # Backend utilities
-│   ├── api-client.js
-│   ├── storage-manager.js
-│   ├── script-injector.js
-│   ├── error-handler.js
-│   ├── enhanced-error-handler.js
-│   ├── parallel-processor.js
-│   ├── resume-cache-optimizer.js
-│   └── simple-rate-limiter.js
-├── tests/                     # Test suites
+│   └── popup_modern.css       # All styles for the popup
+├── popup/                     # Frontend modules for the popup UI
+│   ├── app-controller.js      # Main application controller
+│   ├── state-manager.js       # Centralized state management
+│   ├── ui-manager.js          # DOM manipulation and UI updates
+│   ├── file-handlers.js       # File upload/download logic
+│   ├── resume-processor.js    # Core resume processing logic
+│   └── event-handlers.js      # User interaction event listeners
+├── utils/                     # Shared utilities and services
+│   ├── api-client.js          # Client for Google Gemini API
+│   ├── storage-manager.js     # Abstraction for chrome.storage
+│   ├── script-injector.js     # Injects scripts into web pages
+│   ├── unified-error-handler.js # Centralized error handling
+│   ├── parallel-processor.js  # Concurrent API request management
+│   ├── resume-cache-optimizer.js # Caching for resume parsing
+│   ├── simple-rate-limiter.js # API call rate limiting
+│   └── shared-utilities.js    # Common helper functions
+├── content-scripts/           # Scripts injected into web pages
+│   └── linkedin/              # LinkedIn-specific functionality
+├── lib/                       # Third-party libraries
+│   ├── pdfmake.min.js
+│   └── vfs_fonts.js
+├── assets/                    # Icons and logos
+├── tests/                     # Automated and manual tests
 │   ├── comprehensive-test.html
-│   ├── manual-test-guide.html
-│   └── test-functionality.html
-└── documents/                 # Documentation
-    └── SYSTEM_ANALYSIS.md
+│   ├── optimization-test.html
+│   └── manual-test-guide.html
+└── README.md
 ```
 
 ## 🔒 Privacy & Security
 
-- **Local Storage**: All data stored locally on your device
-- **No Data Collection**: We don't collect or store personal information
-- **API Key Security**: Your API key is stored securely in Chrome's encrypted storage
-- **Direct API Calls**: Data sent directly to Google's API, not through our servers
+- **Local Storage**: All data, including your resume and API key, is stored locally on your device using Chrome's secure storage.
+- **No Data Collection**: We don't collect or store your personal information on any servers.
+- **API Key Security**: Your API key is stored securely in `chrome.storage.local`, which is encrypted by the browser.
+- **Direct API Calls**: Data is sent directly from your browser to the Google Gemini API, not through any intermediary servers.
 
 See [PRIVACY_POLICY.md](PRIVACY_POLICY.md) for complete details.
 
