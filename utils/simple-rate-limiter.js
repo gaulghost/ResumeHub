@@ -5,6 +5,8 @@
  * - Let API handle daily quota and other errors
  */
 
+import { delay } from './shared-utilities.js';
+
 export class SimpleRateLimiter {
   constructor() {
     this.requestQueue = [];
@@ -172,7 +174,7 @@ export class SimpleRateLimiter {
    * Utility delay function
    */
   delay(ms) {
-    return SharedUtilities.delay(ms);
+    return delay(ms);
   }
 
   /**

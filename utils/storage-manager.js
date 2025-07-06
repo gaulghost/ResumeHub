@@ -8,6 +8,13 @@ export class StorageManager {
 
   static async get(keys, area = 'local') {
     return new Promise((resolve, reject) => {
+      // Check if chrome.storage is available
+      if (!chrome || !chrome.storage || !chrome.storage[area]) {
+        console.warn('[ResumeHub] Chrome storage not available, returning empty result');
+        resolve({});
+        return;
+      }
+      
       chrome.storage[area].get(keys, (result) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
@@ -20,6 +27,13 @@ export class StorageManager {
 
   static async set(data, area = 'local') {
     return new Promise((resolve, reject) => {
+      // Check if chrome.storage is available
+      if (!chrome || !chrome.storage || !chrome.storage[area]) {
+        console.warn('[ResumeHub] Chrome storage not available, skipping set operation');
+        resolve();
+        return;
+      }
+      
       chrome.storage[area].set(data, () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
@@ -32,6 +46,13 @@ export class StorageManager {
 
   static async remove(keys, area = 'local') {
     return new Promise((resolve, reject) => {
+      // Check if chrome.storage is available
+      if (!chrome || !chrome.storage || !chrome.storage[area]) {
+        console.warn('[ResumeHub] Chrome storage not available, skipping remove operation');
+        resolve();
+        return;
+      }
+      
       chrome.storage[area].remove(keys, () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
@@ -44,6 +65,13 @@ export class StorageManager {
 
   static async clear(area = 'local') {
     return new Promise((resolve, reject) => {
+      // Check if chrome.storage is available
+      if (!chrome || !chrome.storage || !chrome.storage[area]) {
+        console.warn('[ResumeHub] Chrome storage not available, skipping clear operation');
+        resolve();
+        return;
+      }
+      
       chrome.storage[area].clear(() => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);

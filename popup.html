@@ -117,17 +117,10 @@
     <script src='lib/pdfmake.min.js'></script>
     <script src='lib/vfs_fonts.js'></script>
 
-    <!-- Include utility modules (backend) -->
-    <script src="utils/shared-utilities.js"></script>
-    <script src="utils/storage-manager.js"></script>
-    <script src="utils/simple-rate-limiter.js"></script>
-    <script src="utils/unified-error-handler.js"></script>
-    <script src="utils/api-client.js"></script>
-    <script src="utils/script-injector.js"></script>
-    <script src="utils/parallel-processor.js"></script>
-    <script src="utils/resume-cache-optimizer.js"></script>
+    <!-- Note: Utility modules are loaded via background script for popup -->
 
     <!-- Include popup modules (frontend) -->
+    <script src="popup/storage-adapter.js"></script>
     <script src="popup/state-manager.js"></script>
     <script src="popup/ui-manager.js"></script>
     <script src="popup/file-handlers.js"></script>

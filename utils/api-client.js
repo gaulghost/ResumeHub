@@ -1,5 +1,5 @@
 // Centralized API client for Google Gemini
-class GeminiAPIClient {
+export class GeminiAPIClient {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.baseURL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -211,6 +211,148 @@ ${JSON.stringify(originalSectionData, null, 2)}
     }
   }
 
+  /**
+   * Estimates the salary for a job.
+   * @param {string} jobTitle
+   * @param {string} location
+   * @param {string} companyName
+   * @returns {Promise<object>} - A promise that resolves to an object like {min: string, max: string, currency: string}
+   */
+  async estimateSalary(jobTitle, location, companyName) {
+    const prompt = `**Instruction:**
+Analyze the provided job title, location, and company name to estimate the annual salary range.
+
+**Job Information:**
+- **Title:** ${jobTitle}
+- **Company:** ${companyName}
+- **Location:** ${location}
+
+**Output Format:**
+Return a JSON object with the estimated annual salary range. The "min" and "max" values should be formatted as strings representing thousands (e.g., "120k", "150k").
+- Do not add any commentary or extra text.
+- Output *only* the valid JSON object.
+
+**JSON Schema:**
+\`\`\`json
+{
+  "min": "string",
+  "max": "string",
+  "currency": "string"
+}
+\`\`\`
+
+**Example:**
+For a "Senior Software Engineer" in "San Francisco, CA", the output might be:
+\`\`\`json
+{
+  "min": "150k",
+  "max": "200k",
+  "currency": "$"
+}
+\`\`\`
+
+**--- Estimated Salary JSON Output ---**`;
+
+    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+      temperature: 0.3,
+      responseMimeType: "application/json"
+    }, 'salary estimation');
+    
+    if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
+      const jsonText = response.candidates[0].content.parts[0].text;
+      try {
+        return JSON.parse(jsonText);
+      } catch (parseError) {
+        console.error('Failed to parse JSON response for salary estimation:', parseError);
+        throw new Error('Failed to parse salary estimation JSON response');
+      }
+    } else {
+      throw new Error('Unexpected response structure from salary estimation API');
+    }
+  }
+
+  /**
+   * Estimates salaries for multiple jobs in a single batch request.
+   * @param {object} batchRequest - Contains jobs array and format specification
+   * @returns {Promise<object>} - A promise that resolves to batch results
+   */
+  async batchEstimateSalary(batchRequest) {
+    const { jobs, format } = batchRequest;
+    
+    const jobsText = jobs.map((job, index) => 
+      `${index + 1}. Position: ${job.position}
+   Company: ${job.company}
+   Location: ${job.location}
+   JobURL: ${job.jobUrl}`
+    ).join('\n\n');
+
+    const prompt = `**Instruction:**
+Analyze the following ${jobs.length} job positions and provide detailed compensation estimates for each. Use local market data and industry standards for accurate estimates.
+
+**Jobs to Analyze:**
+${jobsText}
+
+**Output Requirements:**
+- Provide detailed compensation breakdown for each job
+- Use local currency based on job location (₹ for India, $ for US, etc.)
+- Include total compensation, base salary, bonus, and stock options/ESOP
+- Provide confidence level (High/Medium/Low) based on data availability
+- Format amounts in local units (e.g., "25L-30L" for Indian Lakhs, "120k-150k" for US thousands)
+
+**JSON Schema:**
+\`\`\`json
+{
+  "results": [
+    {
+      "jobUrl": "string",
+      "totalCompensation": "string",
+      "baseSalary": "string", 
+      "bonus": "string",
+      "stockOptions": "string",
+      "confidence": "High|Medium|Low",
+      "currency": "string"
+    }
+  ]
+}
+\`\`\`
+
+**Example Output:**
+\`\`\`json
+{
+  "results": [
+    {
+      "jobUrl": "https://example.com/job1",
+      "totalCompensation": "25L-30L",
+      "baseSalary": "15L-20L",
+      "bonus": "3L-5L", 
+      "stockOptions": "5L-7L",
+      "confidence": "High",
+      "currency": "₹"
+    }
+  ]
+}
+\`\`\`
+
+**--- Batch Salary Estimation JSON Output ---**`;
+
+    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+      temperature: 0.3,
+      responseMimeType: "application/json"
+    }, 'batch salary estimation');
+    
+    if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
+      const jsonText = response.candidates[0].content.parts[0].text;
+      try {
+        return JSON.parse(jsonText);
+      } catch (parseError) {
+        console.error('Failed to parse JSON response for batch salary estimation:', parseError);
+        throw new Error('Failed to parse batch salary estimation JSON response');
+      }
+    } else {
+      throw new Error('Unexpected response structure from batch salary estimation API');
+    }
+  }
+
   // Method for field mapping in auto-fill
   async mapFieldToResume(field, resumeJSON) {
     const fieldContext = `Field: ${field.name || field.id || 'unknown'}
@@ -316,6 +458,7 @@ Summary: ${resumeJSON.summary || 'N/A'}`;
 }
 
 // Make available globally for Chrome extension
+/*
 if (typeof window !== 'undefined') {
   window.GeminiAPIClient = GeminiAPIClient;
 } else if (typeof self !== 'undefined') {
@@ -326,3 +469,4 @@ if (typeof window !== 'undefined') {
   // For service workers and other environments
   this.GeminiAPIClient = GeminiAPIClient;
 }
+*/
