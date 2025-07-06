@@ -1,9 +1,11 @@
+import { generateResumeHash } from './shared-utilities.js';
+
 /**
  * Resume Cache Optimizer
  * Implements multi-pass resume parsing and intelligent caching
  */
 
-class ResumeCacheOptimizer {
+export class ResumeCacheOptimizer {
   constructor(apiClient) {
     this.apiClient = apiClient;
     this.cacheKey = 'optimized_resume_json';
@@ -354,7 +356,7 @@ ${JSON.stringify(json, null, 2)}
    * Uses SharedUtilities for consistent hashing across the application
    */
   generateResumeHash(resumeData) {
-    return SharedUtilities.generateResumeHash(resumeData);
+    return generateResumeHash(resumeData);
   }
 
   /**
@@ -427,6 +429,8 @@ ${JSON.stringify(json, null, 2)}
 }
 
 // Make ResumeCacheOptimizer available globally
+/*
 if (typeof window !== 'undefined') {
   window.ResumeCacheOptimizer = ResumeCacheOptimizer;
 } 
+*/ 

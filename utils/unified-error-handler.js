@@ -1,8 +1,10 @@
+import { delay } from './shared-utilities.js';
+
 /**
  * Unified Error Handler for ResumeHub
  * Combines comprehensive error management with user-friendly messaging
  */
-class UnifiedErrorHandler {
+export class UnifiedErrorHandler {
   
   /**
    * Create structured error with context
@@ -388,7 +390,7 @@ class UnifiedErrorHandler {
    * Delay utility for retry mechanism
    */
   static delay(ms) {
-    return SharedUtilities.delay(ms);
+    return delay(ms);
   }
 
   /**
@@ -542,9 +544,9 @@ class UnifiedErrorHandler {
   }
 }
 
-// Export for use in other modules
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = UnifiedErrorHandler;
-} else if (typeof window !== 'undefined') {
+// Ensure it's available for non-module scripts if needed, though this is legacy.
+/*
+if (typeof window !== 'undefined') {
   window.UnifiedErrorHandler = UnifiedErrorHandler;
 }
+*/

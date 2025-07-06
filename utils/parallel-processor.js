@@ -1,9 +1,11 @@
+import { delay } from './shared-utilities.js';
+
 /**
  * Parallel Processor for AI API calls
  * Handles concurrent section processing with rate limiting and intelligent batching
  */
 
-class ParallelProcessor {
+export class ParallelProcessor {
   constructor(apiClient, options = {}) {
     this.apiClient = apiClient;
     this.maxConcurrency = 3; // Fixed at 3, rate limiter handles the rest
@@ -160,7 +162,7 @@ class ParallelProcessor {
    * Utility delay function
    */
   delay(ms) {
-    return SharedUtilities.delay(ms);
+    return delay(ms);
   }
 
   /**
@@ -224,6 +226,8 @@ class ParallelProcessor {
 }
 
 // Make ParallelProcessor available globally
+/*
 if (typeof window !== 'undefined') {
   window.ParallelProcessor = ParallelProcessor;
 } 
+*/ 

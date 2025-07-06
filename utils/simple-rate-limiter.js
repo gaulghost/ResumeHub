@@ -5,7 +5,7 @@
  * - Let API handle daily quota and other errors
  */
 
-class SimpleRateLimiter {
+export class SimpleRateLimiter {
   constructor() {
     this.requestQueue = [];
     this.requestsThisMinute = 0;
@@ -189,6 +189,7 @@ class SimpleRateLimiter {
 }
 
 // Create global instance
+/*
 if (typeof window !== 'undefined') {
   window.simpleRateLimiter = new SimpleRateLimiter();
   window.SimpleRateLimiter = SimpleRateLimiter;
@@ -203,3 +204,4 @@ if (typeof window !== 'undefined') {
   this.simpleRateLimiter = new SimpleRateLimiter();
   this.SimpleRateLimiter = SimpleRateLimiter;
 }
+*/

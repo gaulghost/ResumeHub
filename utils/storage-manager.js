@@ -1,5 +1,11 @@
 // Centralized storage management for Chrome extension
-class StorageManager {
+export class StorageManager {
+  static initialize() {
+    // This method is called on startup to ensure the manager is ready.
+    // Currently no specific initialization logic is needed here, but it's a good practice to have it.
+    console.log('[ResumeHub] StorageManager Initialized.');
+  }
+
   static async get(keys, area = 'local') {
     return new Promise((resolve, reject) => {
       chrome.storage[area].get(keys, (result) => {
@@ -239,8 +245,10 @@ class StorageManager {
 }
 
 // Make available globally for Chrome extension
+/*
 if (typeof window !== 'undefined') {
   window.StorageManager = StorageManager;
 } else if (typeof self !== 'undefined') {
   self.StorageManager = StorageManager;
 } 
+*/ 

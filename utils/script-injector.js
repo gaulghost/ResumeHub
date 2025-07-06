@@ -1,5 +1,5 @@
 // Unified script injector for Chrome scripting operations
-class ScriptInjector {
+export class ScriptInjector {
   static async executeInActiveTab(func, args = []) {
     return new Promise((resolve, reject) => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -154,8 +154,6 @@ class ScriptInjector {
     });
   }
 
-
-
   static async fillFormFields(fieldMappings) {
     console.log(`Filling ${fieldMappings.length} form fields...`);
     return this.executeInActiveTab((mappings) => {
@@ -248,6 +246,7 @@ class ScriptInjector {
 }
 
 // Make available globally for Chrome extension
+/*
 if (typeof window !== 'undefined') {
   window.ScriptInjector = ScriptInjector;
 } else if (typeof self !== 'undefined') {
@@ -258,3 +257,4 @@ if (typeof window !== 'undefined') {
   // For service workers and other environments
   this.ScriptInjector = ScriptInjector;
 }
+*/
