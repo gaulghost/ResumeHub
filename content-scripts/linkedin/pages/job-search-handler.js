@@ -4,8 +4,26 @@ import { SalaryBadge } from '../components/salary-badge.js';
 export class JobSearchHandler {
     constructor(salaryEstimator) {
         this.salaryEstimator = salaryEstimator;
-        this.processedJobUrls = new Set();
+        // Track processed jobs and badge instances by a **normalized job ID** (extracted from the URL)
+        this.processedJobIds = new Set();
         this.badgeInstances = new Map();
+        this.failedJobIds = new Set(); // Track failed jobs for retry
+        this.jobDataMap = new Map(); // Cache jobData by jobId for retry
+        
+        // Event delegation for retry button clicks
+        this.retryClickListener = (event) => {
+            const retryBtn = event.target.closest(`.${SELECTORS.SALARY_BADGE.retryBtn}`);
+            if (retryBtn) {
+                // Prevent LinkedIn navigation and stop all other handlers
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+                console.log('[ResumeHub] Retry button clicked. Retrying failed jobs...');
+                this.retryFailedJobs();
+            }
+        };
+        document.addEventListener('click', this.retryClickListener, true);
+        
         this.observer = null;
         console.log('[ResumeHub] JobSearchHandler constructed.');
     }
@@ -33,10 +51,15 @@ export class JobSearchHandler {
             console.log('[ResumeHub] Intersection observer disconnected.');
         }
         
+        // Remove retry listener
+        document.removeEventListener('click', this.retryClickListener, true);
+        
         // Clear badges
         this.badgeInstances.forEach(badge => badge.remove());
         this.badgeInstances.clear();
-        this.processedJobUrls.clear();
+        this.processedJobIds.clear();
+        this.failedJobIds.clear();
+        this.jobDataMap.clear();
         console.log('[ResumeHub] JobSearchHandler destroyed and cleaned up.');
     }
 
@@ -155,11 +178,12 @@ export class JobSearchHandler {
         Array.from(jobCards).forEach(card => {
             const jobData = this.extractJobData(card);
             if (jobData && jobData.jobUrl) {
-                if (!this.processedJobUrls.has(jobData.jobUrl)) {
-                    newJobCards.push(card);
-                } else {
+                const jobId = this._normalizeJobUrl(jobData.jobUrl);
+                if (this.processedJobIds.has(jobId)) {
                     skippedCount++;
+                    return; // skip this card
                 }
+                newJobCards.push(card);
             } else {
                 skippedCount++;
                 // Debug failed extractions
@@ -182,28 +206,39 @@ export class JobSearchHandler {
     }
 
     async processJobCards(jobCards) {
-        const newJobsData = [];
+        const jobsNeedingEstimation = [];
+
         for (const card of jobCards) {
             const jobData = this.extractJobData(card);
+            if (!jobData || !jobData.jobUrl) continue;
 
-            if (jobData && jobData.jobUrl && !this.processedJobUrls.has(jobData.jobUrl)) {
-                this.processedJobUrls.add(jobData.jobUrl);
-                console.log('[ResumeHub] New job card found:', jobData.jobUrl);
-                
-                this.createSalaryBadge(jobData, card);
-                newJobsData.push(jobData);
+            const jobId = this._normalizeJobUrl(jobData.jobUrl);
+            if (this.processedJobIds.has(jobId)) continue;
+
+            this.processedJobIds.add(jobId);
+            this.createSalaryBadge(jobData, card);
+
+            // Try cache first
+            const cached = await this.salaryEstimator.getCachedEstimate(jobData);
+            if (cached) {
+                // Show salary immediately
+                const badge = this.badgeInstances.get(jobId);
+                if (badge) badge.showSalary(cached);
+                continue; // No need to fetch
             }
+
+            jobsNeedingEstimation.push(jobData);
         }
-        
-        if (newJobsData.length > 0) {
-            console.log(`[ResumeHub] Batch estimating salaries for ${newJobsData.length} new jobs.`);
-            try {
-                const estimates = await this.salaryEstimator.batchEstimate(newJobsData);
-                this.updateBadgesWithEstimates(estimates);
-            } catch (error) {
-                console.error('[ResumeHub] Error during batch salary estimation:', error);
-                this.updateBadgesWithError(newJobsData, error.message);
-            }
+
+        if (jobsNeedingEstimation.length === 0) return;
+
+        console.log(`[ResumeHub] Batch estimating salaries for ${jobsNeedingEstimation.length} new jobs.`);
+        try {
+            const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);
+            this.updateBadgesWithEstimates(estimates);
+        } catch (error) {
+            console.error('[ResumeHub] Error during batch salary estimation:', error);
+            this.updateBadgesWithError(jobsNeedingEstimation, error.message);
         }
     }
 
@@ -294,16 +329,18 @@ export class JobSearchHandler {
             }
             console.log(`[ResumeHub] Creating salary badge for: ${jobData.jobUrl}`);
             const badge = new SalaryBadge(footerContainer, jobData.jobUrl);
+            this.jobDataMap.set(this._normalizeJobUrl(jobData.jobUrl), jobData);
             badge.create();
-            this.badgeInstances.set(jobData.jobUrl, badge);
+            this.badgeInstances.set(this._normalizeJobUrl(jobData.jobUrl), badge);
         } else {
             // Try to inject the badge in a fallback location
             const fallbackContainer = card.querySelector('.job-card-container') || card;
             if (fallbackContainer) {
                 console.log(`[ResumeHub] Using fallback container for: ${jobData.jobUrl}`);
                 const badge = new SalaryBadge(fallbackContainer, jobData.jobUrl);
+                this.jobDataMap.set(this._normalizeJobUrl(jobData.jobUrl), jobData);
                 badge.create();
-                this.badgeInstances.set(jobData.jobUrl, badge);
+                this.badgeInstances.set(this._normalizeJobUrl(jobData.jobUrl), badge);
             }
         }
     }
@@ -313,13 +350,16 @@ export class JobSearchHandler {
 
         console.log('[ResumeHub] Updating badges with salary estimates:', estimates);
         for (const [jobUrl, salaryData] of Object.entries(estimates)) {
-            const badge = this.badgeInstances.get(jobUrl);
-            if (badge) {
-                if (salaryData.error) {
-                    badge.showError(salaryData.error);
-                } else {
-                    badge.showSalary(salaryData);
-                }
+            const jobId = this._normalizeJobUrl(jobUrl);
+            const badge = this.badgeInstances.get(jobId);
+            if (!badge) continue;
+
+            if (salaryData && !salaryData.error) {
+                badge.showSalary(salaryData);
+                this.failedJobIds.delete(jobId);
+            } else {
+                badge.showError(salaryData?.error || 'Error');
+                this.failedJobIds.add(jobId);
             }
         }
     }
@@ -327,10 +367,61 @@ export class JobSearchHandler {
     updateBadgesWithError(jobs, message) {
         console.log(`[ResumeHub] Updating ${jobs.length} badges with error:`, message);
         for (const job of jobs) {
-            const badge = this.badgeInstances.get(job.jobUrl);
+            const jobId = this._normalizeJobUrl(job.jobUrl);
+            const badge = this.badgeInstances.get(jobId);
             if (badge) {
                 badge.showError('API Error');
+                this.failedJobIds.add(jobId);
             }
+        }
+    }
+
+    /**
+     * Normalizes LinkedIn job URLs by extracting the numeric job ID.
+     * Falls back to full URL if the pattern does not match.
+     * @param {string} url
+     * @returns {string}
+     */
+    _normalizeJobUrl(url) {
+        try {
+            const match = url.match(/\/jobs\/view\/(\d+)/);
+            return match ? match[1] : url;
+        } catch (e) {
+            return url;
+        }
+    }
+
+    /**
+     * Retries salary estimation for all failed jobs.
+     * Triggered when user clicks any retry button.
+     */
+    async retryFailedJobs() {
+        if (this.failedJobIds.size === 0) {
+            console.log('[ResumeHub] No failed jobs to retry.');
+            return;
+        }
+
+        const retryJobs = [];
+        this.failedJobIds.forEach(jobId => {
+            const jobData = this.jobDataMap.get(jobId);
+            if (jobData) {
+                retryJobs.push(jobData);
+                // Show loading state again
+                const badge = this.badgeInstances.get(jobId);
+                if (badge && badge.showLoading) {
+                    badge.showLoading();
+                }
+            }
+        });
+
+        if (retryJobs.length === 0) return;
+
+        try {
+            const estimates = await this.salaryEstimator.batchEstimate(retryJobs, { ignoreCache: true });
+            this.updateBadgesWithEstimates(estimates);
+        } catch (error) {
+            console.error('[ResumeHub] Retry batch estimation failed:', error);
+            this.updateBadgesWithError(retryJobs, error.message);
         }
     }
 }

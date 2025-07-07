@@ -341,16 +341,35 @@ export function generateResumeHash(resumeData) {
   }
 }
 
-// Make SharedUtilities available globally
-/*
+// Create a namespace object for backward compatibility with legacy global usage
+export const SharedUtilities = {
+  delay,
+  formatFileSize,
+  validateFileType,
+  getFileExtension,
+  generateUniqueId,
+  convertJSONToText,
+  truncateText,
+  capitalizeWords,
+  cleanText,
+  isEmptyObject,
+  deepClone,
+  countWords,
+  countCharacters,
+  generateTimestampedFilename,
+  isValidEmail,
+  isValidPhone,
+  isValidUrl,
+  getCurrentTimestamp,
+  isTimestampExpired,
+  generateResumeHash
+};
+
+// Expose globally so non-module popup scripts can access it
 if (typeof window !== 'undefined') {
   window.SharedUtilities = SharedUtilities;
 } else if (typeof self !== 'undefined') {
   self.SharedUtilities = SharedUtilities;
 } else if (typeof global !== 'undefined') {
   global.SharedUtilities = SharedUtilities;
-} else {
-  // For service workers and other environments
-  this.SharedUtilities = SharedUtilities;
 } 
-*/ 

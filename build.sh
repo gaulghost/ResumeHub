@@ -13,15 +13,32 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# 1. Dependency Check
-echo -e "${YELLOW}Checking for dependencies (jq, esbuild)...${NC}"
-if ! command -v jq &> /dev/null || ! command -v esbuild &> /dev/null; then
-    echo -e "${RED}jq and esbuild are required. Please install them.${NC}"
-    echo "On macOS: brew install jq esbuild"
-    echo "On Debian/Ubuntu: sudo apt-get install jq esbuild"
+# --- Dependency Check & Command Fallbacks ---
+echo -e "${YELLOW}Checking for dependencies (jq) and setting up tool commands...${NC}"
+
+# jq must be available – it's required for manifest editing
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}jq is required but not installed.${NC}"
+    echo "On macOS: brew install jq"
+    echo "On Debian/Ubuntu: sudo apt-get install jq"
     exit 1
 fi
-echo -e "${GREEN}Dependencies found.${NC}"
+
+# Determine esbuild command (prefer global, fallback to npx)
+if command -v esbuild &> /dev/null; then
+    ESBUILD_CMD="esbuild"
+else
+    ESBUILD_CMD="npx esbuild"
+fi
+
+# Determine javascript-obfuscator command (prefer global, fallback to npx)
+if command -v javascript-obfuscator &> /dev/null; then
+    OBFUSCATE_CMD="javascript-obfuscator"
+else
+    OBFUSCATE_CMD="npx javascript-obfuscator"
+fi
+
+echo -e "${GREEN}Tool commands configured. Using:\n  esbuild -> $ESBUILD_CMD\n  obfuscator -> $OBFUSCATE_CMD${NC}"
 
 # 2. Cleanup and Setup
 echo -e "${YELLOW}Cleaning up old builds and setting up directories...${NC}"
@@ -33,26 +50,33 @@ echo -e "${GREEN}Cleanup and setup complete.${NC}"
 
 # 3. Copy Static Assets
 echo -e "${YELLOW}Copying static assets...${NC}"
-cp -r assets lib manifest.json popup.html popup.js background.js PRIVACY_POLICY.md "$BUILD_DIR/"
+# Copy necessary static assets (include utils, content scripts, and popup directory for interactive UI)
+cp -r assets lib utils content-scripts popup manifest.json popup.html popup.js background.js PRIVACY_POLICY.md "$BUILD_DIR/"
 echo -e "${GREEN}Static assets copied.${NC}"
 
 # 4. Process JavaScript
 echo -e "${YELLOW}Bundling and minifying JavaScript...${NC}"
 
 # Popup scripts
-esbuild popup/app-controller.js --bundle --minify --outfile="$BUILD_DIR/js/popup_bundle.js"
+${ESBUILD_CMD} popup/app-controller.js --bundle --minify --outfile="$BUILD_DIR/js/popup_bundle.js"
 if [ $? -ne 0 ]; then echo -e "${RED}Popup script bundling failed.${NC}"; exit 1; fi
 
 # Content scripts
-esbuild content-scripts/linkedin/linkedin-controller.js --bundle --minify --outfile="$BUILD_DIR/js/content_script_bundle.js"
+${ESBUILD_CMD} content-scripts/linkedin/linkedin-controller.js --bundle --minify --outfile="$BUILD_DIR/js/content_script_bundle.js"
 if [ $? -ne 0 ]; then echo -e "${RED}Content script bundling failed.${NC}"; exit 1; fi
 
 # Background script
-esbuild background.js --minify --outfile="$BUILD_DIR/background.js"
+${ESBUILD_CMD} background.js --minify --outfile="$BUILD_DIR/background.js"
 if [ $? -ne 0 ]; then echo -e "${RED}Background script minification failed.${NC}"; exit 1; fi
 
 echo -e "${GREEN}JavaScript processed successfully.${NC}"
 
+# 4a. Obfuscate JavaScript (makes code harder to analyse)
+echo -e "${YELLOW}Obfuscating JavaScript...${NC}"
+for jsfile in "$BUILD_DIR"/js/*.js "$BUILD_DIR"/popup.js; do
+    $OBFUSCATE_CMD "$jsfile" --compact true --self-defending true --control-flow-flattening true --output "$jsfile"
+done
+echo -e "${GREEN}JavaScript obfuscation complete.${NC}"
 
 # 5. Process CSS
 echo -e "${YELLOW}Minifying CSS...${NC}"
@@ -60,22 +84,18 @@ cleancss -o "$BUILD_DIR/css/popup_modern.min.css" css/popup_modern.css
 echo -e "${GREEN}CSS minified.${NC}"
 
 # 6. Update HTML
-echo -e "${YELLOW}Updating popup.html to use bundled files...${NC}"
-# Remove old script and style tags
-sed -i.bak '/<script src="utils\//d; /<script src="popup\//d; /<script src="popup.js/d; /<link rel="stylesheet" href="css\/popup_modern.css">/d' "$BUILD_DIR/popup.html"
-# Add new bundled files
-sed -i.bak 's|</body>|<link rel="stylesheet" href="css/popup_modern.min.css">\
-<script src="js/popup_bundle.js"></script>\
-<script src="popup.js"></script>\
-</body>|' "$BUILD_DIR/popup.html"
+echo -e "${YELLOW}Updating popup.html linking...${NC}"
+# Swap to minified CSS reference but keep existing script tags intact
+sed -i.bak 's|href="css/popup_modern.css"|href="css/popup_modern.min.css"|' "$BUILD_DIR/popup.html"
 rm "$BUILD_DIR/popup.html.bak"
-# Minify the separate popup.js initializer
-esbuild "$BUILD_DIR/popup.js" --minify --outfile="$BUILD_DIR/popup.js" --allow-overwrite
+# Minify the separate popup.js initializer (keeps global names)
+${ESBUILD_CMD} "$BUILD_DIR/popup.js" --minify --outfile="$BUILD_DIR/popup.js" --allow-overwrite
 echo -e "${GREEN}popup.html updated.${NC}"
 
 # 7. Update Manifest
 echo -e "${YELLOW}Updating manifest.json...${NC}"
-jq 'del(.web_accessible_resources) | .content_scripts[0].js = ["js/content_script_bundle.js"]' "$BUILD_DIR/manifest.json" > "$BUILD_DIR/manifest.json.tmp" && mv "$BUILD_DIR/manifest.json.tmp" "$BUILD_DIR/manifest.json"
+# Update content script path while retaining web_accessible_resources for dynamic imports
+jq '.content_scripts[0].js = ["js/content_script_bundle.js"]' "$BUILD_DIR/manifest.json" > "$BUILD_DIR/manifest.json.tmp" && mv "$BUILD_DIR/manifest.json.tmp" "$BUILD_DIR/manifest.json"
 echo -e "${GREEN}manifest.json updated.${NC}"
 
 

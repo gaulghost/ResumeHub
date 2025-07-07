@@ -140,6 +140,18 @@ class StorageAdapter {
       });
     });
   }
+
+  /**
+   * Legacy cache helper – always returns null in popup context.
+   * Background script manages real cache; popup only needs API presence to avoid errors.
+   */
+  static async getValidCache(key) {
+    return null; // No-op cache in popup context
+  }
+
+  // Provide no-op setters to maintain interface parity
+  static async setCache(key, value) { return false; }
+  static async setCacheWithExpiry(key, value, hours) { return false; }
 }
 
 // Make StorageManager available as alias for backward compatibility

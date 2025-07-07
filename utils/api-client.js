@@ -170,7 +170,9 @@ Analyze the following original resume section (\`${sectionType}\`) and the provi
 - Quantify achievements where possible based *only* on the original section data.
 - Maintain the original meaning and key information.
 - **Strictly do not add any skills or experiences not present in the original section data.**
-- **IMPORTANT: The final resume must not exceed 570 words or 3500 characters in total. This is a hard limit.**
+- **IMPORTANT WORD LIMITS (HARD):** Ensure the *entire* final resume (all sections combined) is **≥ 3000 characters AND ≤ 3400 characters AND ≤ 550 words**.  
+  - If your draft is longer than the limits, iteratively remove the *least* relevant lines until the limits are satisfied.  
+  - If your draft is shorter than 3000 characters, expand bullet points with additional quantifiable detail *present in the original section data* until the lower limit is reached.  
 - **SPACE OPTIMIZATION: You may skip less relevant skills or consolidate similar skills to save space and stay within limits.**
 - Prioritize the most relevant content to the job description and remove less important details.
 ${sectionType === 'skills' ? 

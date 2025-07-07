@@ -126,12 +126,58 @@ async function handleCreateTailoredResume(request, sendResponse) {
     }
 }
 
+async function handleGetJobDescription(request, sendResponse) {
+    try {
+        const { extractionMethod = 'standard', apiToken } = request;
+
+        console.log(`[ResumeHub BG] getJobDescription called (method=${extractionMethod})`);
+
+        // Ensure we can access the active tab
+        const canAccess = await ScriptInjector.canAccessCurrentTab();
+        if (!canAccess) {
+            return sendResponse({ success: false, error: 'Unable to access current tab' });
+        }
+
+        let jobDescription = null;
+
+        if (extractionMethod === 'ai') {
+            // Ensure API client exists (initialize lazily if needed)
+            if (!apiClient) {
+                if (!apiToken) {
+                    return sendResponse({ success: false, error: 'API key is required for AI extraction' });
+                }
+                apiClient = new GeminiAPIClient(apiToken);
+            }
+
+            const pageText = await ScriptInjector.getPageText();
+            if (!pageText || pageText.length < 100) {
+                return sendResponse({ success: false, error: 'Failed to retrieve page text' });
+            }
+
+            jobDescription = await apiClient.extractJobDescription(pageText);
+        } else {
+            // Standard DOM selector extraction
+            jobDescription = await ScriptInjector.extractJobDescriptionStandard();
+        }
+
+        if (!jobDescription) {
+            return sendResponse({ success: false, error: 'Job description not found' });
+        }
+
+        sendResponse({ success: true, jobDescription });
+
+    } catch (error) {
+        console.error('[ResumeHub BG] getJobDescription error:', error);
+        sendResponse({ success: false, error: error.message || 'Unknown error' });
+    }
+}
 
 // --- Message Listener ---
 
 const ACTION_HANDLERS = {
     'batchSalaryEstimation': handleBatchSalaryEstimation,
     'createTailoredResume': handleCreateTailoredResume,
+    'getJobDescription': handleGetJobDescription,
     // Storage operations for popup
     'getSettings': async (request, sendResponse) => {
         try {

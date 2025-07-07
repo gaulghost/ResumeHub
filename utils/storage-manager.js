@@ -272,11 +272,11 @@ export class StorageManager {
   }
 }
 
-// Make available globally for Chrome extension
-/*
+// Expose globally for legacy access
 if (typeof window !== 'undefined') {
   window.StorageManager = StorageManager;
 } else if (typeof self !== 'undefined') {
   self.StorageManager = StorageManager;
+} else if (typeof global !== 'undefined') {
+  global.StorageManager = StorageManager;
 } 
-*/ 

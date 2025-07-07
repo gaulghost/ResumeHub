@@ -4,6 +4,8 @@
  * It's injected by the manifest.json onto LinkedIn job pages.
  */
 
+// Dynamic imports will be used below to ensure compatibility with classic content-script execution.
+
 class LinkedInController {
     constructor(salaryEstimator, JobSearchHandler, JobDetailsHandler) {
         this.salaryEstimator = salaryEstimator;
@@ -71,7 +73,7 @@ class LinkedInController {
 (async () => {
     try {
         console.log('[ResumeHub] Content script loaded. Starting dynamic imports...');
-        
+
         console.log('[ResumeHub] Importing SalaryEstimator...');
         const { SalaryEstimator } = await import(chrome.runtime.getURL('utils/salary-estimator.js'));
         console.log('[ResumeHub] SalaryEstimator imported successfully.');
@@ -83,11 +85,11 @@ class LinkedInController {
         console.log('[ResumeHub] Importing JobDetailsHandler...');
         const { JobDetailsHandler } = await import(chrome.runtime.getURL('content-scripts/linkedin/pages/job-details-handler.js'));
         console.log('[ResumeHub] JobDetailsHandler imported successfully.');
-        
+
         console.log('[ResumeHub] All modules imported dynamically.');
 
         await new Promise(resolve => setTimeout(resolve, 2000));
-        
+
         console.log('[ResumeHub] Initializing SalaryEstimator...');
         const salaryEstimator = new SalaryEstimator();
         console.log('[ResumeHub] SalaryEstimator initialized.');

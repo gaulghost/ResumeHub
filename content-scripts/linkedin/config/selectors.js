@@ -45,5 +45,6 @@ export const SELECTORS = {
     badge: 'rh-salary-badge',
     loading: 'rh-loading-spinner',
     error: 'rh-error-message',
+    retryBtn: 'rh-retry-btn',
   },
 };

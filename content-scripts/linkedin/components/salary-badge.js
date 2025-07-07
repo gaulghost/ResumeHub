@@ -94,6 +94,17 @@ export class SalaryBadge {
                 color: #cf1322;
             }
             
+            .${SELECTORS.SALARY_BADGE.retryBtn} {
+                background: none;
+                border: none;
+                color: #0a66c2;
+                cursor: pointer;
+                text-decoration: underline;
+                font-size: 11px;
+                padding: 0;
+                margin-left: 4px;
+            }
+            
             @keyframes resumehub-spin {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
@@ -111,13 +122,21 @@ export class SalaryBadge {
         this.container.className = `${SELECTORS.SALARY_BADGE.container}`;
         this.container.setAttribute('data-job-url', this.jobUrl);
 
-        // Loading state without icons
+        this.showLoading();
+        
+        this.parentElement.appendChild(this.container);
+    }
+
+    /**
+     * Shows loading spinner.
+     */
+    showLoading() {
+        if (!this.container) return;
+        this.container.innerHTML = '';
         const spinner = document.createElement('div');
         spinner.className = SELECTORS.SALARY_BADGE.loading;
         spinner.innerHTML = 'TC: Estimating... | Source: ResumeHub';
         this.container.appendChild(spinner);
-        
-        this.parentElement.appendChild(this.container);
     }
 
     /**
@@ -159,7 +178,8 @@ export class SalaryBadge {
         
         this.container.innerHTML = `
             <div class="${SELECTORS.SALARY_BADGE.badge} ${SELECTORS.SALARY_BADGE.error}" title="${message}">
-                TC: ${message} | Source: ResumeHub
+                TC: ${message}
+                <button class="${SELECTORS.SALARY_BADGE.retryBtn}" data-job-url="${this.jobUrl}">Retry</button> | Source: ResumeHub
             </div>
         `;
     }

@@ -10,7 +10,7 @@ export class SalaryEstimator {
         this.apiClient = apiClient;
         this.rateLimiter = rateLimiter;
         this.sessionCache = new Map(); // Simple in-memory cache for the session
-        this.cacheKey = 'salaryCache';
+        this.cacheKey = 'salaryCacheV3';
         this.cacheDuration = 24 * 60 * 60 * 1000; // 24 hours
         this.isContentScript = !apiClient && !rateLimiter; // Detect if running in content script
         
@@ -21,15 +21,17 @@ export class SalaryEstimator {
     /**
      * Estimates salaries for a batch of jobs, utilizing a cache first and AI batch processing.
      * @param {Array<Object>} jobs - An array of job objects.
+     * @param {Object} options - Optional options for batch estimation
      * @returns {Object} - A map of jobUrl to salary data.
      */
-    async batchEstimate(jobs) {
+    async batchEstimate(jobs, options = {}) {
+        const ignoreCache = options.ignoreCache || false;
         const results = {};
         const jobsToFetch = [];
 
         // 1. Check persistent and session cache for each job
         for (const job of jobs) {
-            const cached = await this._checkCache(job.jobUrl);
+            const cached = ignoreCache ? null : await this._checkCache(job);
             if (cached) {
                 results[job.jobUrl] = { ...cached, jobUrl: job.jobUrl, location: job.location };
                 console.log(`[ResumeHub] Cache hit for job: ${this._normalizeJobUrl(job.jobUrl)}`);
@@ -42,35 +44,60 @@ export class SalaryEstimator {
         // 2. Use AI batch processing for jobs that weren't in the cache
         if (jobsToFetch.length > 0) {
             console.log(`[ResumeHub] Processing ${jobsToFetch.length} jobs with AI batch estimation`);
-            
-            try {
-                let batchEstimates;
-                
-                if (this.isContentScript) {
-                    // Use message passing to communicate with background script
-                    batchEstimates = await this._batchAIEstimateViaMessage(jobsToFetch);
-                } else {
-                    // Direct API call from background script
-                    batchEstimates = await this._batchAIEstimate(jobsToFetch);
-                }
-                
-                // 3. Process and cache the new estimates
-                for (const job of jobsToFetch) {
-                    const estimate = batchEstimates[job.jobUrl] || this._getMockSalary(job.jobTitle);
-                    results[job.jobUrl] = { ...estimate, jobUrl: job.jobUrl, location: job.location };
-                    
-                    // Cache valid results
-                    if (!estimate.error && estimate.source !== 'mock') {
-                        await this._cacheResult(job.jobUrl, estimate);
+
+            // Gemini can occasionally fail to return valid JSON for large prompts.
+            // We therefore process jobs in small chunks and fall back to single calls when needed.
+            const CHUNK_SIZE = 5;
+            const chunks = [];
+            for (let i = 0; i < jobsToFetch.length; i += CHUNK_SIZE) {
+                chunks.push(jobsToFetch.slice(i, i + CHUNK_SIZE));
+            }
+
+            for (const chunk of chunks) {
+                try {
+                    let estimates;
+                    if (this.isContentScript) {
+                        estimates = await this._batchAIEstimateViaMessage(chunk);
+                    } else {
+                        estimates = await this._batchAIEstimate(chunk);
                     }
-                }
-            } catch (error) {
-                console.error('[ResumeHub] Batch AI estimation failed, falling back to mock data:', error);
-                
-                // Fallback to mock data for all jobs
-                for (const job of jobsToFetch) {
-                    const mockEstimate = this._getMockSalary(job.jobTitle);
-                    results[job.jobUrl] = { ...mockEstimate, jobUrl: job.jobUrl, location: job.location };
+
+                    for (const job of chunk) {
+                        const est = estimates[job.jobUrl];
+                        if (est && !est.error) {
+                            results[job.jobUrl] = { ...est, jobUrl: job.jobUrl, location: job.location };
+                            await this._cacheResult(job, est);
+                        } else {
+                            results[job.jobUrl] = { error: 'No data' };
+                        }
+                    }
+
+                } catch (chunkError) {
+                    console.warn('[ResumeHub] Chunk estimation failed, falling back to per-job calls:', chunkError);
+
+                    // Fallback to per-job estimation inside this chunk
+                    for (const job of chunk) {
+                        try {
+                            let singleEst;
+                            if (this.isContentScript) {
+                                // Content script must request background
+                                singleEst = await this._batchAIEstimateViaMessage([job]);
+                                singleEst = singleEst[job.jobUrl];
+                            } else {
+                                singleEst = await this.estimate(job.jobTitle, job.location, job.companyName, job.jobUrl);
+                            }
+
+                            if (singleEst && !singleEst.error) {
+                                results[job.jobUrl] = { ...singleEst, jobUrl: job.jobUrl, location: job.location };
+                                await this._cacheResult(job, singleEst);
+                            } else {
+                                results[job.jobUrl] = { error: 'Estimation failed' };
+                            }
+                        } catch (singleErr) {
+                            console.error('[ResumeHub] Single estimation failed:', singleErr);
+                            results[job.jobUrl] = { error: 'Estimation failed' };
+                        }
+                    }
                 }
             }
         }
@@ -208,45 +235,97 @@ export class SalaryEstimator {
         };
     }
 
-    async _checkCache(jobUrl) {
-        // Normalize job URL to extract job ID for consistent caching
-        const normalizedKey = this._normalizeJobUrl(jobUrl);
-        
-        // Check session cache first for speed
-        if (this.sessionCache.has(normalizedKey)) {
-            return this.sessionCache.get(normalizedKey);
-        }
+    async _checkCache(job) {
+        const key = this._makeCompositeKey(job.companyName, job.location, job.jobTitle);
 
-        // Check persistent storage
+        // First check session cache
+        if (this.sessionCache.has(key)) return this.sessionCache.get(key);
+
         try {
-            const cacheData = await StorageManager.get(this.cacheKey) || {};
-            const cachedItem = cacheData[normalizedKey];
-            if (cachedItem && (Date.now() - cachedItem.timestamp < this.cacheDuration)) {
-                this.sessionCache.set(normalizedKey, cachedItem.data); // Hydrate session cache
-                return cachedItem.data;
-            }
-        } catch (error) {
-            console.warn('[ResumeHub BG] Failed to read from persistent salary cache (non-critical):', error.message);
+            const stored = await StorageManager.get([this.cacheKey]);
+            const cacheData = stored[this.cacheKey] || {};
+            const record = cacheData[key];
+
+            if (!record) return null;
+
+            // Expiry check (7 days)
+            const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+            if (Date.now() - record.lastUpdated > SEVEN_DAYS) return null;
+
+            // Convert numeric record back to strings expected by UI
+            const salaryData = {
+                totalCompensation: this._formatRange(record.tc.min, record.tc.max, record.unit),
+                base: this._formatRange(record.base.min, record.base.max, record.unit),
+                bonus: this._formatRange(record.bonus.min, record.bonus.max, record.unit),
+                stock: this._formatRange(record.stock.min, record.stock.max, record.unit),
+                confidence: record.confidence || 'Medium',
+                currency: record.currency || '₹',
+                source: 'cache'
+            };
+
+            this.sessionCache.set(key, salaryData);
+            return salaryData;
+        } catch (err) {
+            console.warn('[ResumeHub BG] Failed to read cache:', err.message);
+            return null;
         }
-        return null;
     }
     
-    async _cacheResult(jobUrl, data) {
-        // Normalize job URL to extract job ID for consistent caching
-        const normalizedKey = this._normalizeJobUrl(jobUrl);
-        
-        this.sessionCache.set(normalizedKey, data);
-        
+    async _cacheResult(job, data) {
+        if (!data || data.error) return;
+
+        const key = this._makeCompositeKey(job.companyName, job.location, job.jobTitle);
+
+        // Parse ranges into numeric
+        const tcRange = this._parseRange(data.totalCompensation);
+        const baseRange = this._parseRange(data.base);
+        const bonusRange = this._parseRange(data.bonus);
+        const stockRange = this._parseRange(data.stock);
+        if (!tcRange || !baseRange || !bonusRange || !stockRange) return;
+
         try {
-            const cacheData = await StorageManager.get(this.cacheKey) || {};
-            cacheData[normalizedKey] = {
-                data: data,
-                timestamp: Date.now()
+            const stored = await StorageManager.get([this.cacheKey]);
+            const cacheData = stored[this.cacheKey] || {};
+
+            if (!cacheData[key]) {
+                cacheData[key] = {
+                    tc: { min: tcRange.min, max: tcRange.max },
+                    base: { min: baseRange.min, max: baseRange.max },
+                    bonus: { min: bonusRange.min, max: bonusRange.max },
+                    stock: { min: stockRange.min, max: stockRange.max },
+                    unit: tcRange.unit || 'L',
+                    currency: data.currency || '₹',
+                    confidence: data.confidence || 'Medium',
+                    samples: 1,
+                    lastUpdated: Date.now()
+                };
+            } else {
+                const rec = cacheData[key];
+                const s = rec.samples || 1;
+                rec.tc = this._mergeRange(rec.tc, tcRange, s);
+                rec.base = this._mergeRange(rec.base, baseRange, s);
+                rec.bonus = this._mergeRange(rec.bonus, bonusRange, s);
+                rec.stock = this._mergeRange(rec.stock, stockRange, s);
+                rec.samples = s + 1;
+                rec.lastUpdated = Date.now();
+            }
+
+            // Write back
+            await StorageManager.set({ [this.cacheKey]: cacheData });
+
+            // Update session cache with formatted string
+            const formatted = {
+                totalCompensation: data.totalCompensation,
+                base: data.base,
+                bonus: data.bonus,
+                stock: data.stock,
+                confidence: data.confidence,
+                currency: data.currency,
+                source: 'cache'
             };
-            await StorageManager.set(this.cacheKey, cacheData);
-        } catch (error) {
-            // Only log as warning since this is not critical for functionality
-            console.warn('[ResumeHub BG] Failed to write to persistent salary cache (non-critical):', error.message);
+            this.sessionCache.set(key, formatted);
+        } catch (err) {
+            console.warn('[ResumeHub BG] Failed to write cache:', err.message);
         }
     }
 
@@ -281,14 +360,66 @@ export class SalaryEstimator {
      */
     async _clearOldCache() {
         try {
+            const migrationKey = 'salaryCacheMigratedV2';
+            const migrationFlag = await StorageManager.get([migrationKey]);
+            if (migrationFlag && migrationFlag[migrationKey]) {
+                // Already migrated
+                return;
+            }
+
             // Clear session cache
             this.sessionCache.clear();
             
             // Clear persistent cache
-            await StorageManager.set(this.cacheKey, {});
-            console.log('[ResumeHub] Old cache format cleared for migration to normalized keys');
+            await StorageManager.set({ [this.cacheKey]: {}, [migrationKey]: true });
+            console.log('[ResumeHub] Old cache format cleared (one-time) for migration to normalized keys');
         } catch (error) {
             console.warn('[ResumeHub] Failed to clear old cache (non-critical):', error.message);
         }
+    }
+
+    /**
+     * Returns cached estimate if available (session or persistent) without making API calls.
+     * @param {string} jobUrl
+     * @returns {Object|null}
+     */
+    async getCachedEstimate(jobData) {
+        return await this._checkCache(jobData);
+    }
+
+    /**
+     * Generates a composite cache key using company, location and position
+     */
+    _makeCompositeKey(company, location, position) {
+        return `${company.trim().toLowerCase()}|${location.trim().toLowerCase()}|${position.trim().toLowerCase()}`;
+    }
+
+    /**
+     * Parses a range string like "25L-30L" or "120k-150k" into numeric min/max rupees
+     */
+    _parseRange(rangeStr) {
+        if (!rangeStr) return null;
+        const match = rangeStr.replace(/[,\s]/g, '').match(/([\d\.]+)([kKlL]?)-([\d\.]+)([kKlL]?)/);
+        if (!match) return null;
+        const unit = match[2] || match[4] || '';
+        const multiplier = unit.toLowerCase() === 'k' ? 1000 : (unit.toLowerCase() === 'l' ? 100000 : 1);
+        const min = Math.round(parseFloat(match[1]) * multiplier);
+        const max = Math.round(parseFloat(match[3]) * multiplier);
+        return { min, max, unit: unit || '' };
+    }
+
+    _formatRange(min, max, unit) {
+        const multiplier = unit.toLowerCase() === 'k' ? 1000 : (unit.toLowerCase() === 'l' ? 100000 : 1);
+        const toUnitVal = (val) => {
+            if (multiplier === 1) return val.toString();
+            return (val / multiplier).toFixed(0);
+        };
+        return `${toUnitVal(min)}${unit}-${toUnitVal(max)}${unit}`;
+    }
+
+    _mergeRange(existingRange, newRange, samples) {
+        const min = Math.round((existingRange.min * samples + newRange.min) / (samples + 1));
+        const max = Math.round((existingRange.max * samples + newRange.max) / (samples + 1));
+        return { min, max, unit: existingRange.unit || newRange.unit };
     }
 }
