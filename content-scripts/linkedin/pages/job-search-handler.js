@@ -206,8 +206,9 @@ export class JobSearchHandler {
     }
 
     async processJobCards(jobCards) {
-        const jobsNeedingEstimation = [];
+        if (!jobCards || jobCards.length === 0) return;
 
+        const jobsNeedingEstimation = [];
         for (const card of jobCards) {
             const jobData = this.extractJobData(card);
             if (!jobData || !jobData.jobUrl) continue;
@@ -232,7 +233,6 @@ export class JobSearchHandler {
 
         if (jobsNeedingEstimation.length === 0) return;
 
-        console.log(`[ResumeHub] Batch estimating salaries for ${jobsNeedingEstimation.length} new jobs.`);
         try {
             const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);
             this.updateBadgesWithEstimates(estimates);
@@ -348,7 +348,6 @@ export class JobSearchHandler {
     updateBadgesWithEstimates(estimates) {
         if (!estimates) return;
 
-        console.log('[ResumeHub] Updating badges with salary estimates:', estimates);
         for (const [jobUrl, salaryData] of Object.entries(estimates)) {
             const jobId = this._normalizeJobUrl(jobUrl);
             const badge = this.badgeInstances.get(jobId);

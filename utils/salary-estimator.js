@@ -34,19 +34,13 @@ export class SalaryEstimator {
             const cached = ignoreCache ? null : await this._checkCache(job);
             if (cached) {
                 results[job.jobUrl] = { ...cached, jobUrl: job.jobUrl, location: job.location };
-                console.log(`[ResumeHub] Cache hit for job: ${this._normalizeJobUrl(job.jobUrl)}`);
             } else {
                 jobsToFetch.push(job);
-                console.log(`[ResumeHub] Cache miss for job: ${this._normalizeJobUrl(job.jobUrl)}`);
             }
         }
 
-        // 2. Use AI batch processing for jobs that weren't in the cache
+        // 2. Use AI batch processing (chunked) for jobs that weren't in the cache
         if (jobsToFetch.length > 0) {
-            console.log(`[ResumeHub] Processing ${jobsToFetch.length} jobs with AI batch estimation`);
-
-            // Gemini can occasionally fail to return valid JSON for large prompts.
-            // We therefore process jobs in small chunks and fall back to single calls when needed.
             const CHUNK_SIZE = 5;
             const chunks = [];
             for (let i = 0; i < jobsToFetch.length; i += CHUNK_SIZE) {
@@ -57,8 +51,10 @@ export class SalaryEstimator {
                 try {
                     let estimates;
                     if (this.isContentScript) {
+                        // Content script must ask background to estimate
                         estimates = await this._batchAIEstimateViaMessage(chunk);
                     } else {
+                        // Background can call API directly in batch
                         estimates = await this._batchAIEstimate(chunk);
                     }
 
@@ -67,20 +63,26 @@ export class SalaryEstimator {
                         if (est && !est.error) {
                             results[job.jobUrl] = { ...est, jobUrl: job.jobUrl, location: job.location };
                             await this._cacheResult(job, est);
+                        } else if (est && (est.error === 'API_KEY_MISSING' || est.error === 'No Api Key')) {
+                            results[job.jobUrl] = { error: 'No Api Key', retry: true };
                         } else {
                             results[job.jobUrl] = { error: 'No data' };
                         }
                     }
+                } catch (chunkErr) {
+                    // If the error is due to missing API key, mark entire chunk accordingly
+                    if (chunkErr.message === 'API_KEY_MISSING' || chunkErr.message === 'No Api Key' || !this.apiClient) {
+                        for (const job of chunk) {
+                            results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                        }
+                        continue;
+                    }
 
-                } catch (chunkError) {
-                    console.warn('[ResumeHub] Chunk estimation failed, falling back to per-job calls:', chunkError);
-
-                    // Fallback to per-job estimation inside this chunk
+                    // Fallback: estimate each job individually
                     for (const job of chunk) {
                         try {
                             let singleEst;
                             if (this.isContentScript) {
-                                // Content script must request background
                                 singleEst = await this._batchAIEstimateViaMessage([job]);
                                 singleEst = singleEst[job.jobUrl];
                             } else {
@@ -90,12 +92,17 @@ export class SalaryEstimator {
                             if (singleEst && !singleEst.error) {
                                 results[job.jobUrl] = { ...singleEst, jobUrl: job.jobUrl, location: job.location };
                                 await this._cacheResult(job, singleEst);
+                            } else if (singleEst && (singleEst.error === 'API_KEY_MISSING' || singleEst.error === 'No Api Key')) {
+                                results[job.jobUrl] = { error: 'No Api Key', retry: true };
                             } else {
-                                results[job.jobUrl] = { error: 'Estimation failed' };
+                                results[job.jobUrl] = { error: 'No data' };
                             }
                         } catch (singleErr) {
-                            console.error('[ResumeHub] Single estimation failed:', singleErr);
-                            results[job.jobUrl] = { error: 'Estimation failed' };
+                            if (singleErr.message === 'API_KEY_MISSING' || singleErr.message === 'No Api Key' || !this.apiClient) {
+                                results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                            } else {
+                                results[job.jobUrl] = { error: 'No data' };
+                            }
                         }
                     }
                 }
@@ -116,8 +123,8 @@ export class SalaryEstimator {
     async estimate(jobTitle, location, companyName, jobUrl) {
         return UnifiedErrorHandler.safeAPICall(async () => {
             if (!this.apiClient) {
-                console.warn('[ResumeHub BG] API client not available for salary estimation. Using mock data.');
-                return this._getMockSalary(jobTitle);
+                console.warn('[ResumeHub BG] API client not available for salary estimation – API key missing.');
+                return { error: 'API_KEY_MISSING', retry: true };
             }
             
             if (this.rateLimiter) {
@@ -127,7 +134,7 @@ export class SalaryEstimator {
             const salary = await this.apiClient.estimateSalary(jobTitle, location, companyName);
             return { ...salary, source: 'api' };
 
-        }, `salary estimation for ${jobTitle}`, { fallback: () => this._getMockSalary(jobTitle) });
+        }, `salary estimation for ${jobTitle}`, { fallback: () => ({ error: 'API_KEY_MISSING', retry: true }) });
     }
 
     /**
@@ -167,7 +174,8 @@ export class SalaryEstimator {
     async _batchAIEstimate(jobs) {
         if (!this.apiClient) {
             console.warn('[ResumeHub] API client not available for batch AI estimation');
-            throw new Error('API client not available');
+            // Intentionally throw so caller can map to "No Api Key"
+            throw new Error('API_KEY_MISSING');
         }
 
         // Rate limiting is handled by the queueRequest method in the API client
@@ -183,8 +191,6 @@ export class SalaryEstimator {
             format: 'detailed_compensation'
         };
 
-        console.log('[ResumeHub] Sending batch AI request for', jobs.length, 'jobs');
-        
         try {
             const response = await this.apiClient.batchEstimateSalary(batchRequest);
             
@@ -209,31 +215,7 @@ export class SalaryEstimator {
         }
     }
 
-    _getMockSalary(jobTitle) {
-        const seniority = /senior|sr|lead/i.test(jobTitle) ? 1.2 : (/junior|jr/i.test(jobTitle) ? 0.8 : 1);
-        const baseTC = 2500000; // 25L base in Indian Rupees
-        const tcMin = Math.round((baseTC * seniority) / 100000) * 100000; // Round to nearest lakh
-        const tcMax = tcMin + 500000; // 5L range
-        
-        const baseMin = Math.round(tcMin * 0.6 / 100000) * 100000; // 60% of TC
-        const baseMax = Math.round(tcMax * 0.6 / 100000) * 100000;
-        
-        const bonusMin = Math.round(tcMin * 0.15 / 100000) * 100000; // 15% of TC
-        const bonusMax = Math.round(tcMax * 0.15 / 100000) * 100000;
-        
-        const stockMin = Math.round(tcMin * 0.25 / 100000) * 100000; // 25% of TC
-        const stockMax = Math.round(tcMax * 0.25 / 100000) * 100000;
-        
-        return {
-            totalCompensation: `${(tcMin/100000).toFixed(0)}L-${(tcMax/100000).toFixed(0)}L`,
-            base: `${(baseMin/100000).toFixed(0)}L-${(baseMax/100000).toFixed(0)}L`,
-            bonus: `${(bonusMin/100000).toFixed(0)}L-${(bonusMax/100000).toFixed(0)}L`,
-            stock: `${(stockMin/100000).toFixed(0)}L-${(stockMax/100000).toFixed(0)}L`,
-            confidence: 'Medium',
-            currency: '₹',
-            source: 'mock'
-        };
-    }
+    _getMockSalary() { return { error: 'API_KEY_MISSING', retry: true }; }
 
     async _checkCache(job) {
         const key = this._makeCompositeKey(job.companyName, job.location, job.jobTitle);
@@ -372,7 +354,6 @@ export class SalaryEstimator {
             
             // Clear persistent cache
             await StorageManager.set({ [this.cacheKey]: {}, [migrationKey]: true });
-            console.log('[ResumeHub] Old cache format cleared (one-time) for migration to normalized keys');
         } catch (error) {
             console.warn('[ResumeHub] Failed to clear old cache (non-critical):', error.message);
         }

@@ -31,9 +31,10 @@ async function initialize() {
             salaryEstimator = new SalaryEstimator(apiClient, rateLimiter);
             console.log('[ResumeHub BG] API Client and Salary Estimator initialized.');
         } else {
-            console.warn('[ResumeHub BG] API key not found. Salary estimation will use mock data.');
-            // Initialize with null client to allow mock data fallback
-            salaryEstimator = new SalaryEstimator(null, rateLimiter);
+            console.warn('[ResumeHub BG] API key not found. Salary estimator will not be initialized.');
+            // Don't initialize salaryEstimator so the early exit condition works
+            apiClient = null;
+            salaryEstimator = null;
         }
     } catch (error) {
         console.error('[ResumeHub BG] Initialization failed:', error);
@@ -66,12 +67,22 @@ async function handleBatchSalaryEstimation(request, sendResponse) {
         const { jobs } = request.data;
         console.log(`[ResumeHub BG] Processing ${jobs.length} jobs for salary estimation`);
         
+        // Add detailed logging for API key status
+        console.log('[ResumeHub BG] API key status check:');
+        console.log('  - apiClient exists:', !!apiClient);
+        console.log('  - salaryEstimator exists:', !!salaryEstimator);
+        if (apiClient) {
+            console.log('  - apiClient.apiKey exists:', !!apiClient.apiKey);
+        }
+        
         if (!salaryEstimator) {
-            // This can happen if initialization is slow or failed.
-            console.warn('[ResumeHub BG] Salary estimator not ready. Using fallback.');
-            const mockEstimator = new SalaryEstimator(null);
-            const estimates = await mockEstimator.batchEstimate(jobs);
-            console.log('[ResumeHub BG] Fallback estimation completed:', estimates);
+            console.warn('[ResumeHub BG] Salary estimator not ready - API key missing.');
+            // Return error response indicating missing API key for all jobs
+            const estimates = {};
+            jobs.forEach(job => {
+                estimates[job.jobUrl] = { error: 'No Api Key', retry: true };
+            });
+            console.log('[ResumeHub BG] Returning "No Api Key" response for all jobs:', estimates);
             return sendResponse({ success: true, data: estimates });
         }
         
