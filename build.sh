@@ -38,7 +38,7 @@ else
     OBFUSCATE_CMD="npx javascript-obfuscator"
 fi
 
-echo -e "${GREEN}Tool commands configured. Using:\n  esbuild -> $ESBUILD_CMD\n  obfuscator -> $OBFUSCATE_CMD${NC}"
+echo -e "${GREEN}Tool commands configured. Using:\n  esbuild -> $ESBUILD_CMD${NC}"
 
 # 2. Cleanup and Setup
 echo -e "${YELLOW}Cleaning up old builds and setting up directories...${NC}"
@@ -71,12 +71,12 @@ if [ $? -ne 0 ]; then echo -e "${RED}Background script minification failed.${NC}
 
 echo -e "${GREEN}JavaScript processed successfully.${NC}"
 
-# 4a. Obfuscate JavaScript (makes code harder to analyse)
-echo -e "${YELLOW}Obfuscating JavaScript...${NC}"
-for jsfile in "$BUILD_DIR"/js/*.js "$BUILD_DIR"/popup.js; do
-    $OBFUSCATE_CMD "$jsfile" --compact true --self-defending true --control-flow-flattening true --output "$jsfile"
-done
-echo -e "${GREEN}JavaScript obfuscation complete.${NC}"
+# 4a. (Removed) JavaScript obfuscation step – obfuscation disabled per extension policy
+# echo -e "${YELLOW}Obfuscating JavaScript...${NC}"
+# for jsfile in "$BUILD_DIR"/js/*.js "$BUILD_DIR"/popup.js; do
+#     $OBFUSCATE_CMD "$jsfile" --compact true --self-defending true --control-flow-flattening true --output "$jsfile"
+# done
+# echo -e "${GREEN}JavaScript obfuscation complete.${NC}"
 
 # 5. Process CSS
 echo -e "${YELLOW}Minifying CSS...${NC}"

@@ -6,13 +6,13 @@ node_modules/
 # Build directories and files
 build_resumehub/
 temp_build/
-dist/
+.dist/
 *.zip
 
 # npm lock file
 package-lock.json
 
-.model-context
+.model-context/
 .temp
 
-tests/
+.tests/
