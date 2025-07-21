@@ -77,6 +77,7 @@ export function convertJSONToText(jsonData) {
   if (jsonData.contact) {
     text += '=== CONTACT INFORMATION ===\n';
     if (jsonData.contact.name) text += `Name: ${jsonData.contact.name}\n`;
+    if (jsonData.jobTitle) text += `Job Title: ${jsonData.jobTitle}\n`;
     if (jsonData.contact.email) text += `Email: ${jsonData.contact.email}\n`;
     if (jsonData.contact.phone) text += `Phone: ${jsonData.contact.phone}\n`;
     if (jsonData.contact.linkedin) text += `LinkedIn: ${jsonData.contact.linkedin}\n`;

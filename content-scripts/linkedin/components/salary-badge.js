@@ -117,14 +117,30 @@ export class SalaryBadge {
      * Creates and injects the initial loading state of the badge.
      */
     create() {
-        // Create a div to be placed in the caption area
+        if (!this.parentElement?.isConnected) {
+            console.warn('[ResumeHub] Parent element not available or not connected to DOM');
+            return false;
+        }
+
+        // Remove existing badge if any
+        const existingBadge = this.parentElement.querySelector(`.${SELECTORS.SALARY_BADGE.container}`);
+        if (existingBadge) {
+            existingBadge.remove();
+        }
+
         this.container = document.createElement('div');
-        this.container.className = `${SELECTORS.SALARY_BADGE.container}`;
+        this.container.className = SELECTORS.SALARY_BADGE.container;
         this.container.setAttribute('data-job-url', this.jobUrl);
 
         this.showLoading();
         
-        this.parentElement.appendChild(this.container);
+        try {
+            this.parentElement.appendChild(this.container);
+            return true;
+        } catch (error) {
+            console.error('[ResumeHub] Error appending salary badge to parent:', error);
+            return false;
+        }
     }
 
     /**
@@ -191,5 +207,6 @@ export class SalaryBadge {
         if (this.container && this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }
+        this.container = null;
     }
 }

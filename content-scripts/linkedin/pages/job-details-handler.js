@@ -5,6 +5,8 @@ export class JobDetailsHandler {
     constructor(salaryEstimator) {
         this.salaryEstimator = salaryEstimator;
         this.processedJobUrl = null;
+        this.currentBadge = null;
+        this.processingPromise = null;
     }
 
     initialize() {
@@ -14,73 +16,159 @@ export class JobDetailsHandler {
 
     async processJobDetails() {
         const jobUrl = window.location.href;
-        if (this.processedJobUrl === jobUrl) {
+        if (this.processedJobUrl === jobUrl && this.currentBadge) {
             return;
         }
 
-        this.processedJobUrl = jobUrl;
-        const jobData = this.extractJobData();
+        // Prevent concurrent processing
+        if (this.processingPromise) {
+            return this.processingPromise;
+        }
 
-        if (jobData) {
-            const badge = this.createSalaryBadge();
-            try {
-                const estimate = await this.salaryEstimator.estimate(jobData.jobTitle, jobData.location, jobData.companyName, jobUrl);
-                if (estimate.error) {
-                    badge.showError(estimate.error);
-                } else {
-                    badge.showSalary(estimate);
-                }
-            } catch (error) {
-                badge.showError('API Error');
+        this.processedJobUrl = jobUrl;
+        this.cleanup();
+
+        this.processingPromise = this.attemptProcessing();
+        await this.processingPromise;
+        this.processingPromise = null;
+    }
+
+    async attemptProcessing() {
+        const jobData = await this.waitForJobData();
+        
+        if (!jobData) {
+            console.warn('[ResumeHub] Could not extract job data');
+            return;
+        }
+
+        const badge = this.createSalaryBadge();
+        if (!badge) {
+            console.warn('[ResumeHub] Could not create salary badge');
+            return;
+        }
+
+        this.currentBadge = badge;
+        
+        try {
+            const estimate = await this.salaryEstimator.estimate(
+                jobData.jobTitle, 
+                jobData.location, 
+                jobData.companyName, 
+                this.processedJobUrl
+            );
+            
+            if (estimate.error) {
+                badge.showError(estimate.error);
+            } else {
+                badge.showSalary(estimate);
+            }
+        } catch (error) {
+            console.error('[ResumeHub] Error estimating salary:', error);
+            badge.showError('API Error');
+        }
+    }
+
+    async waitForJobData(maxAttempts = 3, delay = 1000) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const jobData = this.extractJobData();
+            if (jobData) return jobData;
+            
+            if (attempt < maxAttempts - 1) {
+                console.log(`[ResumeHub] Job data not ready, retrying... (${attempt + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
+        return null;
     }
 
     extractJobData() {
         try {
-            const titleElement = document.querySelector(SELECTORS.JOB_DETAILS_PAGE.jobTitle);
-            const companyInfoElement = document.querySelector(SELECTORS.JOB_DETAILS_PAGE.companyInfo);
+            const titleElement = this.findElement(SELECTORS.JOB_DETAILS_PAGE.jobTitle);
+            const companyInfoElement = this.findElement(SELECTORS.JOB_DETAILS_PAGE.companyInfo);
 
-            const jobTitle = titleElement ? titleElement.innerText.trim() : 'N/A';
+            const jobTitle = titleElement?.innerText.trim();
+            if (!jobTitle) return null;
+
+            const { companyName, location } = this.parseCompanyInfo(companyInfoElement);
+            if (!companyName) return null;
+
+            console.log('[ResumeHub] Extracted job data:', { jobTitle, companyName, location });
             
-            let companyName = 'N/A';
-            let location = 'N/A';
-
-            if (companyInfoElement) {
-                const parts = companyInfoElement.innerText.split('·').map(part => part.trim());
-                companyName = parts[0] || 'N/A';
-                location = parts[1] || 'N/A';
-            }
-            
-            if (jobTitle === 'N/A' || companyName === 'N/A' || location === 'N/A') {
-                console.warn('[ResumeHub] Incomplete job data on details page.');
-                return null;
-            }
-
-            return { jobTitle, companyName, location };
+            return { 
+                jobTitle, 
+                companyName, 
+                location: location || 'Remote/Unspecified' 
+            };
         } catch (error) {
             console.error('[ResumeHub] Error extracting job data from details page', error);
             return null;
         }
     }
+
+    findElement(selectors) {
+        const selectorArray = Array.isArray(selectors) ? selectors : [selectors];
+        for (const selector of selectorArray) {
+            const element = document.querySelector(selector);
+            if (element) return element;
+        }
+        return null;
+    }
+
+    parseCompanyInfo(companyInfoElement) {
+        if (!companyInfoElement) return { companyName: null, location: null };
+
+        const text = companyInfoElement.innerText.trim();
+        const separators = ['·', '•', '|', '-'];
+        
+        // Try splitting by separators
+        for (const sep of separators) {
+            if (text.includes(sep)) {
+                const parts = text.split(sep).map(part => part.trim());
+                return {
+                    companyName: parts[0] || null,
+                    location: parts[1] || null
+                };
+            }
+        }
+        
+        // Fallback: try to extract from link
+        const linkElement = companyInfoElement.querySelector('a');
+        if (linkElement) {
+            const locationElement = document.querySelector('.jobs-unified-top-card__bullet, .jobs-unified-top-card__primary-description span:last-child');
+            return {
+                companyName: linkElement.innerText.trim(),
+                location: locationElement?.innerText.trim() || null
+            };
+        }
+        
+        return { companyName: text, location: null };
+    }
     
     createSalaryBadge() {
-        const targetContainer = document.querySelector(SELECTORS.JOB_DETAILS_PAGE.detailsPanelContainer);
+        const targetContainer = this.findElement(SELECTORS.JOB_DETAILS_PAGE.detailsPanelContainer);
         if (!targetContainer) {
-            console.warn('[ResumeHub] Details panel container not found.');
+            console.warn('[ResumeHub] Details panel container not found');
             return null;
         }
         
         const badgeContainer = document.createElement('div');
-        targetContainer.prepend(badgeContainer);
+        targetContainer.insertBefore(badgeContainer, targetContainer.firstChild);
 
         const badge = new SalaryBadge(badgeContainer, window.location.href);
-        badge.create();
-        return badge;
+        return badge.create() ? badge : null;
+    }
+
+    cleanup() {
+        if (this.currentBadge) {
+            this.currentBadge.remove();
+            this.currentBadge = null;
+        }
     }
 
     destroy() {
         console.log('[ResumeHub] JobDetailsHandler destroyed.');
-        // No specific listeners or observers to disconnect in this handler yet.
+        this.cleanup();
+        this.processedJobUrl = null;
+        this.processingPromise = null;
     }
 } 

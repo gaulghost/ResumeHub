@@ -77,10 +77,17 @@ export class JobSearchHandler {
             const hasJobCardMutations = mutations.some(mutation => {
                 return Array.from(mutation.addedNodes).some(node => {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        // Check if the added node is a job card or contains job cards
-                        return node.matches && (
-                            node.matches('li[data-occludable-job-id]') ||
-                            node.querySelector && node.querySelector('li[data-occludable-job-id]')
+                        // Check if the added node is a job card or contains job cards (both old and new UI)
+                        const jobCardSelectors = [
+                            'li[data-occludable-job-id]', // Old UI
+                            'li.semantic-search-results-list__list-item', // New UI
+                            'li.scaffold-layout__list-item', // Alternative new UI
+                            'div[data-job-id]' // New UI with data-job-id
+                        ];
+                        
+                        return node.matches && jobCardSelectors.some(selector => 
+                            node.matches(selector) || 
+                            (node.querySelector && node.querySelector(selector))
                         );
                     }
                     return false;
@@ -106,8 +113,20 @@ export class JobSearchHandler {
                 clearTimeout(this.scrollTimeout);
             }
             this.scrollTimeout = setTimeout(() => {
-                // Check if new jobs have been added
-                const currentJobCount = document.querySelectorAll(SELECTORS.JOB_SEARCH_PAGE.jobListItem).length;
+                // Check if new jobs have been added using multiple selectors
+                let currentJobCount = 0;
+                const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem) 
+                    ? SELECTORS.JOB_SEARCH_PAGE.jobListItem 
+                    : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
+                
+                for (const selector of jobListSelectors) {
+                    const count = document.querySelectorAll(selector).length;
+                    if (count > 0) {
+                        currentJobCount = count;
+                        break;
+                    }
+                }
+                
                 if (currentJobCount > this.lastJobCount) {
                     console.log(`[ResumeHub] Scroll detected new jobs: ${currentJobCount} (was ${this.lastJobCount})`);
                     this.lastJobCount = currentJobCount;
@@ -140,7 +159,19 @@ export class JobSearchHandler {
         });
 
         // Find the job list container and observe the last few job cards
-        const jobCards = document.querySelectorAll(SELECTORS.JOB_SEARCH_PAGE.jobListItem);
+        let jobCards = [];
+        const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem) 
+            ? SELECTORS.JOB_SEARCH_PAGE.jobListItem 
+            : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
+        
+        for (const selector of jobListSelectors) {
+            const cards = document.querySelectorAll(selector);
+            if (cards.length > 0) {
+                jobCards = Array.from(cards);
+                break;
+            }
+        }
+        
         if (jobCards.length > 5) {
             // Observe the 5th from last job card
             this.intersectionObserver.observe(jobCards[jobCards.length - 5]);
@@ -148,9 +179,20 @@ export class JobSearchHandler {
     }
 
     processAllVisibleJobs() {
-        const jobCards = document.querySelectorAll(SELECTORS.JOB_SEARCH_PAGE.jobListItem);
+        // Try multiple selectors for job cards to handle both old and new UI
+        let jobCards = [];
+        const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem) 
+            ? SELECTORS.JOB_SEARCH_PAGE.jobListItem 
+            : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
         
-        console.log(`[ResumeHub] Found ${jobCards.length} job cards using selector: ${SELECTORS.JOB_SEARCH_PAGE.jobListItem}`);
+        for (const selector of jobListSelectors) {
+            const cards = document.querySelectorAll(selector);
+            if (cards.length > 0) {
+                jobCards = Array.from(cards);
+                console.log(`[ResumeHub] Found ${jobCards.length} job cards using selector: ${selector}`);
+                break;
+            }
+        }
         
         // Update job count tracking
         this.lastJobCount = jobCards.length;
@@ -159,9 +201,12 @@ export class JobSearchHandler {
             console.warn('[ResumeHub] No job cards found. Checking DOM structure...');
             const alternativeSelectors = [
                 'li[data-occludable-job-id]',
+                'li.semantic-search-results-list__list-item',
+                'li.scaffold-layout__list-item',
+                'div[data-job-id]',
                 '.job-card-container',
                 '.job-card-list',
-                'li.scaffold-layout__list-item'
+                '.job-card-job-posting-card-wrapper'
             ];
             
             alternativeSelectors.forEach(selector => {
@@ -263,36 +308,112 @@ export class JobSearchHandler {
 
             // The URL is the most critical piece of data
             let jobUrl = null;
+            let jobId = null;
             
-            if (!urlElement || !urlElement.href) {
-                // Try all URL selectors from the config
-                const urlSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobUrl) 
-                    ? SELECTORS.JOB_SEARCH_PAGE.jobUrl 
-                    : [SELECTORS.JOB_SEARCH_PAGE.jobUrl];
-                
-                let foundUrl = null;
-                for (const selector of urlSelectors) {
-                    const altElement = jobCard.querySelector(selector);
-                    if (altElement && altElement.href) {
-                        foundUrl = altElement.href;
-                        break;
+            // First try to get job ID from data attributes (more reliable for new UI)
+            const jobCardWrapper = jobCard.querySelector('[data-job-id]');
+            if (jobCardWrapper) {
+                jobId = jobCardWrapper.getAttribute('data-job-id');
+                if (jobId) {
+                    // Construct URL from job ID
+                    jobUrl = `https://www.linkedin.com/jobs/view/${jobId}`;
+                    console.log(`[ResumeHub] Extracted job ID from data attribute: ${jobId}`);
+                }
+            }
+            
+            // Fallback to URL extraction if no data attribute found
+            if (!jobUrl) {
+                if (!urlElement || !urlElement.href) {
+                    // Try all URL selectors from the config
+                    const urlSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobUrl) 
+                        ? SELECTORS.JOB_SEARCH_PAGE.jobUrl 
+                        : [SELECTORS.JOB_SEARCH_PAGE.jobUrl];
+                    
+                    let foundUrl = null;
+                    for (const selector of urlSelectors) {
+                        const altElement = jobCard.querySelector(selector);
+                        if (altElement && altElement.href) {
+                            foundUrl = altElement.href;
+                            break;
+                        }
+                    }
+                    
+                    if (!foundUrl) {
+                        // Log failed extractions for debugging
+                        console.warn('[ResumeHub] Failed to extract URL from job card:', jobCard);
+                        return null;
+                    }
+                    
+                    // Handle new UI URL format
+                    const url = new URL(foundUrl);
+                    const currentJobId = url.searchParams.get('currentJobId');
+                    if (currentJobId) {
+                        jobUrl = `https://www.linkedin.com/jobs/view/${currentJobId}`;
+                        console.log(`[ResumeHub] Converted new UI URL to standard format: ${jobUrl}`);
+                    } else {
+                        jobUrl = foundUrl;
+                    }
+                } else {
+                    // Handle new UI URL format
+                    const url = new URL(urlElement.href);
+                    const currentJobId = url.searchParams.get('currentJobId');
+                    if (currentJobId) {
+                        jobUrl = `https://www.linkedin.com/jobs/view/${currentJobId}`;
+                        console.log(`[ResumeHub] Converted new UI URL to standard format: ${jobUrl}`);
+                    } else {
+                        jobUrl = urlElement.href;
                     }
                 }
-                
-                if (!foundUrl) {
-                    // Log failed extractions for debugging
-                    console.warn('[ResumeHub] Failed to extract URL from job card:', jobCard);
-                    return null;
-                }
-                
-                jobUrl = new URL(foundUrl).href;
-            } else {
-                jobUrl = new URL(urlElement.href).href;
             }
 
-            const jobTitle = titleElement ? titleElement.innerText.trim() : 'N/A';
-            const companyName = companyElement ? companyElement.innerText.trim() : 'N/A';
-            const location = locationElement ? locationElement.innerText.trim() : 'N/A';
+            // Enhanced text extraction for new UI
+            const extractText = (element) => {
+                if (!element) return 'N/A';
+                
+                // Try to get text from various sources
+                let text = '';
+                
+                // First try innerText (most reliable)
+                if (element.innerText && element.innerText.trim()) {
+                    text = element.innerText.trim();
+                } 
+                // Then try textContent as fallback
+                else if (element.textContent && element.textContent.trim()) {
+                    text = element.textContent.trim();
+                }
+                
+                // Clean up common LinkedIn artifacts
+                text = text.replace(/\s+/g, ' '); // Normalize whitespace
+                text = text.replace(/^\s*•\s*/, ''); // Remove bullet points
+                text = text.replace(/\s*\|\s*$/, ''); // Remove trailing separators
+                
+                return text || 'N/A';
+            };
+
+            const jobTitle = extractText(titleElement);
+            const companyName = extractText(companyElement);
+            const location = extractText(locationElement);
+            
+            // Additional validation for new UI structure
+            if (jobTitle === 'N/A' || companyName === 'N/A') {
+                // Try alternative extraction methods for new UI
+                const alternativeTitle = jobCard.querySelector('.job-card-job-posting-card-wrapper__title')?.innerText?.trim();
+                const alternativeCompany = jobCard.querySelector('.artdeco-entity-lockup__subtitle')?.innerText?.trim();
+                
+                if (alternativeTitle && jobTitle === 'N/A') {
+                    console.log('[ResumeHub] Using alternative title extraction');
+                }
+                if (alternativeCompany && companyName === 'N/A') {
+                    console.log('[ResumeHub] Using alternative company extraction');
+                }
+                
+                return {
+                    jobTitle: alternativeTitle || jobTitle,
+                    companyName: alternativeCompany || companyName,
+                    location,
+                    jobUrl
+                };
+            }
             
             // Only log successful extractions to reduce noise
             if (jobTitle !== 'N/A' && companyName !== 'N/A' && location !== 'N/A') {
@@ -321,26 +442,61 @@ export class JobSearchHandler {
             return null;
         };
         
-        const footerContainer = findElement(SELECTORS.JOB_SEARCH_PAGE.cardActionsContainer);
+        let targetContainer = findElement(SELECTORS.JOB_SEARCH_PAGE.cardActionsContainer);
         
-        if (footerContainer) {
-            if (footerContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`)) {
+        // Enhanced container finding for new UI
+        if (!targetContainer) {
+            // Try specific new UI containers in order of preference
+            const newUIContainers = [
+                '.artdeco-entity-lockup__metadata:last-child', // Best placement - after job insights
+                '.artdeco-entity-lockup__metadata:has(.job-card-job-posting-card-wrapper__footer-items)', // Metadata with footer items
+                '.job-card-job-posting-card-wrapper__content .flex-grow-1', // Inside main content
+                '.artdeco-entity-lockup__metadata', // Any metadata section
+                '.job-card-job-posting-card-wrapper__content', // Main content wrapper
+                '.artdeco-entity-lockup' // Entity lockup container
+            ];
+            
+            for (const selector of newUIContainers) {
+                const containers = card.querySelectorAll(selector);
+                if (containers.length > 0) {
+                    // For metadata sections, prefer the last one (usually contains footer items)
+                    targetContainer = containers[containers.length - 1];
+                    console.log(`[ResumeHub] Found new UI container with selector: ${selector} (${containers.length} found, using last)`);
+                    break;
+                }
+            }
+        }
+        
+        if (targetContainer) {
+            if (targetContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`)) {
                 return; // Badge already exists
             }
             console.log(`[ResumeHub] Creating salary badge for: ${jobData.jobUrl}`);
-            const badge = new SalaryBadge(footerContainer, jobData.jobUrl);
+            const badge = new SalaryBadge(targetContainer, jobData.jobUrl);
             this.jobDataMap.set(this._normalizeJobUrl(jobData.jobUrl), jobData);
             badge.create();
             this.badgeInstances.set(this._normalizeJobUrl(jobData.jobUrl), badge);
         } else {
             // Try to inject the badge in a fallback location
-            const fallbackContainer = card.querySelector('.job-card-container') || card;
-            if (fallbackContainer) {
-                console.log(`[ResumeHub] Using fallback container for: ${jobData.jobUrl}`);
-                const badge = new SalaryBadge(fallbackContainer, jobData.jobUrl);
-                this.jobDataMap.set(this._normalizeJobUrl(jobData.jobUrl), jobData);
-                badge.create();
-                this.badgeInstances.set(this._normalizeJobUrl(jobData.jobUrl), badge);
+            const fallbackContainers = [
+                '.job-card-job-posting-card-wrapper',
+                '.job-card-container',
+                card
+            ];
+            
+            for (const fallbackContainer of fallbackContainers) {
+                const container = typeof fallbackContainer === 'string' 
+                    ? card.querySelector(fallbackContainer) 
+                    : fallbackContainer;
+                    
+                if (container) {
+                    console.log(`[ResumeHub] Using fallback container for: ${jobData.jobUrl}`);
+                    const badge = new SalaryBadge(container, jobData.jobUrl);
+                    this.jobDataMap.set(this._normalizeJobUrl(jobData.jobUrl), jobData);
+                    badge.create();
+                    this.badgeInstances.set(this._normalizeJobUrl(jobData.jobUrl), badge);
+                    break;
+                }
             }
         }
     }
@@ -383,8 +539,17 @@ export class JobSearchHandler {
      */
     _normalizeJobUrl(url) {
         try {
-            const match = url.match(/\/jobs\/view\/(\d+)/);
-            return match ? match[1] : url;
+            // Handle both old and new URL formats
+            let match = url.match(/\/jobs\/view\/(\d+)/); // Old format
+            if (match) return match[1];
+            
+            match = url.match(/currentJobId=(\d+)/); // New format
+            if (match) return match[1];
+            
+            match = url.match(/jobId=(\d+)/); // Alternative new format
+            if (match) return match[1];
+            
+            return url;
         } catch (e) {
             return url;
         }

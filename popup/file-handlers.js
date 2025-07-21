@@ -269,7 +269,8 @@ class FileHandlers {
       }
       
       // Job Title (role)
-      content.push({ text: 'SOFTWARE DEVELOPER', style: 'jobTitleHeader', color: accentColor });
+      const jobTitle = jsonData.jobTitle || 'SOFTWARE DEVELOPER';
+      content.push({ text: jobTitle.toUpperCase(), style: 'jobTitleHeader', color: accentColor });
 
       // Consolidate ALL contact info into a single line for maximum space efficiency
       const allContactParts = [];

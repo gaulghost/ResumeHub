@@ -166,6 +166,7 @@ export class ResumeCacheOptimizer {
   createCustomParsePrompt(config) {
     const baseStructure = `{
   "contact": { "name": "string|null", "email": "string|null", "phone": "string|null", "linkedin": "string|null", "github": "string|null", "portfolio": "string|null" },
+  "jobTitle": "string|null",
   "summary": "string|null",
   "experience": [ { "title": "string", "company": "string", "location": "string|null", "dates": "string|null", "bullets": ["string", "..."] } ],
   "education": [ { "institution": "string", "degree": "string", "location": "string|null", "dates": "string|null", "details": "string|null" } ],

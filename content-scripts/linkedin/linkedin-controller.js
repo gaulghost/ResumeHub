@@ -13,13 +13,38 @@ class LinkedInController {
         this.JobDetailsHandler = JobDetailsHandler;
         this.pageHandler = null;
         this.currentUrl = window.location.href; 
+        this.mutationObserver = null;
+        this.initializationTimeout = null;
+        this.isInitializing = false;
         console.log('[ResumeHub] LinkedInController constructed');
+        this.setupEventListeners();
+        this.setupMutationObserver();
+    }
 
-        // Listen for SPA navigation events
-        window.addEventListener('popstate', this.handleUrlChange.bind(this));
-        window.addEventListener('hashchange', this.handleUrlChange.bind(this));
-        // We also listen for clicks, as they can trigger navigation without URL changes.
-        document.addEventListener('click', this.handleUrlChange.bind(this), true);
+    setupEventListeners() {
+        const handleUrlChange = this.handleUrlChange.bind(this);
+        window.addEventListener("popstate", handleUrlChange);
+        window.addEventListener("hashchange", handleUrlChange);
+        document.addEventListener("click", handleUrlChange, true);
+    }
+
+    /**
+     * Sets up mutation observer to watch for DOM changes
+     */
+    setupMutationObserver() {
+        // Simple mutation observer for URL changes
+        this.mutationObserver = new MutationObserver(() => {
+            // Check for URL changes
+            if (window.location.href !== this.currentUrl) {
+                this.currentUrl = window.location.href;
+                this.initialize();
+            }
+        });
+
+        this.mutationObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     }
 
     /**
@@ -33,12 +58,13 @@ class LinkedInController {
             this.pageHandler.destroy();
         }
 
-        if (this.currentUrl.includes('/jobs/search/')) {
-            console.log('[ResumeHub] Job Search Page detected.');
-            this.pageHandler = new this.JobSearchHandler(this.salaryEstimator);
-        } else if (this.currentUrl.includes('/jobs/view/')) {
+        // Simple URL-based detection
+        if (this.currentUrl.includes('/jobs/view/')) {
             console.log('[ResumeHub] Job Details Page detected.');
             this.pageHandler = new this.JobDetailsHandler(this.salaryEstimator);
+        } else if (this.currentUrl.includes('/jobs/')) {
+            console.log('[ResumeHub] Job Search/List Page detected.');
+            this.pageHandler = new this.JobSearchHandler(this.salaryEstimator);
         } else {
             this.pageHandler = null;
             console.warn('[ResumeHub] No specific handler for this LinkedIn page:', this.currentUrl);
@@ -50,6 +76,8 @@ class LinkedInController {
         }
     }
 
+
+
     /**
      * Handles single-page application navigation changes.
      * We use a short delay to allow the DOM to update after a navigation event.
@@ -59,9 +87,24 @@ class LinkedInController {
             if (window.location.href !== this.currentUrl) {
                 console.log('[ResumeHub] URL change detected, re-initializing controller.');
                 this.currentUrl = window.location.href;
-                this.initialize();
+                this.debouncedInitialize();
             }
         }, 500); // Delay to ensure new page content is loaded
+    }
+
+    /**
+     * Cleanup method
+     */
+    destroy() {
+        if (this.mutationObserver) {
+            this.mutationObserver.disconnect();
+        }
+        if (this.initializationTimeout) {
+            clearTimeout(this.initializationTimeout);
+        }
+        if (this.pageHandler && typeof this.pageHandler.destroy === 'function') {
+            this.pageHandler.destroy();
+        }
     }
 }
 
@@ -78,31 +121,45 @@ class LinkedInController {
         const { SalaryEstimator } = await import(chrome.runtime.getURL('utils/salary-estimator.js'));
         console.log('[ResumeHub] SalaryEstimator imported successfully.');
 
-        console.log('[ResumeHub] Importing JobSearchHandler...');
-        const { JobSearchHandler } = await import(chrome.runtime.getURL('content-scripts/linkedin/pages/job-search-handler.js'));
-        console.log('[ResumeHub] JobSearchHandler imported successfully.');
+        console.log("[ResumeHub] Importing JobSearchHandler...");
+        const { JobSearchHandler } = await import(
+            chrome.runtime.getURL(
+                "content-scripts/linkedin/pages/job-search-handler.js"
+            )
+        );
+        console.log("[ResumeHub] JobSearchHandler imported successfully.");
 
-        console.log('[ResumeHub] Importing JobDetailsHandler...');
-        const { JobDetailsHandler } = await import(chrome.runtime.getURL('content-scripts/linkedin/pages/job-details-handler.js'));
-        console.log('[ResumeHub] JobDetailsHandler imported successfully.');
+        console.log("[ResumeHub] Importing JobDetailsHandler...");
+        const { JobDetailsHandler } = await import(
+            chrome.runtime.getURL(
+                "content-scripts/linkedin/pages/job-details-handler.js"
+            )
+        );
+        console.log("[ResumeHub] JobDetailsHandler imported successfully.");
 
-        console.log('[ResumeHub] All modules imported dynamically.');
+        console.log("[ResumeHub] All modules imported dynamically.");
 
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        console.log('[ResumeHub] Initializing SalaryEstimator...');
+        console.log("[ResumeHub] Initializing SalaryEstimator...");
         const salaryEstimator = new SalaryEstimator();
-        console.log('[ResumeHub] SalaryEstimator initialized.');
+        console.log("[ResumeHub] SalaryEstimator initialized.");
 
-        console.log('[ResumeHub] Initializing LinkedInController...');
-        const controller = new LinkedInController(salaryEstimator, JobSearchHandler, JobDetailsHandler);
-        console.log('[ResumeHub] LinkedInController initialized.');
+        console.log("[ResumeHub] Initializing LinkedInController...");
+        const controller = new LinkedInController(
+            salaryEstimator,
+            JobSearchHandler,
+            JobDetailsHandler
+        );
+        console.log("[ResumeHub] LinkedInController initialized.");
 
         controller.initialize();
 
-        console.log('[ResumeHub] Controller initialization complete.');
-
+        console.log("[ResumeHub] Controller initialization complete.");
     } catch (error) {
-        console.error('[ResumeHub] Critical error in content script initialization:', error);
+        console.error(
+            "[ResumeHub] Critical error in content script initialization:",
+            error
+        );
     }
 })();

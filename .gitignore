@@ -12,7 +12,10 @@ temp_build/
 # npm lock file
 package-lock.json
 
-.model-context/
+.model_context/
 .temp
 
 .tests/
+.kiro/
+.vscode/
+.build/
