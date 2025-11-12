@@ -267,55 +267,46 @@ async function handleJobChanged(request, sender, sendResponse) {
             }
         }
 
-        // Tailor resume
+        // Tailor resume using the same function as "Generate Tailored Resume"
         if (!apiClient) {
             inFlightJobs.delete(jobKey);
             return sendResponse?.({ queued: false, reason: 'API key missing' });
         }
 
-        // Get resume data and parse (with caching)
+        // Get resume data
         const resumeData = await StorageManager.getResume();
         if (!resumeData?.content) {
             inFlightJobs.delete(jobKey);
             return sendResponse?.({ queued: false, reason: 'No resume data' });
         }
 
-        // Check resume parse cache
-        const { generateResumeHash } = await import('./utils/shared-utilities.js');
-        const resumeHash = generateResumeHash(resumeData);
-        let originalResumeJSON = null;
-        
-        if (resumeParseCache.has(resumeHash)) {
-            const cached = resumeParseCache.get(resumeHash);
-            if (Date.now() - cached.timestamp < CACHE_TTL) {
-                console.log('[ResumeHub BG] Using cached resume parse');
-                originalResumeJSON = cached.resumeJSON;
-            } else {
-                resumeParseCache.delete(resumeHash);
-            }
-        }
+        // Get API token for extraction method
+        const apiToken = await StorageManager.getAPIToken();
 
-        // Parse if not cached
-        if (!originalResumeJSON) {
-            const resumeCacheOptimizer = new ResumeCacheOptimizer(apiClient);
-            const optimizationResult = await resumeCacheOptimizer.getOptimizedResumeJSON(resumeData);
-            originalResumeJSON = optimizationResult.resumeJSON;
-            
-            if (originalResumeJSON) {
-                // Cache the parsed result
-                resumeParseCache.set(resumeHash, { resumeJSON: originalResumeJSON, timestamp: Date.now() });
-            }
-        }
+        // Call the same function as "Generate Tailored Resume"
+        const tailorRequest = {
+            resumeData,
+            jobDescriptionOverride: jd,
+            apiToken: apiToken,
+            extractionMethod: 'ai',
+            isAutoTailor: true // Flag to indicate this is an auto-tailor operation
+        };
 
-        if (!originalResumeJSON) {
+        // Use handleCreateTailoredResume to generate the tailored resume
+        const tailorResponse = await new Promise((resolve) => {
+            handleCreateTailoredResume(tailorRequest, resolve);
+        });
+
+        if (!tailorResponse || !tailorResponse.success) {
             inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: 'Failed to parse resume' });
+            return sendResponse?.({ queued: false, reason: tailorResponse?.error || 'Failed to tailor resume' });
         }
 
-        const parallelProcessor = new ParallelProcessor(apiClient, { maxConcurrency: 3, batchDelay: 500 });
-        const sectionResults = await parallelProcessor.processSectionsInParallel(jd, originalResumeJSON, () => {});
-        const tailoredResumeJSON = parallelProcessor.combineResults(originalResumeJSON, sectionResults);
-        tailoredResumeJSON.education = originalResumeJSON.education || [];
+        const tailoredResumeJSON = tailorResponse.tailoredResumeJSON;
+        if (!tailoredResumeJSON) {
+            inFlightJobs.delete(jobKey);
+            return sendResponse?.({ queued: false, reason: 'No tailored resume returned' });
+        }
 
         // Cache recent job
         await upsertRecentJobEntry({
@@ -325,7 +316,8 @@ async function handleJobChanged(request, sender, sendResponse) {
             jobUrl,
             jobDescription: jd,
             salary,
-            tailoredResumeJSON
+            tailoredResumeJSON,
+            isAutoTailor: true // Mark as auto-tailored
         });
 
         inFlightJobs.delete(jobKey);

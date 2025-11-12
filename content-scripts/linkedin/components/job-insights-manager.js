@@ -297,6 +297,8 @@ ${jobDescription.substring(0, 3000)}`;
    * Main method to load all insights (with caching and optimization)
    */
   async loadInsights(forceRefresh = false) {
+    console.log('[JobInsightsManager] loadInsights called with forceRefresh:', forceRefresh);
+    
     const jobDescription = await this._getJobDescription();
     if (!jobDescription) {
       console.warn('[JobInsightsManager] No job description available');
@@ -310,20 +312,23 @@ ${jobDescription.substring(0, 3000)}`;
     }
 
     const signature = this._getJobSignature(context.jobTitle, context.companyName, context.jobUrl);
+    console.log('[JobInsightsManager] Job signature:', signature, 'forceRefresh:', forceRefresh);
     
-    // Check cache first
+    // Check cache first (but skip if forceRefresh is true)
     if (!forceRefresh && this._isInsightsLoaded(signature)) {
+      console.log('[JobInsightsManager] Using cached insights for:', signature);
       const cached = this._getCachedInsights(signature);
       this._displayAllInsights(cached, context);
       return;
     }
 
-    // Check if already loading
+    // Check if already loading (but skip if forceRefresh is true)
     if (this._isLoading('all') && !forceRefresh) {
-      console.log('[JobInsightsManager] Already loading insights');
+      console.log('[JobInsightsManager] Already loading insights, skipping');
       return;
     }
 
+    console.log('[JobInsightsManager] Fetching fresh insights for job:', signature);
     this._setLoading('all', true);
     this.jobSignature = signature;
 
@@ -423,19 +428,20 @@ ${jobDescription.substring(0, 3000)}`;
     const questionsEl = this.sidebar.root.getElementById('rh-interview-questions');
     const resourcesEl = this.sidebar.root.getElementById('rh-helpful-resources');
 
-    if (requirementsEl && !requirementsEl.innerHTML.includes('•')) {
+    // Always show loading states (clear any previous content)
+    if (requirementsEl) {
       requirementsEl.innerHTML = 'Analyzing requirements...';
     }
-    if (skillsEl && !skillsEl.innerHTML.includes('rh-skill-tag')) {
+    if (skillsEl) {
       skillsEl.innerHTML = 'Analyzing skills...';
     }
-    if (companyStatsEl && companyStatsEl.textContent === 'No company details available') {
+    if (companyStatsEl) {
       companyStatsEl.textContent = 'Analyzing company details...';
     }
-    if (questionsEl && !questionsEl.innerHTML.includes('rh-question-item')) {
+    if (questionsEl) {
       questionsEl.innerHTML = 'Generating personalized questions...';
     }
-    if (resourcesEl && resourcesEl.textContent === 'Loading...') {
+    if (resourcesEl) {
       resourcesEl.innerHTML = 'Loading resources...';
     }
   }

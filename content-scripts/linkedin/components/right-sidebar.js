@@ -213,8 +213,52 @@ export class ResumeHubSidebar {
     try {
       const storedResume = await this._getStoredTailoredResume();
       if (storedResume) {
-        // Show download buttons if resume exists
-        this._toggleDownloadButtons(true);
+        // Check if it's auto-tailored
+        const isAutoTailor = storedResume._isAutoTailor || false;
+        // Only show download buttons if NOT auto-tailored
+        this._toggleDownloadButtons(!isAutoTailor);
+      } else {
+        // Check recent jobs for auto-tailored resume for current job
+        await this._checkRecentJobsForAutoTailoredResume();
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+
+  async _checkRecentJobsForAutoTailoredResume() {
+    try {
+      const title = this.root.getElementById('rh-job-title')?.textContent || '';
+      const company = this.root.getElementById('rh-job-meta')?.textContent || '';
+      const jobUrl = location.href;
+
+      if (!title || title === '—' || !company || company === '—') {
+        return;
+      }
+
+      // Get recent jobs from background
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'getRecentJobs' }, (resp) => resolve(resp));
+      });
+
+      if (response && response.success && response.jobs) {
+        // Find matching job
+        const matchingJob = response.jobs.find(job => 
+          job.jobUrl === jobUrl && 
+          job.tailoredResumeJSON && 
+          job.isAutoTailor === true
+        );
+
+        if (matchingJob && matchingJob.tailoredResumeJSON) {
+          // Store the auto-tailored resume locally with the flag
+          const resumeWithFlag = {
+            ...matchingJob.tailoredResumeJSON,
+            _isAutoTailor: true
+          };
+          await this._storeTailoredResume(resumeWithFlag);
+          // Hide download buttons for auto-tailored resume
+          this._toggleDownloadButtons(false);
+        }
       }
     } catch (e) {
       // Ignore errors
@@ -1011,6 +1055,7 @@ export class ResumeHubSidebar {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
+        color: var(--rh-text-secondary);
       }
       
       .rh-skill-tag {
@@ -1026,6 +1071,7 @@ export class ResumeHubSidebar {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        color: var(--rh-text-secondary);
       }
       
       .rh-question-item {
@@ -1047,6 +1093,7 @@ export class ResumeHubSidebar {
         display: flex;
         flex-direction: column;
         gap: 6px;
+        color: var(--rh-text-secondary);
       }
       
       .rh-resource-item {
@@ -2109,37 +2156,67 @@ export class ResumeHubSidebar {
     // Update job details section
     this._updateJobDetailsDisplay(salary, applicants, companySize, industry, linkedinEmployees);
 
+    // Check if this is a different job than what we have extracted
+    const currentJobSig = `${title}|${company}|${location.href}`;
+    const jobChanged = currentJobSig !== this._lastJobSig;
+    const extractionNeeded = currentJobSig !== this._lastExtractedJobSig;
+    
+    if (jobChanged && this._lastJobSig !== '') {
+      // Different job detected - IMMEDIATELY clear all UI and show loading states
+      this._updateExtractedJDDisplay('', false);
+      const extractedJdWrap = this.root.getElementById('rh-extracted-jd-wrap');
+      if (extractedJdWrap) extractedJdWrap.style.display = 'none';
+      this._lastExtractedJD = '';
+      
+      // Clear all insights sections immediately and show loading states
+      const requirementsEl = this.root.getElementById('rh-key-requirements');
+      const skillsEl = this.root.getElementById('rh-required-skills');
+      const questionsEl = this.root.getElementById('rh-interview-questions');
+      const resourcesEl = this.root.getElementById('rh-helpful-resources');
+      
+      if (requirementsEl) requirementsEl.innerHTML = 'Analyzing requirements...';
+      if (skillsEl) skillsEl.innerHTML = 'Analyzing skills...';
+      if (questionsEl) questionsEl.innerHTML = 'Generating personalized questions...';
+      if (resourcesEl) resourcesEl.innerHTML = 'Loading resources...';
+      
+      // Clear insights cache for the old job
+      this._clearInsightsCache();
+      // Reset extraction signature to force re-extraction
+      this._lastExtractedJobSig = '';
+    }
+
+    // Update last job signature
+    this._lastJobSig = currentJobSig;
+
     // Show insights sections if we have job data
     if (title !== '—' && company !== '—') {
       this._showJobInsights(title, company);
-      // Only load insights if job changed (insights manager handles caching)
-      const currentJobSig = `${title}|${company}|${location.href}`;
-      const forceRefresh = currentJobSig !== this._lastJobSig;
-      this._extractAndDisplayJobInsights(forceRefresh);
-      this._lastJobSig = currentJobSig;
     }
 
     // Notify background of job change (throttled by signature)
     this._maybeNotifyJobChanged(title, company, locationText);
 
-    // Check if this is a different job than what we have extracted
-    const currentJobSig = `${title}|${company}|${location.href}`;
-    if (currentJobSig !== this._lastExtractedJobSig && this._lastExtractedJobSig !== '') {
-      // Different job detected - clear previous extraction and insights cache
-      this._updateExtractedJDDisplay('', false);
-      const extractedJdWrap = this.root.getElementById('rh-extracted-jd-wrap');
-      if (extractedJdWrap) extractedJdWrap.style.display = 'none';
-      this._lastExtractedJD = '';
-      // Clear insights cache for the old job
-      this._clearInsightsCache();
-    }
-
     // Auto-extract job description if AI mode is enabled
     if (this.aiModeEnabled && title !== '—' && company !== '—') {
-      // Only extract if this is a different job than last extracted
-      if (currentJobSig !== this._lastExtractedJobSig) {
-        this._autoExtractJobDescription(currentJobSig);
+      // Extract if this is a different job than last extracted
+      if (extractionNeeded || this._lastExtractedJobSig === '') {
+        // Force refresh insights when job changes
+        this._autoExtractJobDescription(currentJobSig, jobChanged);
+      } else if (jobChanged) {
+        // Job changed but extraction signature matches (shouldn't happen, but handle it)
+        // Force re-extraction to ensure fresh data
+        this._lastExtractedJobSig = '';
+        this._autoExtractJobDescription(currentJobSig, true);
       }
+    } else if (jobChanged && title !== '—' && company !== '—') {
+      // Even if AI mode is disabled, if job changed, we should refresh insights
+      // (they will use standard extraction or cached data)
+      this._extractAndDisplayJobInsights(true);
+    }
+
+    // Check for auto-tailored resume from recent jobs
+    if (title !== '—' && company !== '—') {
+      await this._checkRecentJobsForAutoTailoredResume();
     }
 
     // Wire buttons that rely on context
@@ -2797,7 +2874,7 @@ ${jobDescription.substring(0, 2000)}`;
     ).join('');
   }
 
-  async _autoExtractJobDescription(jobSig) {
+  async _autoExtractJobDescription(jobSig, forceRefreshInsights = true) {
     // Automatically extract job description when AI mode is enabled
     try {
       // Update last extracted signature to prevent duplicate extractions
@@ -2816,8 +2893,8 @@ ${jobDescription.substring(0, 2000)}`;
               this._lastExtractedJD = resp2.jobDescription;
               this._updateExtractedJDDisplay(resp2.jobDescription, false);
               console.log('[ResumeHub] Auto-extracted job description (standard method)');
-              // Fetch AI insights after extraction (no force refresh needed)
-              this._extractAndDisplayJobInsights(false);
+              // Fetch AI insights after extraction with force refresh if job changed
+              this._extractAndDisplayJobInsights(forceRefreshInsights);
             } else {
               this._updateExtractedJDDisplay('Failed to extract job description', false, true);
             }
@@ -2829,8 +2906,8 @@ ${jobDescription.substring(0, 2000)}`;
           this._lastExtractedJD = resp.jobDescription;
           this._updateExtractedJDDisplay(resp.jobDescription, false);
           console.log('[ResumeHub] Auto-extracted job description (AI method)');
-          // Fetch AI insights after extraction (no force refresh needed)
-          this._extractAndDisplayJobInsights(false);
+          // Fetch AI insights after extraction with force refresh if job changed
+          this._extractAndDisplayJobInsights(forceRefreshInsights);
         } else {
           this._updateExtractedJDDisplay('No job description found', false, true);
         }
@@ -2907,11 +2984,13 @@ ${jobDescription.substring(0, 2000)}`;
     return `tailoredResume_${identifier}`;
   }
 
-  async _storeTailoredResume(resumeJSON) {
+  async _storeTailoredResume(resumeJSON, isAutoTailor = false) {
     try {
       const key = this._getStorageKey();
+      // Store resume with auto-tailor flag if needed
+      const resumeToStore = isAutoTailor ? { ...resumeJSON, _isAutoTailor: true } : resumeJSON;
       await new Promise((resolve) => {
-        chrome.storage.local.set({ [key]: resumeJSON }, () => resolve());
+        chrome.storage.local.set({ [key]: resumeToStore }, () => resolve());
       });
     } catch (e) {
       console.warn('[ResumeHub] Failed to store tailored resume:', e);
@@ -3055,10 +3134,10 @@ ${jobDescription.substring(0, 2000)}`;
             throw new Error('No tailored resume returned.');
           }
 
-          // Store tailored resume for this tab
-          await this._storeTailoredResume(tailoredResumeJSON);
+          // Store tailored resume for this tab (manual tailoring, not auto)
+          await this._storeTailoredResume(tailoredResumeJSON, false);
 
-          // Show success and enable download buttons
+          // Show success and enable download buttons (manual tailoring shows buttons)
           this._toggleDownloadButtons(true);
           tailorBtn.textContent = '✨ Tailor';
           tailorBtn.disabled = false;
