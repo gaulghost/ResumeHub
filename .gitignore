@@ -12,9 +12,12 @@ temp_build/
 # npm lock file
 package-lock.json
 
-.model_context/
-.temp
+# Documentation (not required for runtime)
+.docs/
 
+# Temporary and build folders
+.model_context/
+.temp/
 .tests/
 .kiro/
 .vscode/

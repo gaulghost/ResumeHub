@@ -67,7 +67,8 @@ class UIManager {
     
     this.state.currentTheme = theme;
     
-    // Apply theme to document.body like original implementation
+    // Apply theme to both html and body to fix overscroll background
+    document.documentElement.className = `theme-${theme}`;
     document.body.className = `theme-${theme}`;
     
     // Update checkbox state

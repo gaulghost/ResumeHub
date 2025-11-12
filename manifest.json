@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ResumeHub AI – Smart Resume & Job Form Assistant",
-  "version": "1.4",
+  "version": "1.5",
   "description": "AI-powered resume tailoring and job form auto-filling based on job descriptions with real-time customization.",
   "author": "Pradhuman Singh",
   "homepage_url": "https://github.com/gaulghost",
@@ -34,7 +34,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.linkedin.com/jobs/*"
+        "https://*.linkedin.com/jobs/**"
       ],
       "js": [
         "content-scripts/linkedin/linkedin-controller.js"
@@ -51,11 +51,14 @@
         "content-scripts/linkedin/pages/job-search-handler.js",
         "content-scripts/linkedin/pages/job-details-handler.js",
         "content-scripts/linkedin/components/salary-badge.js",
-        "content-scripts/linkedin/config/selectors.js"
+        "content-scripts/linkedin/components/right-sidebar.js",
+        "content-scripts/linkedin/components/job-insights-manager.js",
+        "content-scripts/linkedin/config/selectors.js",
+        "core/config/app-config.js"
       ],
       "matches": [
         "https://*.linkedin.com/*"
       ]
     }
   ]
-} 
+}

@@ -7,10 +7,11 @@
 // Dynamic imports will be used below to ensure compatibility with classic content-script execution.
 
 class LinkedInController {
-    constructor(salaryEstimator, JobSearchHandler, JobDetailsHandler) {
+    constructor(salaryEstimator, JobSearchHandler, JobDetailsHandler, sidebar) {
         this.salaryEstimator = salaryEstimator;
         this.JobSearchHandler = JobSearchHandler;
         this.JobDetailsHandler = JobDetailsHandler;
+        this.sidebar = sidebar || null;
         this.pageHandler = null;
         this.currentUrl = window.location.href; 
         this.mutationObserver = null;
@@ -37,7 +38,10 @@ class LinkedInController {
             // Check for URL changes
             if (window.location.href !== this.currentUrl) {
                 this.currentUrl = window.location.href;
-                this.initialize();
+                this.debouncedInitialize();
+                if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
+                    this.sidebar.onNavigate();
+                }
             }
         });
 
@@ -76,6 +80,16 @@ class LinkedInController {
         }
     }
 
+    /**
+     * Debounced initialize to prevent thrashing during rapid SPA updates
+     */
+    debouncedInitialize() {
+        if (this.initializationTimeout) {
+            clearTimeout(this.initializationTimeout);
+        }
+        this.initializationTimeout = setTimeout(() => this.initialize(), 250);
+    }
+
 
 
     /**
@@ -88,6 +102,9 @@ class LinkedInController {
                 console.log('[ResumeHub] URL change detected, re-initializing controller.');
                 this.currentUrl = window.location.href;
                 this.debouncedInitialize();
+                if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
+                    this.sidebar.onNavigate();
+                }
             }
         }, 500); // Delay to ensure new page content is loaded
     }
@@ -137,6 +154,23 @@ class LinkedInController {
         );
         console.log("[ResumeHub] JobDetailsHandler imported successfully.");
 
+        // Load AppConfig to check feature flags (sets window.AppConfig)
+        console.log("[ResumeHub] Importing AppConfig...");
+        let isSidebarEnabled = true;
+        try {
+            await import(
+                chrome.runtime.getURL(
+                    "core/config/app-config.js"
+                )
+            );
+            isSidebarEnabled = window.AppConfig?.isFeatureEnabled?.('linkedIn.rightSidebar') ?? true;
+        } catch (e) {
+            console.warn("[ResumeHub] AppConfig import failed, defaulting sidebar enabled.", e);
+            isSidebarEnabled = true;
+        }
+        console.log("[ResumeHub] Sidebar feature enabled:", isSidebarEnabled);
+        let sidebar = null;
+
         console.log("[ResumeHub] All modules imported dynamically.");
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -145,11 +179,32 @@ class LinkedInController {
         const salaryEstimator = new SalaryEstimator();
         console.log("[ResumeHub] SalaryEstimator initialized.");
 
+        if (isSidebarEnabled) {
+            try {
+                console.log("[ResumeHub] Importing ResumeHubSidebar...");
+                const { ResumeHubSidebar } = await import(
+                    chrome.runtime.getURL(
+                        "content-scripts/linkedin/components/right-sidebar.js"
+                    )
+                );
+                console.log("[ResumeHub] ResumeHubSidebar imported successfully.");
+                console.log("[ResumeHub] Mounting ResumeHubSidebar...");
+                sidebar = new ResumeHubSidebar();
+                await sidebar.mount();
+                console.log("[ResumeHub] ResumeHubSidebar mounted.");
+            } catch (e) {
+                console.warn("[ResumeHub] Sidebar import/mount failed; continuing without sidebar.", e);
+            }
+        } else {
+            console.log("[ResumeHub] Right sidebar is disabled via feature flag.");
+        }
+
         console.log("[ResumeHub] Initializing LinkedInController...");
         const controller = new LinkedInController(
             salaryEstimator,
             JobSearchHandler,
-            JobDetailsHandler
+            JobDetailsHandler,
+            sidebar
         );
         console.log("[ResumeHub] LinkedInController initialized.");
 
