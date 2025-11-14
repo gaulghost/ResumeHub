@@ -199,6 +199,9 @@ export class ResumeHubSidebar {
     // Observe page for changes to update job context
     this._startObservers();
 
+    // Listen for messages from background script
+    this._setupMessageListener();
+
     // Initial job context
     await this._updateJobContext();
 
@@ -207,6 +210,61 @@ export class ResumeHubSidebar {
     
     // Check if we already have a tailored resume for this tab
     this._checkExistingTailoredResume();
+    
+    // Start polling for auto-tailored resumes (check every 2 seconds)
+    this._startAutoTailorPolling();
+  }
+
+  _setupMessageListener() {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      try {
+        if (message.action === 'autoTailorComplete') {
+          console.log('[ResumeHub] Auto-tailor complete notification received:', message.data);
+          // Immediately check for the auto-tailored resume and show download buttons
+          this._handleAutoTailorComplete(message.data);
+        }
+      } catch (e) {
+        console.warn('[ResumeHub] Error handling message:', e);
+      }
+    });
+  }
+
+  async _handleAutoTailorComplete(data) {
+    try {
+      // Store the tailored resume with auto-tailor flag
+      const resumeWithFlag = {
+        ...data.tailoredResumeJSON,
+        _isAutoTailor: true
+      };
+      await this._storeTailoredResume(resumeWithFlag);
+      
+      // Show download buttons
+      this._toggleDownloadButtons(true);
+      console.log('[ResumeHub] Auto-tailored resume stored and download buttons shown');
+    } catch (e) {
+      console.warn('[ResumeHub] Error handling auto-tailor completion:', e);
+    }
+  }
+
+  _startAutoTailorPolling() {
+    // Clear any existing polling interval
+    if (this._autoTailorPollInterval) {
+      clearInterval(this._autoTailorPollInterval);
+    }
+    
+    // Poll every 2 seconds to check if auto-tailor completed
+    this._autoTailorPollInterval = setInterval(async () => {
+      try {
+        // Check if we still don't have download buttons shown
+        const downloadBtn = this.root.querySelector('.rh-download-section button');
+        if (!downloadBtn || !this.root.querySelector('.rh-download-section')) {
+          // Try to fetch auto-tailored resume
+          await this._checkRecentJobsForAutoTailoredResume();
+        }
+      } catch (e) {
+        // Ignore errors during polling
+      }
+    }, 2000);
   }
 
   async _checkExistingTailoredResume() {
@@ -215,8 +273,8 @@ export class ResumeHubSidebar {
       if (storedResume) {
         // Check if it's auto-tailored
         const isAutoTailor = storedResume._isAutoTailor || false;
-        // Only show download buttons if NOT auto-tailored
-        this._toggleDownloadButtons(!isAutoTailor);
+        // Show download buttons for both manual and auto-tailored resumes
+        this._toggleDownloadButtons(true);
       } else {
         // Check recent jobs for auto-tailored resume for current job
         await this._checkRecentJobsForAutoTailoredResume();
@@ -256,8 +314,9 @@ export class ResumeHubSidebar {
             _isAutoTailor: true
           };
           await this._storeTailoredResume(resumeWithFlag);
-          // Hide download buttons for auto-tailored resume
-          this._toggleDownloadButtons(false);
+          // SHOW download buttons when auto-tailored resume is ready
+          this._toggleDownloadButtons(true);
+          console.log('[ResumeHub] Auto-tailored resume ready, showing download buttons');
         }
       }
     } catch (e) {
@@ -267,6 +326,11 @@ export class ResumeHubSidebar {
 
   destroy() {
     try {
+      // Stop auto-tailor polling
+      if (this._autoTailorPollInterval) {
+        clearInterval(this._autoTailorPollInterval);
+        this._autoTailorPollInterval = null;
+      }
       if (this._onKeyDown) {
         window.removeEventListener('keydown', this._onKeyDown);
         this._onKeyDown = null;
@@ -3125,26 +3189,35 @@ ${jobDescription.substring(0, 2000)}`;
           apiToken: apiToken,
           extractionMethod: 'ai' // Use AI method like popup
         }, async (resp) => {
-          if (!resp || !resp.success) {
-            throw new Error(resp?.error || 'Failed to tailor resume.');
-          }
+          try {
+            if (!resp || !resp.success) {
+              throw new Error(resp?.error || 'Failed to tailor resume.');
+            }
 
-          const tailoredResumeJSON = resp.tailoredResumeJSON;
-          if (!tailoredResumeJSON) {
-            throw new Error('No tailored resume returned.');
-          }
+            const tailoredResumeJSON = resp.tailoredResumeJSON;
+            if (!tailoredResumeJSON) {
+              throw new Error('No tailored resume returned.');
+            }
 
-          // Store tailored resume for this tab (manual tailoring, not auto)
-          await this._storeTailoredResume(tailoredResumeJSON, false);
+            // Store tailored resume for this tab (manual tailoring, not auto)
+            await this._storeTailoredResume(tailoredResumeJSON, false);
 
-          // Show success and enable download buttons (manual tailoring shows buttons)
-          this._toggleDownloadButtons(true);
-          tailorBtn.textContent = '✨ Tailor';
-          tailorBtn.disabled = false;
-          
-          // Update status if output exists
-          if (output) {
-            output.value = 'Resume tailored successfully! Use download buttons to save.';
+            // Show success and enable download buttons (manual tailoring shows buttons)
+            this._toggleDownloadButtons(true);
+            tailorBtn.textContent = '✨ Tailor';
+            tailorBtn.disabled = false;
+            
+            // Update status if output exists
+            if (output) {
+              output.value = 'Resume tailored successfully! Use download buttons to save.';
+            }
+          } catch (e) {
+            console.error('[ResumeHub] Error in tailor callback:', e);
+            tailorBtn.textContent = '✨ Tailor';
+            tailorBtn.disabled = false;
+            if (output) {
+              output.value = `Error: ${e.message}`;
+            }
           }
         });
       } catch (e) {
@@ -3177,20 +3250,18 @@ ${jobDescription.substring(0, 2000)}`;
             return;
           }
 
-      // Load SharedUtilities if not available
-      if (typeof SharedUtilities === 'undefined') {
-          try {
-          await import(chrome.runtime.getURL('utils/shared-utilities.js'));
-          } catch (e) {
-          console.warn('[ResumeHub] Failed to load SharedUtilities:', e);
-        }
-      }
-
-      // Fallback filename if SharedUtilities not available
+      // Generate filename with timestamp
+      // Note: Dynamic imports are not allowed in service worker context, so we generate the timestamp locally
       let baseFilename = 'tailored_resume';
-      if (typeof SharedUtilities !== 'undefined' && SharedUtilities.generateTimestampedFilename) {
-        baseFilename = SharedUtilities.generateTimestampedFilename('tailored_resume', '').replace(/\.$/, '');
-      } else {
+      try {
+        if (typeof SharedUtilities !== 'undefined' && SharedUtilities.generateTimestampedFilename) {
+          baseFilename = SharedUtilities.generateTimestampedFilename('tailored_resume', '').replace(/\.$/, '');
+        } else {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+          baseFilename = `tailored_resume_${timestamp}`;
+        }
+      } catch (e) {
+        // Fallback if SharedUtilities fails
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         baseFilename = `tailored_resume_${timestamp}`;
       }

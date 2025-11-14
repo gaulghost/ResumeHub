@@ -320,6 +320,19 @@ async function handleJobChanged(request, sender, sendResponse) {
             isAutoTailor: true // Mark as auto-tailored
         });
 
+        // Notify content script that auto-tailor is complete
+        console.log('[ResumeHub BG] Auto-tailor completed for job:', jobTitle, 'at', companyName);
+        
+        // Try to notify the specific tab if tabId is available
+        if (tabId) {
+            chrome.tabs.sendMessage(tabId, {
+                action: 'autoTailorComplete',
+                data: { jobUrl, jobTitle, companyName, tailoredResumeJSON }
+            }, () => {
+                // Ignore errors if tab is no longer available
+            });
+        }
+
         inFlightJobs.delete(jobKey);
         return sendResponse?.({ queued: true, success: true });
     } catch (error) {
