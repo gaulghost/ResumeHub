@@ -496,9 +496,9 @@ async function handleCreateTailoredResume(request, sendResponse) {
 
 async function handleGetJobDescription(request, sendResponse) {
     try {
-        const { extractionMethod = 'standard', apiToken } = request;
+        const { extractionMethod = 'standard', apiToken, forceRefresh = false } = request;
 
-        console.log(`[ResumeHub BG] getJobDescription called (method=${extractionMethod})`);
+        console.log(`[ResumeHub BG] getJobDescription called (method=${extractionMethod}, forceRefresh=${forceRefresh})`);
 
         // Ensure we can access the active tab
         const canAccess = await ScriptInjector.canAccessCurrentTab();
@@ -510,8 +510,8 @@ async function handleGetJobDescription(request, sendResponse) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const tabId = tab?.id;
 
-        // Check cache first (if we have a tab ID)
-        if (tabId && jdCache.has(tabId)) {
+        // Check cache first (if we have a tab ID and not forcing refresh)
+        if (!forceRefresh && tabId && jdCache.has(tabId)) {
             const cached = jdCache.get(tabId);
             if (Date.now() - cached.timestamp < CACHE_TTL) {
                 console.log('[ResumeHub BG] Using cached JD for getJobDescription');
@@ -519,6 +519,11 @@ async function handleGetJobDescription(request, sendResponse) {
             } else {
                 jdCache.delete(tabId);
             }
+        }
+        
+        // If forceRefresh is true, clear the cache entry
+        if (forceRefresh && tabId && jdCache.has(tabId)) {
+            jdCache.delete(tabId);
         }
 
         let jobDescription = null;

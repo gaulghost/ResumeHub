@@ -205,8 +205,8 @@ export class ResumeHubSidebar {
     // Initial job context
     await this._updateJobContext();
 
-    // Get current tab ID for storage
-    this._getCurrentTabId();
+    // Get current tab ID for storage (must be awaited before using _currentTabId)
+    await this._getCurrentTabId();
     
     // Check if we already have a tailored resume for this tab
     this._checkExistingTailoredResume();
@@ -2947,11 +2947,11 @@ ${jobDescription.substring(0, 2000)}`;
       // Show extracting status
       this._updateExtractedJDDisplay('Extracting job description…', true);
       
-      // Extract using the same logic as Extract button (same as Preview)
-      chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'ai' }, (resp) => {
+      // Use forceRefresh: true to always get fresh data (same as Extract button)
+      chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'ai', forceRefresh: true }, (resp) => {
         if (!resp || !resp.success) {
-          // Fallback to standard extraction
-          chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'standard' }, (resp2) => {
+          // Fallback to standard extraction with force refresh
+          chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'standard', forceRefresh: true }, (resp2) => {
             if (resp2 && resp2.success && resp2.jobDescription) {
               // Store and display extracted JD
               this._lastExtractedJD = resp2.jobDescription;
@@ -3097,49 +3097,62 @@ ${jobDescription.substring(0, 2000)}`;
       downloadTxtBtn.onclick = () => this._downloadResume('txt');
     }
 
-    extractBtn.onclick = () => {
-      // Show extracting status in the extracted JD section
-      this._updateExtractedJDDisplay('Extracting job description…', true);
-      
-      // Prefer AI method if key is set; background will validate (same as Preview button)
-      chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'ai' }, (resp) => {
-        if (!resp || !resp.success) {
-          // Fallback to standard
-          chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'standard' }, (resp2) => {
-            if (resp2 && resp2.success && resp2.jobDescription) {
-              // Update both output (if exists) and extracted JD display
-              if (output) output.value = resp2.jobDescription || '';
-              this._lastExtractedJD = resp2.jobDescription;
-              this._updateExtractedJDDisplay(resp2.jobDescription, false);
-              // Fetch AI insights after extraction
-              this._extractAndDisplayJobInsights();
-            } else {
-              const errorMsg = resp2?.error || 'Failed to extract job description';
-              if (output) output.value = errorMsg;
-              this._updateExtractedJDDisplay(errorMsg, false, true);
-            }
+    // Helper function to extract job description (returns Promise)
+    const extractJobDescriptionAsync = () => {
+      return new Promise((resolve) => {
+        this._updateExtractedJDDisplay('Extracting job description…', true);
+        
+        // Prefer AI method if key is set; background will validate (same as Preview button)
+        // Force refresh to always get fresh data instead of cached data
+        chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'ai', forceRefresh: true }, (resp) => {
+          if (!resp || !resp.success) {
+            // Fallback to standard with force refresh
+            chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'standard', forceRefresh: true }, (resp2) => {
+              if (resp2 && resp2.success && resp2.jobDescription) {
+                // Update both output (if exists) and extracted JD display
+                if (output) output.value = resp2.jobDescription || '';
+                this._lastExtractedJD = resp2.jobDescription;
+                this._updateExtractedJDDisplay(resp2.jobDescription, false);
+                // Fetch AI insights after extraction
+                this._extractAndDisplayJobInsights();
+                // Resolve with the extracted JD
+                resolve(resp2.jobDescription);
+              } else {
+                const errorMsg = resp2?.error || 'Failed to extract job description';
+                if (output) output.value = errorMsg;
+                this._updateExtractedJDDisplay(errorMsg, false, true);
+                resolve(null);
+              }
+              // Update last extracted signature
+              const currentJobSig = `${this.root.getElementById('rh-job-title')?.textContent || ''}|${this.root.getElementById('rh-job-meta')?.textContent || ''}|${location.href}`;
+              this._lastExtractedJobSig = currentJobSig;
+            });
+            return;
+          }
+          if (resp.jobDescription) {
+            // Update both output (if exists) and extracted JD display
+            if (output) output.value = resp.jobDescription || '';
+            this._lastExtractedJD = resp.jobDescription;
+            this._updateExtractedJDDisplay(resp.jobDescription, false);
             // Update last extracted signature
             const currentJobSig = `${this.root.getElementById('rh-job-title')?.textContent || ''}|${this.root.getElementById('rh-job-meta')?.textContent || ''}|${location.href}`;
             this._lastExtractedJobSig = currentJobSig;
-          });
-          return;
-        }
-        if (resp.jobDescription) {
-          // Update both output (if exists) and extracted JD display
-          if (output) output.value = resp.jobDescription || '';
-          this._lastExtractedJD = resp.jobDescription;
-          this._updateExtractedJDDisplay(resp.jobDescription, false);
-          // Update last extracted signature
-          const currentJobSig = `${this.root.getElementById('rh-job-title')?.textContent || ''}|${this.root.getElementById('rh-job-meta')?.textContent || ''}|${location.href}`;
-          this._lastExtractedJobSig = currentJobSig;
-          // Fetch AI insights after extraction (no force refresh needed)
-          this._extractAndDisplayJobInsights(false);
-        } else {
-          const errorMsg = 'No job description found';
-          if (output) output.value = errorMsg;
-          this._updateExtractedJDDisplay(errorMsg, false, true);
-        }
+            // Fetch AI insights after extraction (no force refresh needed)
+            this._extractAndDisplayJobInsights(false);
+            // Resolve with the extracted JD
+            resolve(resp.jobDescription);
+          } else {
+            const errorMsg = 'No job description found';
+            if (output) output.value = errorMsg;
+            this._updateExtractedJDDisplay(errorMsg, false, true);
+            resolve(null);
+          }
+        });
       });
+    };
+
+    extractBtn.onclick = () => {
+      extractJobDescriptionAsync();
     };
 
     tailorBtn.onclick = async () => {
@@ -3150,13 +3163,16 @@ ${jobDescription.substring(0, 2000)}`;
 
       // Get job description from extracted JD section, stored value, or output
       const extractedJdTextarea = this.root.getElementById('rh-extracted-jd');
-      const extractedJD = extractedJdTextarea?.value || this._lastExtractedJD || output?.value || '';
+      let extractedJD = extractedJdTextarea?.value || this._lastExtractedJD || output?.value || '';
       
       // Requires a resume in storage and a job description
       if (!extractedJD || extractedJD.length < 30) {
-        // Try to get JD first
-        extractBtn.onclick();
-        return;
+        // Try to get JD first - wait for extraction to complete
+        extractedJD = await extractJobDescriptionAsync();
+        if (!extractedJD || extractedJD.length < 30) {
+          // Extraction failed or produced insufficient content
+          return;
+        }
       }
 
       // Set processing state
@@ -3182,13 +3198,8 @@ ${jobDescription.substring(0, 2000)}`;
         const apiToken = await getApiToken();
 
         // Call same function as Generate Tailored Resume
-        chrome.runtime.sendMessage({ 
-          action: 'createTailoredResume', 
-          resumeData, 
-          jobDescriptionOverride: extractedJD,
-          apiToken: apiToken,
-          extractionMethod: 'ai' // Use AI method like popup
-        }, async (resp) => {
+        // Use arrow function with proper context binding
+        const handleTailorResponse = async (resp) => {
           try {
             if (!resp || !resp.success) {
               throw new Error(resp?.error || 'Failed to tailor resume.');
@@ -3219,7 +3230,15 @@ ${jobDescription.substring(0, 2000)}`;
               output.value = `Error: ${e.message}`;
             }
           }
-        });
+        };
+        
+        chrome.runtime.sendMessage({ 
+          action: 'createTailoredResume', 
+          resumeData, 
+          jobDescriptionOverride: extractedJD,
+          apiToken: apiToken,
+          extractionMethod: 'ai' // Use AI method like popup
+        }, handleTailorResponse);
       } catch (e) {
         console.error('[ResumeHub] Tailoring failed:', e);
         tailorBtn.textContent = '✨ Tailor';
