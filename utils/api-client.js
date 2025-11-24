@@ -3,6 +3,7 @@ export class GeminiAPIClient {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.baseURL = 'https://generativelanguage.googleapis.com/v1beta/models';
+    this.defaultModel = 'gemini-flash-latest';
   }
 
   async callAPI(model, prompt, config = {}, operation = 'API call') {
@@ -23,16 +24,25 @@ export class GeminiAPIClient {
   }
 
   async _makeAPICall(model, prompt, config = {}) {
+    // Use default model if not specified or if it's an old model name
+    if (!model || model.includes('gemini-2.5-flash') || model.includes('gemini-1.5-flash')) {
+      model = this.defaultModel;
+    }
+
     const endpoint = `${this.baseURL}/${model}:generateContent?key=${this.apiKey}`;
     const defaultConfig = {
       temperature: 0.3,
       maxOutputTokens: 8192,
-      responseMimeType: "application/json"
+      responseMimeType: "application/json",
+      // Add thinking parameter to disable thinking mode for faster responses on smaller tasks
+      thinking: false
     };
+    
+    const mergedConfig = { ...defaultConfig, ...config };
     
     const requestBody = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { ...defaultConfig, ...config },
+      generationConfig: mergedConfig,
       safetySettings: this.getSafetySettings()
     };
 
@@ -45,6 +55,14 @@ export class GeminiAPIClient {
 
       if (!response.ok) {
         const errorText = await response.text();
+        // If error is due to invalid argument (like 'thinking'), we might need to retry without it.
+        if (response.status === 400 && errorText.includes('thinking')) {
+             console.warn('Thinking parameter not supported, retrying without it.');
+             if (requestBody.generationConfig && requestBody.generationConfig.thinking !== undefined) {
+                 delete requestBody.generationConfig.thinking;
+                 return await this._makeAPICallWithCustomBody(model, requestBody);
+             }
+        }
         throw new Error(`API request failed: ${response.status}`);
       }
 
@@ -106,12 +124,13 @@ Parse the attached file and generate the JSON output.`;
       ],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: options.temperature || 0.1
+        temperature: options.temperature || 0.1,
+        thinking: false
       },
       safetySettings: this.getSafetySettings()
     };
 
-    const response = await this.callAPIWithCustomBody('gemini-2.5-flash', requestBody, 'resume parsing');
+    const response = await this.callAPIWithCustomBody(this.defaultModel, requestBody, 'resume parsing');
     
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
       const jsonText = response.candidates[0].content.parts[0].text;
@@ -145,9 +164,10 @@ ${pageTextContent}
 
 **--- Extracted Job Description ---**`;
 
-    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+    const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.2,
-      responseMimeType: "text/plain"
+      responseMimeType: "text/plain",
+      thinking: false
     }, 'job description extraction');
 
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
@@ -198,9 +218,10 @@ ${JSON.stringify(originalSectionData, null, 2)}
 
 **--- Tailored Section JSON Output (${sectionType}) ---**`;
 
-    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+    const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.4,
-      responseMimeType: "application/json"
+      responseMimeType: "application/json",
+      thinking: false
     }, `section tailoring for ${sectionType}`);
 
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
@@ -257,9 +278,10 @@ For a "Senior Software Engineer" in "San Francisco, CA", the output might be:
 
 **--- Estimated Salary JSON Output ---**`;
 
-    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+    const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.3,
-      responseMimeType: "application/json"
+      responseMimeType: "application/json",
+      thinking: false
     }, 'salary estimation');
     
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
@@ -339,9 +361,10 @@ ${jobsText}
 
 **--- Batch Salary Estimation JSON Output ---**`;
 
-    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+    const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.3,
-      responseMimeType: "application/json"
+      responseMimeType: "application/json",
+      thinking: false
     }, 'batch salary estimation');
     
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
@@ -383,10 +406,11 @@ Instructions:
 Value:`;
 
     const fieldName = field.name || field.id || 'unknown field';
-    const response = await this.callAPI('gemini-2.5-flash', prompt, {
+    const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.1,
       maxOutputTokens: 100,
-      responseMimeType: "text/plain"
+      responseMimeType: "text/plain",
+      thinking: false
     }, `field mapping for ${fieldName}`);
 
     const value = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
@@ -422,6 +446,11 @@ Value:`;
   }
 
   async _makeAPICallWithCustomBody(model, requestBody) {
+    // Use default model if not specified or if it's an old model name
+    if (!model || model.includes('gemini-2.5-flash') || model.includes('gemini-1.5-flash')) {
+      model = this.defaultModel;
+    }
+
     const endpoint = `${this.baseURL}/${model}:generateContent?key=${this.apiKey}`;
     
     try {
@@ -433,6 +462,14 @@ Value:`;
 
       if (!response.ok) {
         const errorText = await response.text();
+        // If error is due to invalid argument (like 'thinking'), we might need to retry without it.
+        if (response.status === 400 && errorText.includes('thinking')) {
+             console.warn('Thinking parameter not supported, retrying without it.');
+             if (requestBody.generationConfig && requestBody.generationConfig.thinking !== undefined) {
+                 delete requestBody.generationConfig.thinking;
+                 return await this._makeAPICallWithCustomBody(model, requestBody);
+             }
+        }
         throw new Error(`API request failed: ${response.status}`);
       }
 

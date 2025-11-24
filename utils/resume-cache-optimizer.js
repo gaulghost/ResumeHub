@@ -236,7 +236,7 @@ ${JSON.stringify(json, null, 2)}
 **Final Optimized JSON:**`;
 
     try {
-      const response = await this.apiClient.callAPI('gemini-2.5-flash', prompt, {
+      const response = await this.apiClient.callAPI('gemini-flash-latest', prompt, {
         temperature: 0.1,
         responseMimeType: "application/json",
         maxOutputTokens: 8192

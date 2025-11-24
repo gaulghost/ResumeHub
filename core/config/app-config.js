@@ -17,7 +17,7 @@ class AppConfig {
       api: {
         gemini: {
           baseURL: 'https://generativelanguage.googleapis.com/v1beta/models',
-          defaultModel: 'gemini-2.5-flash',
+          defaultModel: 'gemini-flash-latest',
           timeout: 30000,
           maxRetries: 3,
           rateLimits: {

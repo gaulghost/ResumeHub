@@ -776,7 +776,7 @@ export class ResumeHubSidebar {
       
       .rh-section:hover {
         box-shadow: var(--rh-shadow-md);
-        transform: translateY(-1px);
+        /* transform: translateY(-1px); */
       }
       
       .rh-section:hover::before { opacity: 1; }
@@ -892,7 +892,7 @@ export class ResumeHubSidebar {
       .rh-btn:hover::before { left: 100%; }
       
       .rh-btn:hover {
-        transform: translateY(-2px);
+        /* transform: translateY(-2px); */
         box-shadow: var(--rh-shadow-lg);
         background: linear-gradient(135deg, var(--rh-accent-hover) 0%, var(--rh-accent) 100%);
       }
@@ -919,7 +919,7 @@ export class ResumeHubSidebar {
         background: var(--rh-bg-3);
         color: var(--rh-text);
         border-color: var(--rh-border);
-        transform: translateY(-1px);
+        /* transform: translateY(-1px); */
         box-shadow: var(--rh-shadow-md);
       }
       
@@ -1066,13 +1066,13 @@ export class ResumeHubSidebar {
         transition: all var(--rh-transition-slow);
         opacity: 1;
         max-height: 500px;
+        padding: 4px;
       }
       
       .rh-collapsible.collapsed .rh-collapsible-content {
         max-height: 0;
         opacity: 0;
-        padding-top: 0;
-        padding-bottom: 0;
+        padding: 0;
         margin-top: 0;
         margin-bottom: 0;
       }
@@ -3361,44 +3361,99 @@ ${jobDescription.substring(0, 2000)}`;
     return text;
   }
 
-  _downloadAsPdf(resumeJSON, baseFilename) {
+  async _downloadAsPdf(resumeJSON, baseFilename) {
     try {
-      // Check if pdfMake is available (it should be loaded in the page)
+      // Check if pdfMake is available
       if (typeof pdfMake === 'undefined') {
-        // Try to load it
-        const script = document.createElement('script');
-        script.src = chrome.runtime.getURL('lib/pdfmake.min.js');
-        script.onload = () => {
-          const vfsScript = document.createElement('script');
-          vfsScript.src = chrome.runtime.getURL('lib/vfs_fonts.js');
-          vfsScript.onload = () => {
-            this._generateAndDownloadPdf(resumeJSON, baseFilename);
-          };
-          document.head.appendChild(vfsScript);
-        };
-        document.head.appendChild(script);
-        return;
+        try {
+          // Dynamically import pdfmake and vfs_fonts into the content script context
+          await import(chrome.runtime.getURL('lib/pdfmake.min.js'));
+          await import(chrome.runtime.getURL('lib/vfs_fonts.js'));
+          
+          // Wait a brief moment to ensure global assignment (if any async init)
+          if (typeof pdfMake === 'undefined' && typeof window.pdfMake !== 'undefined') {
+             // In case it attached to window but not local scope
+             // Note: In modules, top-level 'this' is undefined, so libs might attach to 'window' explicitly.
+          }
+        } catch (e) {
+          console.error('[ResumeHub] Failed to load pdfMake via import:', e);
+          // Fallback to script injection if import fails (though this puts it in page context, which won't help us here)
+          // If import fails, we probably can't generate PDF in content script.
+          throw new Error('Could not load PDF libraries');
+        }
       }
+      
       this._generateAndDownloadPdf(resumeJSON, baseFilename);
     } catch (error) {
       console.error('[ResumeHub] PDF generation failed:', error);
       alert('PDF generation failed. Please try TXT format instead.');
+      this._downloadAsText(resumeJSON, baseFilename);
     }
   }
 
   _generateAndDownloadPdf(resumeJSON, baseFilename) {
-    // Use the same PDF generation logic as popup
-    // For now, we'll use a simplified version or call background script
-    // Since pdfMake might not be available in content script context
-    // We'll use the text format as fallback for PDF/DOCX in content script
-    console.warn('[ResumeHub] PDF generation in content script - using text fallback');
-    this._downloadAsText(resumeJSON, baseFilename);
+    try {
+      // Check if PdfGenerator is available
+    if (typeof PdfGenerator === 'undefined') {
+      (async () => {
+        try {
+          const src = chrome.runtime.getURL('utils/pdf-generator.js');
+          const module = await import(src);
+          // If the module exports PdfGenerator directly or as default, or we can use the named export
+          const generator = module.PdfGenerator || module; 
+          // Note: The module attaches to window.PdfGenerator, but in content script import() might not share window in the same way if it was a separate context, 
+          // but import() returns the module namespace object.
+          // Our pdf-generator.js exports 'generatePdfDefinition' and 'PdfGenerator'.
+          
+          const docDefinition = module.generatePdfDefinition(resumeJSON);
+          pdfMake.createPdf(docDefinition).download(`${baseFilename}.pdf`);
+          console.log('[ResumeHub] PDF downloaded successfully');
+        } catch (e) {
+          console.error('[ResumeHub] Failed to load PDF generator:', e);
+          alert('PDF generation failed. Falling back to text format.');
+          this._downloadAsText(resumeJSON, baseFilename);
+        }
+      })();
+      return;
+    }
+      const docDefinition = PdfGenerator.generatePdfDefinition(resumeJSON);
+      pdfMake.createPdf(docDefinition).download(`${baseFilename}.pdf`);
+      console.log('[ResumeHub] PDF downloaded successfully');
+    } catch (error) {
+      console.error('[ResumeHub] PDF generation error:', error);
+      alert('PDF generation failed. Falling back to text format.');
+      this._downloadAsText(resumeJSON, baseFilename);
+    }
   }
 
+
+
   _downloadAsDocx(resumeJSON, baseFilename) {
-    // DOCX generation not fully implemented, use text format
-    console.warn('[ResumeHub] DOCX generation not fully implemented, using text format');
-    this._downloadAsText(resumeJSON, baseFilename);
+    // Check if DocxGenerator is available
+    if (typeof DocxGenerator === 'undefined') {
+      (async () => {
+        try {
+          const src = chrome.runtime.getURL('utils/docx-generator.js');
+          const module = await import(src);
+          const generator = module.DocxGenerator || module;
+          
+          const blob = module.generateDocxBlob(resumeJSON);
+          const url = URL.createObjectURL(blob);
+          this._downloadBlob(url, `${baseFilename}.docx`);
+          console.log('[ResumeHub] DOCX downloaded successfully');
+        } catch (e) {
+          console.error('[ResumeHub] Failed to load DOCX generator:', e);
+          alert('DOCX generation failed. Falling back to text format.');
+          this._downloadAsText(resumeJSON, baseFilename);
+        }
+      })();
+      return;
+    }
+
+    const blob = DocxGenerator.generateDocxBlob(resumeJSON);
+    const url = URL.createObjectURL(blob);
+    this._downloadBlob(url, `${baseFilename}.docx`);
+    console.log('[ResumeHub] DOCX downloaded successfully');
   }
 
   _downloadBlob(url, filename) {

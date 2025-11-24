@@ -9,6 +9,7 @@ import { SimpleRateLimiter } from './utils/simple-rate-limiter.js';
 import { ScriptInjector } from './utils/script-injector.js';
 import { ParallelProcessor } from './utils/parallel-processor.js';
 import { ResumeCacheOptimizer } from './utils/resume-cache-optimizer.js';
+import { generateResumeHash } from './utils/shared-utilities.js';
 
 console.log('[ResumeHub BG] Service worker started, modules loaded.');
 
@@ -100,6 +101,7 @@ async function extractJDFromTab(tabId, preferAI = true, useCache = true) {
         // Fallback to standard DOM extraction in target tab
         const jdStd = await executeInTab(tabId, () => {
             const selectors = [
+                '#job-details', '.jobs-description__text', // Added from working content script
                 '#job-description', '.job-description',
                 '[class*="job-details"]', '[class*="jobDescription"]', '[class*="jobdesc"]',
                 '[aria-label*="description"]', '[data-testid*="description"]',
@@ -428,7 +430,6 @@ async function handleCreateTailoredResume(request, sendResponse) {
         }
 
         // Check resume parse cache to avoid redundant parsing
-        const { generateResumeHash } = await import('./utils/shared-utilities.js');
         const resumeHash = generateResumeHash(resumeData);
         let originalResumeJSON = null;
         
@@ -729,7 +730,7 @@ Return a JSON object with refined estimates:
 
 If the current estimate seems reasonable, keep it. Otherwise, adjust based on job description details.`;
 
-                    const enhanced = await apiClient.callAPI('gemini-1.5-flash', enhancePrompt, {
+                    const enhanced = await apiClient.callAPI('gemini-flash-latest', enhancePrompt, {
                         temperature: 0.2,
                         maxOutputTokens: 500
                     });
@@ -781,7 +782,7 @@ If the current estimate seems reasonable, keep it. Otherwise, adjust based on jo
                 return sendResponse({ success: false, error: 'No prompt provided' });
             }
 
-            const response = await apiClient.callAPI('gemini-2.5-flash', prompt, {
+            const response = await apiClient.callAPI('gemini-flash-latest', prompt, {
                 temperature: 0.3,
                 maxOutputTokens: 4096,
                 responseMimeType: "text/plain"

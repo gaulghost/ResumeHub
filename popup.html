@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="theme-light">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,7 @@
     <link rel="stylesheet" href="css/design-tokens.css">
     <link rel="stylesheet" href="css/popup_modern.css">
 </head>
+
 <body class="theme-light">
     <div class="container theme-light" id="theme-container">
         <header class="header">
@@ -33,39 +35,43 @@
                         <span id="api-token-status" class="status-text"></span>
                     </div>
                     <p class="help-text">Your API key is stored locally and only used to generate summaries.</p>
-                    <a href="https://aistudio.google.com/apikey" target="_blank" class="help-text link">Get your Google API Key</a>
+                    <a href="https://aistudio.google.com/apikey" target="_blank" class="help-text link">Get your Google
+                        API Key</a>
                 </div>
             </section>
 
             <section class="card resume-section collapsible" id="resume-card">
-                 <div class="card-header">
+                <div class="card-header">
                     <h2>Your Resume</h2>
-                     <button class="toggle-button" aria-expanded="true" aria-controls="resume-content">▼</button>
-                 </div>
-                 <div class="card-content" id="resume-content">
+                    <button class="toggle-button" aria-expanded="true" aria-controls="resume-content">▼</button>
+                </div>
+                <div class="card-content" id="resume-content">
                     <div class="input-group file-input-group">
                         <label for="resume-upload" class="file-label">Choose File</label>
                         <input type="file" id="resume-upload" accept=".txt,.pdf,.docx" class="file-input">
                         <span id="resume-upload-status" class="status-text">No file selected.</span>
                     </div>
-                    <button id="clear-resume-btn" class="button button-secondary button-small" style="display: none;">Clear Stored Resume</button>
-                    <button id="download-resume-btn" class="button button-secondary button-small" style="display: none;">Download Stored Resume</button>
+                    <button id="clear-resume-btn" class="button button-secondary button-small"
+                        style="display: none;">Clear Stored Resume</button>
+                    <button id="download-resume-btn" class="button button-secondary button-small"
+                        style="display: none;">Download Stored Resume</button>
                 </div>
             </section>
 
             <section class="card collapsible is-collapsed" id="extraction-method-card">
-                 <div class="card-header">
+                <div class="card-header">
                     <h2>Job Description Extraction</h2>
-                     <button class="toggle-button" aria-expanded="false" aria-controls="extraction-method-content">▶</button>
-                 </div>
-                 <div class="card-content" id="extraction-method-content">
+                    <button class="toggle-button" aria-expanded="false"
+                        aria-controls="extraction-method-content">▶</button>
+                </div>
+                <div class="card-content" id="extraction-method-content">
                     <div class="radio-group">
                         <label>
-                            <input type="radio" name="extractionMethod" value="standard"> 
+                            <input type="radio" name="extractionMethod" value="standard">
                             Standard (Fast, Less Accurate)
                         </label>
                         <label>
-                            <input type="radio" name="extractionMethod" value="ai" checked> 
+                            <input type="radio" name="extractionMethod" value="ai" checked>
                             AI Powered (Accurate, Slower, Uses API)
                         </label>
 
@@ -81,7 +87,8 @@
                     <button id="preview-jd-btn" class="button button-secondary button-small">Preview</button>
                 </div>
                 <div class="card-content">
-                    <textarea id="preview-jd-output" class="preview-output" placeholder="Click 'Preview' to see the extracted text, or paste the job description here..."></textarea>
+                    <textarea id="preview-jd-output" class="preview-output"
+                        placeholder="Click 'Preview' to see the extracted text, or paste the job description here..."></textarea>
                 </div>
             </section>
 
@@ -90,7 +97,8 @@
                     <h2>🤖 Auto-Fill Forms</h2>
                 </div>
                 <div class="card-content">
-                    <p class="help-text">Automatically fill job application forms on the current page using your resume data.</p>
+                    <p class="help-text">Automatically fill job application forms on the current page using your resume
+                        data.</p>
                     <button id="auto-fill-btn" class="button button-secondary">🤖 Auto-Fill Current Form</button>
                     <div id="auto-fill-status" class="status-message"></div>
                 </div>
@@ -101,10 +109,10 @@
                 <div id="status-message" class="status-message"></div>
                 <!-- Download buttons container -->
                 <div id="download-buttons-container" style="display: none; margin-top: 10px;">
-                     <span style="margin-right: 10px;">Download Resume:</span>
-                     <button id="download-docx-btn" class="button button-secondary button-small">DOCX</button>
-                     <button id="download-pdf-btn" class="button button-secondary button-small">PDF</button>
-                     <button id="download-txt-btn" class="button button-secondary button-small">TXT</button>
+                    <span style="margin-right: 10px;">Download Resume:</span>
+                    <button id="download-docx-btn" class="button button-secondary button-small">DOCX</button>
+                    <button id="download-pdf-btn" class="button button-secondary button-small">PDF</button>
+                    <button id="download-txt-btn" class="button button-secondary button-small">TXT</button>
                 </div>
             </section>
         </main>
@@ -120,6 +128,8 @@
 
     <!-- Shared utilities (ES module attaches global SharedUtilities) -->
     <script type="module" src="utils/shared-utilities.js"></script>
+    <script type="module" src="utils/pdf-generator.js"></script>
+    <script type="module" src="utils/docx-generator.js"></script>
 
     <!-- Note: Utility modules are loaded via background script for popup -->
 
@@ -131,8 +141,9 @@
     <script src="popup/resume-processor.js"></script>
     <script src="popup/event-handlers.js"></script>
     <script src="popup/app-controller.js"></script>
-    
+
     <!-- Main popup initialization -->
     <script src="popup.js"></script>
 </body>
-</html> 
+
+</html>
