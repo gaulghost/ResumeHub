@@ -14,15 +14,6 @@ export class ResumeHubSidebar {
     this.mutationObserver = null;
     this.selectors = null; // Loaded lazily
     this._dragJustHappened = false;
-    // AI mode state
-    this.aiModeEnabled = false;
-    this.aiFilters = {
-      autoTailorOnView: false,
-      autoFetchSalary: true,
-      requireSalary: false,
-      salaryThreshold: null,
-      minJDLength: 200
-    };
     this._lastJobSig = '';
     this._lastExtractedJobSig = ''; // Track last extracted job to avoid duplicates
     this._isTailoring = false; // Track if tailoring is in progress
@@ -194,13 +185,13 @@ export class ResumeHubSidebar {
     this._setupContextPersistence();
 
     // Initialize AI mode controls and filters
-    await this._initAIModeControls();
+    // await this._initAIModeControls(); // REMOVED
 
     // Observe page for changes to update job context
     this._startObservers();
 
     // Listen for messages from background script
-    this._setupMessageListener();
+    // this._setupMessageListener(); // REMOVED as it was for auto-tailor
 
     // Initial job context
     await this._updateJobContext();
@@ -212,60 +203,10 @@ export class ResumeHubSidebar {
     this._checkExistingTailoredResume();
     
     // Start polling for auto-tailored resumes (check every 2 seconds)
-    this._startAutoTailorPolling();
+    // this._startAutoTailorPolling(); // REMOVED
   }
 
-  _setupMessageListener() {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      try {
-        if (message.action === 'autoTailorComplete') {
-          console.log('[ResumeHub] Auto-tailor complete notification received:', message.data);
-          // Immediately check for the auto-tailored resume and show download buttons
-          this._handleAutoTailorComplete(message.data);
-        }
-      } catch (e) {
-        console.warn('[ResumeHub] Error handling message:', e);
-      }
-    });
-  }
 
-  async _handleAutoTailorComplete(data) {
-    try {
-      // Store the tailored resume with auto-tailor flag
-      const resumeWithFlag = {
-        ...data.tailoredResumeJSON,
-        _isAutoTailor: true
-      };
-      await this._storeTailoredResume(resumeWithFlag);
-      
-      // Show download buttons
-      this._toggleDownloadButtons(true);
-      console.log('[ResumeHub] Auto-tailored resume stored and download buttons shown');
-    } catch (e) {
-      console.warn('[ResumeHub] Error handling auto-tailor completion:', e);
-    }
-  }
-
-  _startAutoTailorPolling() {
-    // Clear any existing polling interval
-    if (this._autoTailorPollInterval) {
-      clearInterval(this._autoTailorPollInterval);
-    }
-    
-    // Poll every 2 seconds to check if auto-tailor completed
-    this._autoTailorPollInterval = setInterval(async () => {
-      try {
-        // Check if we still don't have download buttons shown
-        const downloadBtn = this.root.querySelector('.rh-download-section button');
-        if (!downloadBtn || !this.root.querySelector('.rh-download-section')) {
-          // Try to fetch auto-tailored resume
-          await this._checkRecentJobsForAutoTailoredResume();
-        }
-      } catch (e) {
-        // Ignore errors during polling
-      }
-    }, 2000);
-  }
 
   async _checkExistingTailoredResume() {
     try {
@@ -275,62 +216,16 @@ export class ResumeHubSidebar {
         const isAutoTailor = storedResume._isAutoTailor || false;
         // Show download buttons for both manual and auto-tailored resumes
         this._toggleDownloadButtons(true);
-      } else {
-        // Check recent jobs for auto-tailored resume for current job
-        await this._checkRecentJobsForAutoTailoredResume();
       }
     } catch (e) {
       // Ignore errors
     }
   }
 
-  async _checkRecentJobsForAutoTailoredResume() {
-    try {
-      const title = this.root.getElementById('rh-job-title')?.textContent || '';
-      const company = this.root.getElementById('rh-job-meta')?.textContent || '';
-      const jobUrl = location.href;
 
-      if (!title || title === '—' || !company || company === '—') {
-        return;
-      }
-
-      // Get recent jobs from background
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'getRecentJobs' }, (resp) => resolve(resp));
-      });
-
-      if (response && response.success && response.jobs) {
-        // Find matching job
-        const matchingJob = response.jobs.find(job => 
-          job.jobUrl === jobUrl && 
-          job.tailoredResumeJSON && 
-          job.isAutoTailor === true
-        );
-
-        if (matchingJob && matchingJob.tailoredResumeJSON) {
-          // Store the auto-tailored resume locally with the flag
-          const resumeWithFlag = {
-            ...matchingJob.tailoredResumeJSON,
-            _isAutoTailor: true
-          };
-          await this._storeTailoredResume(resumeWithFlag);
-          // SHOW download buttons when auto-tailored resume is ready
-          this._toggleDownloadButtons(true);
-          console.log('[ResumeHub] Auto-tailored resume ready, showing download buttons');
-        }
-      }
-    } catch (e) {
-      // Ignore errors
-    }
-  }
 
   destroy() {
     try {
-      // Stop auto-tailor polling
-      if (this._autoTailorPollInterval) {
-        clearInterval(this._autoTailorPollInterval);
-        this._autoTailorPollInterval = null;
-      }
       if (this._onKeyDown) {
         window.removeEventListener('keydown', this._onKeyDown);
         this._onKeyDown = null;
@@ -1222,6 +1117,31 @@ export class ResumeHubSidebar {
       @media (max-width: 768px) {
         :root { --rh-width-expanded: 300px; }
       }
+      .rh-job-salary-estimate {
+        display: none;
+        margin-bottom: 12px;
+        padding: 12px;
+        background: var(--rh-bg-2);
+        border-radius: var(--rh-radius-sm);
+        font-size: 12px;
+        border: 1px solid var(--rh-border);
+      }
+
+      .rh-salary-tc {
+        font-weight: 600;
+        color: var(--rh-accent);
+        margin-bottom: 6px;
+      }
+
+      .rh-salary-breakdown {
+        color: var(--rh-text);
+        margin-bottom: 4px;
+      }
+
+      .rh-salary-confidence {
+        font-size: 11px;
+        color: var(--rh-text-secondary);
+      }
     `;
   }
 
@@ -1264,78 +1184,21 @@ export class ResumeHubSidebar {
             </div>
           </div>
 
-          <div class="rh-section rh-collapsible collapsed" id="rh-ai">
-            <h4 class="rh-collapsible-header" id="rh-ai-header">🤖 AI Autopilot <span class="rh-chevron">▼</span></h4>
-            <div class="rh-collapsible-content" id="rh-ai-content">
-              <div class="rh-row">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                  <input type="checkbox" id="rh-ai-toggle" />
-                  <span>Enable background AI mode</span>
-                </label>
-              </div>
-              <div class="rh-row" id="rh-ai-autotailor-row" style="display:none;margin-left:20px;">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                  <input type="checkbox" id="rh-ai-autotailor" />
-                  <span>Auto tailor on new job view</span>
-                </label>
-              </div>
-              <div class="rh-row">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                  <input type="checkbox" id="rh-ai-autosalary" checked />
-                  <span>Fetch salary automatically</span>
-                </label>
-              </div>
-              <div class="rh-row" id="rh-ai-require-salary-row" style="display:none;margin-left:20px;">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                  <input type="checkbox" id="rh-ai-require-salary" />
-                  <span>Require salary to tailor</span>
-                </label>
-              </div>
-              <div class="rh-row" id="rh-ai-salary-threshold-row" style="display:none;margin-left:40px;margin-top:4px;">
-                <div style="display:flex;flex-direction:column;gap:4px;width:100%;">
-                  <label style="display:flex;align-items:center;gap:8px;font-size:12px;width:100%;">
-                    <span style="min-width:120px;">Salary threshold:</span>
-                    <input type="text" id="rh-ai-salary-threshold" placeholder="e.g. 26LPA, 26L, 2600000" min="0" style="flex:1;height:24px;font-size:11px;padding:0 8px;" />
-                  </label>
-                  <div class="rh-meta" style="font-size:11px;">Accepts: 26LPA, 26L, 2600000, etc.</div>
-                </div>
-              </div>
-              <div class="rh-row">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;">
-                  <span>Min JD length</span>
-                  <input type="number" id="rh-ai-min-jd" value="200" min="50" max="5000" style="width:80px;height:24px;font-size:11px;" />
-                </label>
-              </div>
-              <div class="rh-meta" id="rh-ai-status">Manual mode</div>
-            </div>
-          </div>
 
-          <div class="rh-section" id="rh-resume-upload" style="display:none;">
-            <h4>📄 Resume Required</h4>
-            <p style="font-size:12px;color:var(--rh-text-secondary);margin:8px 0;">Upload your resume to enable auto-tailoring</p>
-            <div class="rh-row">
-              <input type="file" id="rh-resume-file-input" accept=".pdf,.docx,.txt" style="display:none;" />
-              <button class="rh-btn" id="rh-resume-upload-btn" style="width:100%;">📤 Upload Resume</button>
-            </div>
-            <div id="rh-resume-upload-status" class="rh-meta" style="margin-top:8px;"></div>
-          </div>
 
           <div class="rh-section" id="rh-job">
             <h4>💼 Current Job</h4>
             <div class="rh-job-title" id="rh-job-title">No job selected</div>
             <div class="rh-job-meta" id="rh-job-meta">Select a job to get started</div>
-            <div class="rh-job-salary-estimate" id="rh-job-salary-estimate" style="display: none; margin-top: 12px; padding: 12px; background: var(--rh-bg-secondary, #f5f5f5); border-radius: 8px; font-size: 12px;">
-              <div class="rh-salary-tc" id="rh-salary-tc" style="font-weight: 600; color: var(--rh-primary, #0073b1); margin-bottom: 6px;"></div>
-              <div class="rh-salary-breakdown" id="rh-salary-breakdown" style="color: var(--rh-text-secondary, #666); margin-bottom: 4px;"></div>
-              <div class="rh-salary-confidence" id="rh-salary-confidence" style="font-size: 11px; color: var(--rh-text-secondary, #999);"></div>
-            </div>
+
             <div class="rh-job-details" id="rh-job-details" style="display: none;">
               <div class="rh-job-salary" id="rh-job-salary"></div>
               <div class="rh-job-company-info" id="rh-job-company-info"></div>
               <div class="rh-job-applicants" id="rh-job-applicants"></div>
             </div>
             <div class="rh-actions">
-              <button class="rh-btn secondary" id="rh-extract">📄 Extract</button>
+              <button class="rh-btn secondary" id="rh-extract">📄 Extract JD</button>
+              <button class="rh-btn secondary" id="rh-extract-insights">💡 Extract Insights</button>
               <button class="rh-btn" id="rh-tailor">✨ Tailor</button>
               <div class="rh-download-buttons" id="rh-download-buttons" style="display: none; gap: 6px; margin-top: 8px;">
                 <button class="rh-btn secondary" id="rh-download-docx" style="font-size: 11px; padding: 0 8px; height: 28px;">📄 DOCX</button>
@@ -1359,17 +1222,26 @@ export class ResumeHubSidebar {
             </div>
           </div>
 
+          <div class="rh-section" id="rh-company-salary" style="display: none;">
+            <h4>🏢 Company & Salary</h4>
+            <div class="rh-job-salary-estimate" id="rh-job-salary-estimate">
+              <div class="rh-salary-tc" id="rh-salary-tc"></div>
+              <div class="rh-salary-breakdown" id="rh-salary-breakdown"></div>
+              <div class="rh-salary-confidence" id="rh-salary-confidence"></div>
+            </div>
+            <div class="rh-subsection">
+              <h5>📊 Company Details</h5>
+              <div id="rh-company-details" class="rh-company-card">
+                <div class="rh-company-stats">Loading...</div>
+              </div>
+            </div>
+          </div>
+
           <div class="rh-section" id="rh-job-insights" style="display: none;">
             <h4>🎯 Job Insights</h4>
             <div class="rh-subsection">
               <h5>📋 Key Requirements</h5>
               <div id="rh-key-requirements" class="rh-list">Loading...</div>
-            </div>
-            <div class="rh-subsection">
-              <h5>🏢 Company Details</h5>
-              <div id="rh-company-details" class="rh-company-card">
-                <div class="rh-company-stats">Loading...</div>
-              </div>
             </div>
             <div class="rh-subsection">
               <h5>🛠️ Required Skills</h5>
@@ -1522,12 +1394,22 @@ export class ResumeHubSidebar {
   }
 
   _startObservers() {
-    // Observe URL changes via mutations (SPA)
+    // Observe URL changes and DOM mutations
+    let debounceTimeout;
     this.mutationObserver = new MutationObserver(() => {
-      if (location.href !== this.lastUrl) {
+      const urlChanged = location.href !== this.lastUrl;
+      
+      if (urlChanged) {
         this.lastUrl = location.href;
+        // Immediate update on URL change
         this._updateJobContext();
       }
+
+      // Debounce update for DOM changes (to catch content loading after URL change)
+      clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(() => {
+        this._updateJobContext();
+      }, 500);
     });
     this.mutationObserver.observe(document.body, { childList: true, subtree: true });
   }
@@ -1568,372 +1450,7 @@ export class ResumeHubSidebar {
     }
   }
 
-  async _initAIModeControls() {
-    const aiToggle = this.root.getElementById('rh-ai-toggle');
-    const aiAutoTailor = this.root.getElementById('rh-ai-autotailor');
-    const aiAutoTailorRow = this.root.getElementById('rh-ai-autotailor-row');
-    const aiAutoSalary = this.root.getElementById('rh-ai-autosalary');
-    const aiRequireSalary = this.root.getElementById('rh-ai-require-salary');
-    const aiRequireSalaryRow = this.root.getElementById('rh-ai-require-salary-row');
-    const aiSalaryThreshold = this.root.getElementById('rh-ai-salary-threshold');
-    const aiSalaryThresholdRow = this.root.getElementById('rh-ai-salary-threshold-row');
-    const aiMinJD = this.root.getElementById('rh-ai-min-jd');
-    const aiStatus = this.root.getElementById('rh-ai-status');
-    const hint = this.root.getElementById('rh-hint');
 
-    const syncGet = (keys) => new Promise((res) => chrome.storage.sync.get(keys, (r) => res(r || {})));
-    const syncSet = (data) => new Promise((res) => chrome.storage.sync.set(data, () => res()));
-
-    try {
-      const { aiModeEnabled = false, aiFilters = null } = await syncGet(['aiModeEnabled', 'aiFilters']);
-      this.aiModeEnabled = !!aiModeEnabled;
-      const defaults = { autoTailorOnView: false, autoFetchSalary: true, requireSalary: false, salaryThreshold: null, minJDLength: 200 };
-      this.aiFilters = { ...defaults, ...(aiFilters || {}) };
-      
-      // Remove old requireResume if present
-      if (this.aiFilters.requireResume !== undefined) {
-        delete this.aiFilters.requireResume;
-      }
-
-      // Apply to controls
-      if (aiToggle) aiToggle.checked = this.aiModeEnabled;
-      if (aiAutoTailor) aiAutoTailor.checked = !!this.aiFilters.autoTailorOnView;
-      if (aiAutoSalary) aiAutoSalary.checked = !!this.aiFilters.autoFetchSalary;
-      if (aiRequireSalary) aiRequireSalary.checked = !!this.aiFilters.requireSalary;
-          if (aiSalaryThreshold) {
-            // Format threshold for display (convert back to readable format)
-            const threshold = this.aiFilters.salaryThreshold;
-            if (threshold) {
-              // If it's a large number, show in Lakhs format
-              if (threshold >= 100000) {
-                aiSalaryThreshold.value = `${threshold / 100000}L`;
-              } else {
-                aiSalaryThreshold.value = threshold.toString();
-              }
-            } else {
-              aiSalaryThreshold.value = '';
-            }
-          }
-      if (aiMinJD) aiMinJD.value = Number(this.aiFilters.minJDLength || 200);
-
-      // Update visibility
-      this._updateAIModeUI();
-      this._checkResumeStatus();
-
-      // Status/hint
-      if (aiStatus) aiStatus.textContent = this.aiModeEnabled ? 'Background AI mode is ON' : 'Manual mode';
-      if (hint) hint.textContent = this.aiModeEnabled ? '🤖 Autopilot: Viewing a job will auto-extract and tailor in background' : '💡 Extract job description first, then tailor your resume';
-
-      this._applyAIModeVisibility();
-    } catch (e) {
-      // ignore
-    }
-
-    const saveFilters = async () => {
-      // Parse salary threshold - accepts formats like 26LPA, 26L, 2600000, etc.
-      let salaryThresholdValue = null;
-      if (aiSalaryThreshold?.value) {
-        const thresholdStr = aiSalaryThreshold.value.trim().toUpperCase();
-        salaryThresholdValue = this._parseSalaryInput(thresholdStr);
-      }
-      
-      const filters = {
-        autoTailorOnView: !!(aiAutoTailor && aiAutoTailor.checked),
-        autoFetchSalary: !!(aiAutoSalary && aiAutoSalary.checked),
-        requireSalary: !!(aiRequireSalary && aiRequireSalary.checked),
-        salaryThreshold: salaryThresholdValue,
-        minJDLength: Math.max(50, Math.min(5000, parseInt(aiMinJD?.value || '200', 10) || 200))
-      };
-      this.aiFilters = filters;
-      await syncSet({ aiFilters: filters });
-      this._updateAIModeUI();
-    };
-
-    if (aiToggle) {
-      aiToggle.addEventListener('change', async () => {
-        const wasEnabled = this.aiModeEnabled;
-        this.aiModeEnabled = !!aiToggle.checked;
-        await syncSet({ aiModeEnabled: this.aiModeEnabled });
-        const aiStatus = this.root.getElementById('rh-ai-status');
-        const hint = this.root.getElementById('rh-hint');
-        if (aiStatus) aiStatus.textContent = this.aiModeEnabled ? 'Background AI mode is ON' : 'Manual mode';
-        if (hint) hint.textContent = this.aiModeEnabled ? '🤖 Autopilot: Viewing a job will auto-extract and tailor in background' : '💡 Extract job description first, then tailor your resume';
-        this._updateAIModeUI();
-        this._applyAIModeVisibility();
-        
-        // If AI mode was just enabled and we're on a job page, trigger extraction
-        if (this.aiModeEnabled && !wasEnabled) {
-          const title = this.root.getElementById('rh-job-title')?.textContent || '';
-          const company = this.root.getElementById('rh-job-meta')?.textContent || '';
-          if (title && title !== '—' && company && company !== '—') {
-            const currentJobSig = `${title}|${company}|${location.href}`;
-            // Reset last extracted signature to allow extraction
-            this._lastExtractedJobSig = '';
-            this._autoExtractJobDescription(currentJobSig);
-          }
-        }
-      });
-    }
-
-    // Show/hide auto tailor option based on AI mode
-    if (aiAutoTailorRow) {
-      // Visibility controlled by _updateAIModeUI
-    }
-
-    // Show/hide salary threshold based on require salary
-    if (aiRequireSalary) {
-      aiRequireSalary.addEventListener('change', () => {
-        this._updateAIModeUI(); // Use the centralized update function
-        saveFilters();
-      });
-    }
-
-    // Update UI when auto tailor changes
-    if (aiAutoTailor) {
-      aiAutoTailor.addEventListener('change', () => {
-        saveFilters();
-        this._updateAIModeUI();
-        this._applyAIModeVisibility();
-        this._checkResumeStatus();
-      });
-    }
-
-    for (const el of [aiAutoSalary, aiMinJD, aiSalaryThreshold]) {
-      if (el) el.addEventListener('change', saveFilters);
-      if (el && el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'number')) {
-        el.addEventListener('input', saveFilters);
-      }
-    }
-
-    // Setup resume upload
-    this._setupResumeUpload();
-
-    // Sync changes across tabs/pages
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'sync') {
-        if (changes.aiModeEnabled) {
-          const wasEnabled = this.aiModeEnabled;
-          this.aiModeEnabled = !!changes.aiModeEnabled.newValue;
-          if (aiToggle) aiToggle.checked = this.aiModeEnabled;
-          if (aiStatus) aiStatus.textContent = this.aiModeEnabled ? 'Background AI mode is ON' : 'Manual mode';
-          if (hint) hint.textContent = this.aiModeEnabled ? '🤖 Autopilot: Viewing a job will auto-extract and tailor in background' : '💡 Extract job description first, then tailor your resume';
-          this._updateAIModeUI();
-          this._applyAIModeVisibility();
-          
-          // If AI mode was just enabled and we're on a job page, trigger extraction
-          if (this.aiModeEnabled && !wasEnabled) {
-            const title = this.root.getElementById('rh-job-title')?.textContent || '';
-            const company = this.root.getElementById('rh-job-meta')?.textContent || '';
-            if (title && title !== '—' && company && company !== '—') {
-              const currentJobSig = `${title}|${company}|${location.href}`;
-              // Reset last extracted signature to allow extraction
-              this._lastExtractedJobSig = '';
-              this._autoExtractJobDescription(currentJobSig);
-            }
-          }
-        }
-        if (changes.aiFilters) {
-          const defaults = { autoTailorOnView: false, autoFetchSalary: true, requireSalary: false, salaryThreshold: null, minJDLength: 200 };
-          this.aiFilters = { ...defaults, ...(changes.aiFilters.newValue || {}) };
-          // Remove old requireResume if present
-          if (this.aiFilters.requireResume !== undefined) {
-            delete this.aiFilters.requireResume;
-          }
-          if (aiAutoTailor) aiAutoTailor.checked = !!this.aiFilters.autoTailorOnView;
-          if (aiAutoSalary) aiAutoSalary.checked = !!this.aiFilters.autoFetchSalary;
-          if (aiRequireSalary) aiRequireSalary.checked = !!this.aiFilters.requireSalary;
-          if (aiSalaryThreshold) {
-            // Format threshold for display (convert back to readable format)
-            const threshold = this.aiFilters.salaryThreshold;
-            if (threshold) {
-              // If it's a large number, show in Lakhs format
-              if (threshold >= 100000) {
-                aiSalaryThreshold.value = `${threshold / 100000}L`;
-              } else {
-                aiSalaryThreshold.value = threshold.toString();
-              }
-            } else {
-              aiSalaryThreshold.value = '';
-            }
-          }
-          if (aiMinJD) aiMinJD.value = Number(this.aiFilters.minJDLength || 200);
-          this._updateAIModeUI();
-          this._applyAIModeVisibility();
-          this._checkResumeStatus();
-        }
-      }
-    });
-  }
-
-  _updateAIModeUI() {
-    const aiAutoTailorRow = this.root.getElementById('rh-ai-autotailor-row');
-    const aiRequireSalaryRow = this.root.getElementById('rh-ai-require-salary-row');
-    const aiSalaryThresholdRow = this.root.getElementById('rh-ai-salary-threshold-row');
-    const aiRequireSalary = this.root.getElementById('rh-ai-require-salary');
-    const aiAutoTailor = this.root.getElementById('rh-ai-autotailor');
-    
-    // Show auto tailor option only if AI mode is enabled
-    if (aiAutoTailorRow) {
-      aiAutoTailorRow.style.display = this.aiModeEnabled ? 'flex' : 'none';
-    }
-    
-    // Show require salary option only if auto tailor is enabled
-    if (aiRequireSalaryRow) {
-      aiRequireSalaryRow.style.display = (this.aiModeEnabled && aiAutoTailor?.checked) ? 'flex' : 'none';
-    }
-    
-    // Show salary threshold only if require salary is checked (independent of auto tailor state)
-    // But require salary row must be visible first (which requires auto tailor to be enabled)
-    if (aiSalaryThresholdRow && aiRequireSalary) {
-      const requireSalaryVisible = aiRequireSalaryRow?.style.display !== 'none';
-      aiSalaryThresholdRow.style.display = (requireSalaryVisible && aiRequireSalary.checked) ? 'flex' : 'none';
-    }
-  }
-
-  async _checkResumeStatus() {
-    try {
-      const resume = await new Promise((res) => {
-        chrome.runtime.sendMessage({ action: 'getResume' }, (resp) => res(resp));
-      });
-      const hasResume = resume && resume.content;
-      const resumeUploadSection = this.root.getElementById('rh-resume-upload');
-      
-      // Show upload section if no resume and auto tailor is enabled
-      const aiAutoTailor = this.root.getElementById('rh-ai-autotailor');
-      if (resumeUploadSection) {
-        const shouldShow = !hasResume && this.aiModeEnabled && aiAutoTailor?.checked;
-        resumeUploadSection.style.display = shouldShow ? 'block' : 'none';
-      }
-    } catch (e) {
-      console.warn('[ResumeHub] Error checking resume status:', e);
-    }
-  }
-
-  _setupResumeUpload() {
-    const fileInput = this.root.getElementById('rh-resume-file-input');
-    const uploadBtn = this.root.getElementById('rh-resume-upload-btn');
-    const statusEl = this.root.getElementById('rh-resume-upload-status');
-    
-    if (uploadBtn) {
-      uploadBtn.addEventListener('click', () => {
-        if (fileInput) fileInput.click();
-      });
-    }
-    
-    if (fileInput) {
-      fileInput.addEventListener('change', async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        
-        if (statusEl) statusEl.textContent = 'Uploading...';
-        uploadBtn.disabled = true;
-        
-        try {
-          // Read file as base64
-          const reader = new FileReader();
-          reader.onload = async (event) => {
-            try {
-              const base64Content = event.target.result.split(',')[1];
-              
-              // Send to background to store
-              chrome.runtime.sendMessage({
-                action: 'setResume',
-                data: {
-                  filename: file.name,
-                  content: base64Content,
-                  mimeType: file.type
-                }
-              }, async (resp) => {
-                if (resp && resp.success) {
-                  if (statusEl) statusEl.textContent = '✅ Resume uploaded successfully';
-                  if (statusEl) statusEl.style.color = 'var(--rh-success)';
-                  
-                  // Hide upload section
-                  const resumeUploadSection = this.root.getElementById('rh-resume-upload');
-                  if (resumeUploadSection) resumeUploadSection.style.display = 'none';
-                  
-                  // Re-check resume status
-                  await this._checkResumeStatus();
-                } else {
-                  if (statusEl) statusEl.textContent = '❌ Upload failed';
-                  if (statusEl) statusEl.style.color = 'var(--rh-danger)';
-                }
-                uploadBtn.disabled = false;
-                if (fileInput) fileInput.value = '';
-              });
-            } catch (error) {
-              console.error('[ResumeHub] Resume upload error:', error);
-              if (statusEl) statusEl.textContent = '❌ Upload failed: ' + error.message;
-              if (statusEl) statusEl.style.color = 'var(--rh-danger)';
-              uploadBtn.disabled = false;
-            }
-          };
-          reader.onerror = () => {
-            if (statusEl) statusEl.textContent = '❌ Failed to read file';
-            if (statusEl) statusEl.style.color = 'var(--rh-danger)';
-            uploadBtn.disabled = false;
-          };
-          reader.readAsDataURL(file);
-        } catch (error) {
-          console.error('[ResumeHub] Resume upload error:', error);
-          if (statusEl) statusEl.textContent = '❌ Upload failed';
-          if (statusEl) statusEl.style.color = 'var(--rh-danger)';
-          uploadBtn.disabled = false;
-        }
-      });
-    }
-  }
-
-  _parseSalaryInput(inputStr) {
-    // Parse salary input in various formats: 26LPA, 26L, 2600000, 26L INR, etc.
-    if (!inputStr) return null;
-    
-    // Remove currency symbols and spaces
-    const cleaned = inputStr.replace(/[₹$,\s]/g, '').toUpperCase();
-    
-    // Extract number and unit
-    const match = cleaned.match(/([\d.]+)([LKMPA]+)?/);
-    if (!match) return null;
-    
-    const number = parseFloat(match[1]);
-    const unit = (match[2] || '').toUpperCase();
-    
-    if (isNaN(number)) return null;
-    
-    // Convert to base units (assuming L = Lakhs = 100,000)
-    if (unit.includes('L') || unit.includes('LAKH')) {
-      return number * 100000; // Convert Lakhs to base units
-    } else if (unit.includes('K') || unit.includes('THOUSAND')) {
-      return number * 1000; // Convert thousands to base units
-    } else if (unit.includes('M') || unit.includes('MILLION')) {
-      return number * 1000000; // Convert millions to base units
-    } else if (unit.includes('CR') || unit.includes('CRORE')) {
-      return number * 10000000; // Convert crores to base units
-    } else {
-      // No unit or just number - assume base units
-      return number;
-    }
-  }
-
-  _applyAIModeVisibility() {
-    const extractBtn = this.root.getElementById('rh-extract');
-    const tailorBtn = this.root.getElementById('rh-tailor');
-    const aiAutoTailor = this.root.getElementById('rh-ai-autotailor');
-    
-    // Extract button: Hide when AI mode is enabled (auto-extraction happens)
-    if (extractBtn) {
-      extractBtn.style.display = this.aiModeEnabled ? 'none' : '';
-    }
-    
-    // Tailor button: Hide when both AI mode AND auto tailor are enabled
-    if (tailorBtn) {
-      const hideTailor = this.aiModeEnabled && aiAutoTailor?.checked;
-      tailorBtn.style.display = hideTailor ? 'none' : '';
-    }
-    
-    // Also check resume status
-    this._checkResumeStatus();
-  }
 
   _maybeNotifyJobChanged(title, company, locationText) {
     try {
@@ -1964,14 +1481,7 @@ export class ResumeHubSidebar {
       });
     }
 
-    const aiHeader = this.root.getElementById('rh-ai-header');
-    const aiSection = this.root.getElementById('rh-ai');
-    
-    if (aiHeader && aiSection) {
-      aiHeader.addEventListener('click', () => {
-        aiSection.classList.toggle('collapsed');
-      });
-    }
+
 
     const contextHeader = this.root.querySelector('#rh-context-wrap .rh-collapsible-header');
     const contextSection = this.root.getElementById('rh-context-wrap');
@@ -2214,14 +1724,174 @@ export class ResumeHubSidebar {
     // Update basic UI
     const titleEl2 = this.root.getElementById('rh-job-title');
     const metaEl = this.root.getElementById('rh-job-meta');
-    titleEl2.textContent = title || '—';
-    metaEl.textContent = `${company || '—'} • ${locationText || '—'}`;
+    if (titleEl2) titleEl2.textContent = title || '—';
+    
+    // Robust extraction for Company and Location if missing
+    let displayCompany = company;
+    let displayLocation = locationText;
+
+    // 1. Try to extract Company Name if missing or invalid
+    const isInvalidCompany = !displayCompany || displayCompany === '—' || displayCompany.includes('follower');
+    if (isInvalidCompany) {
+        // Strategy A: New UI - aria-label container or link inside it
+        // The selector "div[aria-label^='Company,'] a" should give us the element with text "ETS"
+        const companyEl = this._findInJobDetails(this.selectors.JOB_DETAILS_PAGE.companyInfo);
+        if (companyEl && companyEl.innerText && companyEl.innerText.trim()) {
+             let rawText = companyEl.innerText.trim();
+             // Clean up: If text contains newlines or "followers", take the first part
+             // Example: "Company Name\n1,000 followers" -> "Company Name"
+             if (rawText.includes('\n')) {
+                 rawText = rawText.split('\n')[0].trim();
+             }
+             if (rawText.toLowerCase().includes('follower')) {
+                 // Fallback: if the first line itself has "follower" (unlikely but possible), ignore it?
+                 // Usually "Name" is on first line.
+                 // If the whole text is just "1000 followers", we should probably ignore it.
+                 if (!rawText.toLowerCase().includes('follower')) {
+                     displayCompany = rawText;
+                 }
+             } else {
+                 displayCompany = rawText;
+             }
+        }
+        
+        // If still invalid (or empty), fallback to aria-label parsing
+        if (!displayCompany || displayCompany === '—' || displayCompany.includes('follower')) {
+            const logoContainer = document.querySelector('div[aria-label^="Company,"]');
+            if (logoContainer) {
+                const label = logoContainer.getAttribute('aria-label');
+                if (label) {
+                    // Format: "Company, [Name]."
+                    let name = label.replace('Company, ', '');
+                    if (name.endsWith('.')) name = name.slice(0, -1);
+                    displayCompany = name.trim();
+                }
+            }
+        }
+
+        // Strategy B: New UI - About the company section link (Fallback)
+        if ((!displayCompany || displayCompany === '—') && document.querySelector('h2')) {
+            // Look for the "About the company" header, then find the company link nearby
+            const aboutSection = Array.from(document.querySelectorAll('h2')).find(el => el.textContent.trim() === 'About the company');
+            if (aboutSection) {
+                // The company name is usually in a link within the same container or section
+                // Try to find a link that is NOT "Show more" or "Learn more"
+                const container = aboutSection.closest('.jobs-company__box') || aboutSection.closest('.job-details-module') || aboutSection.parentElement.parentElement;
+                if (container) {
+                    const companyLink = container.querySelector('a[href*="/company/"]:not([aria-label*="Learn more"]):not([aria-label*="Show more"])');
+                    if (companyLink) {
+                         displayCompany = companyLink.textContent.trim();
+                    }
+                }
+            }
+        }
+
+        // Strategy C: Old UI - specific class
+        if (!displayCompany || displayCompany.includes('follower')) {
+            const companyEl = document.querySelector('.job-details-jobs-unified-top-card__company-name a');
+            if (companyEl) {
+                displayCompany = companyEl.textContent.trim();
+            }
+        }
+        
+        // Strategy D: Fallback to sticky header if available
+        if (!displayCompany || displayCompany.includes('follower')) {
+             const stickyHeaderEl = document.querySelector('.job-details-jobs-unified-top-card__title-container .t-14');
+             if (stickyHeaderEl) {
+                 const text = stickyHeaderEl.textContent.trim();
+                 const parts = text.split('·');
+                 if (parts.length >= 1) {
+                     displayCompany = parts[0].trim();
+                 }
+             }
+        }
+    }
+
+    // Strategy E: Left Sidebar (Active Job Card) - High Priority Fallback
+    // This is often the most reliable source when switching jobs
+    if (isInvalidCompany || !displayCompany || displayCompany.includes('follower')) {
+        const activeCard = document.querySelector('.jobs-search-results-list__list-item--active');
+        if (activeCard) {
+            const companyEl = activeCard.querySelector('.job-card-container__primary-description');
+            if (companyEl) {
+                displayCompany = companyEl.textContent.trim();
+            }
+        }
+    }
+
+    // 2. Try to extract Location if missing or invalid
+    if (!displayLocation || displayLocation === '—' || displayLocation === '-') {
+        // Strategy A: Primary description container (e.g. "Bengaluru, Karnataka, India")
+        const primaryLocEl = document.querySelector('.job-details-jobs-unified-top-card__primary-description-container .tvm__text--low-emphasis');
+        if (primaryLocEl) {
+            displayLocation = primaryLocEl.textContent.trim();
+        }
+
+        // Strategy B: New UI - Location in paragraph with "·" and time (e.g. "Gurgaon, Haryana, India · 2 weeks ago")
+        if (!displayLocation || displayLocation === '—') {
+             // Find the paragraph that contains the location. It usually follows the company name/title.
+             // We look for a paragraph with a span that has the location text.
+             const jobDetailsContainer = document.querySelector('div[data-view-name="job-detail-page"]');
+             if (jobDetailsContainer) {
+                 // The location is often in a paragraph with multiple spans separated by "·"
+                 const paragraphs = jobDetailsContainer.querySelectorAll('p');
+                 for (const p of paragraphs) {
+                     const text = p.textContent.trim();
+                     // Check for pattern "Location · Time" or just "Location" if it's the primary description
+                     // The new HTML shows: <p><span>Gurugram...</span><span>·</span><span>1 day ago...</span></p>
+                     if (text.includes('·') && (text.includes('ago') || text.includes('posted') || text.includes('apply') || text.includes('people'))) {
+                         const parts = text.split('·');
+                         if (parts.length > 0) {
+                             // Sometimes the first part is the location
+                             let loc = parts[0].trim();
+                             // Verify it's not the company name (simple check)
+                             if (loc !== displayCompany && loc.length < 100) {
+                                 displayLocation = loc;
+                                 break;
+                             }
+                         }
+                     }
+                 }
+             }
+        }
+
+        // Strategy C: Sticky header (e.g. "Autodesk · Bengaluru, Karnataka, India (Hybrid)")
+        if (!displayLocation || displayLocation === '—') {
+            const stickyHeaderEl = document.querySelector('.job-details-jobs-unified-top-card__title-container .t-14');
+            if (stickyHeaderEl) {
+                const text = stickyHeaderEl.textContent.trim();
+                // Format: "Company · Location"
+                const parts = text.split('·');
+                if (parts.length >= 2) {
+                    displayLocation = parts[1].trim();
+                    // If we also missed company, we can get it here
+                    if (!displayCompany || displayCompany === '—') {
+                        displayCompany = parts[0].trim();
+                    }
+                }
+            }
+        }
+    }
+    
+    // Strategy C: Left Sidebar (Active Job Card) for Location
+    if (!displayLocation || displayLocation === '—' || displayLocation === '-') {
+         const activeCard = document.querySelector('.jobs-search-results-list__list-item--active');
+         if (activeCard) {
+             const locEl = activeCard.querySelector('.job-card-container__metadata-item');
+             if (locEl) {
+                 displayLocation = locEl.textContent.trim();
+             }
+         }
+    }
+
+    if (metaEl) metaEl.textContent = `${displayCompany || '—'} • ${displayLocation || '—'}`;
 
     // Update job details section
     this._updateJobDetailsDisplay(salary, applicants, companySize, industry, linkedinEmployees);
 
     // Check if this is a different job than what we have extracted
-    const currentJobSig = `${title}|${company}|${location.href}`;
+    // Use the displayed values for the signature to ensure consistency
+    const currentJobSig = `${title}|${displayCompany}|${location.href}`;
     const jobChanged = currentJobSig !== this._lastJobSig;
     const extractionNeeded = currentJobSig !== this._lastExtractedJobSig;
     
@@ -2237,11 +1907,21 @@ export class ResumeHubSidebar {
       const skillsEl = this.root.getElementById('rh-required-skills');
       const questionsEl = this.root.getElementById('rh-interview-questions');
       const resourcesEl = this.root.getElementById('rh-helpful-resources');
+      const companyStatsEl = this.root.getElementById('rh-company-details')?.querySelector('.rh-company-stats');
       
       if (requirementsEl) requirementsEl.innerHTML = 'Analyzing requirements...';
       if (skillsEl) skillsEl.innerHTML = 'Analyzing skills...';
       if (questionsEl) questionsEl.innerHTML = 'Generating personalized questions...';
       if (resourcesEl) resourcesEl.innerHTML = 'Loading resources...';
+      if (companyStatsEl) companyStatsEl.innerHTML = 'Loading...';
+
+      // Hide sections until requested
+      const companySalaryEl = this.root.getElementById('rh-company-salary');
+      const insightsEl = this.root.getElementById('rh-job-insights');
+      const prepEl = this.root.getElementById('rh-interview-prep');
+      if (companySalaryEl) companySalaryEl.style.display = 'none';
+      if (insightsEl) insightsEl.style.display = 'none';
+      if (prepEl) prepEl.style.display = 'none';
       
       // Clear insights cache for the old job
       this._clearInsightsCache();
@@ -2252,36 +1932,8 @@ export class ResumeHubSidebar {
     // Update last job signature
     this._lastJobSig = currentJobSig;
 
-    // Show insights sections if we have job data
-    if (title !== '—' && company !== '—') {
-      this._showJobInsights(title, company);
-    }
-
     // Notify background of job change (throttled by signature)
     this._maybeNotifyJobChanged(title, company, locationText);
-
-    // Auto-extract job description if AI mode is enabled
-    if (this.aiModeEnabled && title !== '—' && company !== '—') {
-      // Extract if this is a different job than last extracted
-      if (extractionNeeded || this._lastExtractedJobSig === '') {
-        // Force refresh insights when job changes
-        this._autoExtractJobDescription(currentJobSig, jobChanged);
-      } else if (jobChanged) {
-        // Job changed but extraction signature matches (shouldn't happen, but handle it)
-        // Force re-extraction to ensure fresh data
-        this._lastExtractedJobSig = '';
-        this._autoExtractJobDescription(currentJobSig, true);
-      }
-    } else if (jobChanged && title !== '—' && company !== '—') {
-      // Even if AI mode is disabled, if job changed, we should refresh insights
-      // (they will use standard extraction or cached data)
-      this._extractAndDisplayJobInsights(true);
-    }
-
-    // Check for auto-tailored resume from recent jobs
-    if (title !== '—' && company !== '—') {
-      await this._checkRecentJobsForAutoTailoredResume();
-    }
 
     // Wire buttons that rely on context
     this._wireActions();
@@ -2520,9 +2172,11 @@ ${jobDescription.substring(0, 3000)}`;
   }
 
   _showJobInsights(title, company) {
+    const companySalaryEl = this.root.getElementById('rh-company-salary');
     const insightsEl = this.root.getElementById('rh-job-insights');
     const prepEl = this.root.getElementById('rh-interview-prep');
     
+    if (companySalaryEl) companySalaryEl.style.display = 'block';
     if (insightsEl) insightsEl.style.display = 'block';
     if (prepEl) prepEl.style.display = 'block';
   }
@@ -2552,11 +2206,44 @@ ${jobDescription.substring(0, 3000)}`;
     breakdownEl.textContent = '';
     confidenceEl.textContent = '';
 
+
+
     try {
       // Get location from job meta
       const jobMeta = this.root.getElementById('rh-job-meta')?.textContent || '';
-      const location = jobMeta.split('•')[1]?.trim() || '';
+      // Try to extract location more robustly
+      let location = '';
+      const metaParts = jobMeta.split('•');
+      if (metaParts.length >= 2) {
+          location = metaParts[1].trim();
+      }
+      
+      // Fallback: if location is empty or just a dash, try to find it in the job insights or other elements
+      if (!location || location === '—' || location === '-') {
+          // Try to find location in the job card details if available
+          const locationEl = document.querySelector('.job-details-jobs-unified-top-card__primary-description-container .tvm__text--low-emphasis');
+          if (locationEl) {
+              const text = locationEl.textContent.trim();
+              // Usually format is "Company Name · Location · Time"
+              const parts = text.split('·');
+              if (parts.length >= 2) {
+                  location = parts[1].trim();
+              }
+          }
+      }
+
+      // Second fallback: try to get it from the active job card in the list
+      if (!location || location === '—' || location === '-') {
+           const activeCard = document.querySelector('.jobs-search-results-list__list-item--active');
+           if (activeCard) {
+               const locEl = activeCard.querySelector('.job-card-container__metadata-item');
+               if (locEl) location = locEl.textContent.trim();
+           }
+      }
+      
       const jobUrl = window.location.href || '';
+
+
 
       // Call background script to estimate salary with job description context
       const response = await new Promise((resolve) => {
@@ -2571,6 +2258,9 @@ ${jobDescription.substring(0, 3000)}`;
           }
         }, (resp) => resolve(resp));
       });
+
+
+
 
       if (response && response.success && response.salary && !response.salary.error) {
         const { totalCompensation, base, bonus, stock, confidence, currency = '₹' } = response.salary;
@@ -2595,12 +2285,20 @@ ${jobDescription.substring(0, 3000)}`;
         confidenceEl.textContent = `Source: ResumeHub`;
         confidenceEl.style.color = confidenceColor;
       } else {
-        // Hide if no salary data
-        salaryEstimateEl.style.display = 'none';
+        // Show error state instead of hiding
+        console.warn('[ResumeHub] Salary fetch failed or no data:', response);
+        if (response.details) {
+          console.warn('[ResumeHub] Error details:', response.details);
+        }
+        tcEl.textContent = 'Salary estimate unavailable';
+        breakdownEl.textContent = response?.error || 'No data returned';
+        // salaryEstimateEl.style.display = 'none'; // Keep visible for debug
       }
     } catch (e) {
       console.warn('[ResumeHub] Error fetching salary:', e);
-      salaryEstimateEl.style.display = 'none';
+      tcEl.textContent = 'Error estimating salary';
+      breakdownEl.textContent = e.message;
+      // salaryEstimateEl.style.display = 'none'; // Keep visible for debug
     }
   }
 
@@ -2938,49 +2636,7 @@ ${jobDescription.substring(0, 2000)}`;
     ).join('');
   }
 
-  async _autoExtractJobDescription(jobSig, forceRefreshInsights = true) {
-    // Automatically extract job description when AI mode is enabled
-    try {
-      // Update last extracted signature to prevent duplicate extractions
-      this._lastExtractedJobSig = jobSig;
-      
-      // Show extracting status
-      this._updateExtractedJDDisplay('Extracting job description…', true);
-      
-      // Use forceRefresh: true to always get fresh data (same as Extract button)
-      chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'ai', forceRefresh: true }, (resp) => {
-        if (!resp || !resp.success) {
-          // Fallback to standard extraction with force refresh
-          chrome.runtime.sendMessage({ action: 'getJobDescription', extractionMethod: 'standard', forceRefresh: true }, (resp2) => {
-            if (resp2 && resp2.success && resp2.jobDescription) {
-              // Store and display extracted JD
-              this._lastExtractedJD = resp2.jobDescription;
-              this._updateExtractedJDDisplay(resp2.jobDescription, false);
-              console.log('[ResumeHub] Auto-extracted job description (standard method)');
-              // Fetch AI insights after extraction with force refresh if job changed
-              this._extractAndDisplayJobInsights(forceRefreshInsights);
-            } else {
-              this._updateExtractedJDDisplay('Failed to extract job description', false, true);
-            }
-          });
-          return;
-        }
-        if (resp.jobDescription) {
-          // Store and display extracted JD
-          this._lastExtractedJD = resp.jobDescription;
-          this._updateExtractedJDDisplay(resp.jobDescription, false);
-          console.log('[ResumeHub] Auto-extracted job description (AI method)');
-          // Fetch AI insights after extraction with force refresh if job changed
-          this._extractAndDisplayJobInsights(forceRefreshInsights);
-        } else {
-          this._updateExtractedJDDisplay('No job description found', false, true);
-        }
-      });
-    } catch (e) {
-      console.warn('[ResumeHub] Auto-extraction failed:', e);
-      this._updateExtractedJDDisplay('Extraction failed: ' + e.message, false, true);
-    }
-  }
+
 
   /**
    * Clear insights cache when job changes significantly
@@ -3077,14 +2733,12 @@ ${jobDescription.substring(0, 2000)}`;
   _wireActions() {
     const output = this.root.getElementById('rh-output');
     const extractBtn = this.root.getElementById('rh-extract');
+    const extractInsightsBtn = this.root.getElementById('rh-extract-insights');
     const tailorBtn = this.root.getElementById('rh-tailor');
     const downloadButtons = this.root.getElementById('rh-download-buttons');
     const downloadDocxBtn = this.root.getElementById('rh-download-docx');
     const downloadPdfBtn = this.root.getElementById('rh-download-pdf');
     const downloadTxtBtn = this.root.getElementById('rh-download-txt');
-
-    // Respect AI mode visibility
-    this._applyAIModeVisibility();
 
     // Wire download buttons
     if (downloadDocxBtn) {
@@ -3154,6 +2808,26 @@ ${jobDescription.substring(0, 2000)}`;
     extractBtn.onclick = () => {
       extractJobDescriptionAsync();
     };
+
+    if (extractInsightsBtn) {
+      extractInsightsBtn.onclick = async () => {
+        // Ensure we have a job description first
+        let extractedJD = this._lastExtractedJD || output?.value || '';
+        if (!extractedJD || extractedJD.length < 30) {
+          extractedJD = await extractJobDescriptionAsync();
+        }
+        
+        if (extractedJD && extractedJD.length >= 30) {
+          // Show insights sections
+          const title = this.root.getElementById('rh-job-title')?.textContent || '';
+          const company = this.root.getElementById('rh-job-meta')?.textContent || '';
+          this._showJobInsights(title, company);
+          
+          // Trigger insights extraction
+          this._extractAndDisplayJobInsights(true);
+        }
+      };
+    }
 
     tailorBtn.onclick = async () => {
       // Prevent multiple simultaneous tailoring operations
@@ -3407,7 +3081,7 @@ ${jobDescription.substring(0, 2000)}`;
           
           const docDefinition = module.generatePdfDefinition(resumeJSON);
           pdfMake.createPdf(docDefinition).download(`${baseFilename}.pdf`);
-          console.log('[ResumeHub] PDF downloaded successfully');
+
         } catch (e) {
           console.error('[ResumeHub] Failed to load PDF generator:', e);
           alert('PDF generation failed. Falling back to text format.');
@@ -3418,7 +3092,7 @@ ${jobDescription.substring(0, 2000)}`;
     }
       const docDefinition = PdfGenerator.generatePdfDefinition(resumeJSON);
       pdfMake.createPdf(docDefinition).download(`${baseFilename}.pdf`);
-      console.log('[ResumeHub] PDF downloaded successfully');
+
     } catch (error) {
       console.error('[ResumeHub] PDF generation error:', error);
       alert('PDF generation failed. Falling back to text format.');
@@ -3440,7 +3114,7 @@ ${jobDescription.substring(0, 2000)}`;
           const blob = module.generateDocxBlob(resumeJSON);
           const url = URL.createObjectURL(blob);
           this._downloadBlob(url, `${baseFilename}.docx`);
-          console.log('[ResumeHub] DOCX downloaded successfully');
+
         } catch (e) {
           console.error('[ResumeHub] Failed to load DOCX generator:', e);
           alert('DOCX generation failed. Falling back to text format.');
@@ -3453,7 +3127,7 @@ ${jobDescription.substring(0, 2000)}`;
     const blob = DocxGenerator.generateDocxBlob(resumeJSON);
     const url = URL.createObjectURL(blob);
     this._downloadBlob(url, `${baseFilename}.docx`);
-    console.log('[ResumeHub] DOCX downloaded successfully');
+
   }
 
   _downloadBlob(url, filename) {

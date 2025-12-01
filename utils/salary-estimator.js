@@ -118,21 +118,37 @@ export class SalaryEstimator {
      * @param {string} location
      * @param {string} companyName
      * @param {string} jobUrl - Used as a unique key for caching.
+     * @param {string} [jobDescription] - Optional full job description
      * @returns {Object} - Salary data or an error object.
      */
-    async estimate(jobTitle, location, companyName, jobUrl) {
+    async estimate(jobTitle, location, companyName, jobUrl, jobDescription = '') {
         return UnifiedErrorHandler.safeAPICall(async () => {
             if (!this.apiClient) {
                 console.warn('[ResumeHub BG] API client not available for salary estimation – API key missing.');
                 return { error: 'API_KEY_MISSING', retry: true };
             }
             
+            let salary;
             if (this.rateLimiter) {
-                await this.rateLimiter.wait();
+                salary = await this.rateLimiter.queueRequest(
+                    () => this.apiClient.estimateSalary(jobTitle, location, companyName, jobDescription),
+                    `salary estimation for ${jobTitle}`
+                );
+            } else {
+                salary = await this.apiClient.estimateSalary(jobTitle, location, companyName, jobDescription);
             }
-
-            const salary = await this.apiClient.estimateSalary(jobTitle, location, companyName);
-            return { ...salary, source: 'api' };
+            
+            // Map API response fields to UI expected format
+            return {
+                totalCompensation: salary.totalCompensation,
+                base: salary.baseSalary,
+                bonus: salary.bonus,
+                stock: salary.stockOptions,
+                confidence: salary.confidence,
+                currency: salary.currency,
+                source: 'api',
+                debug: salary.debug // Pass debug info
+            };
 
         }, `salary estimation for ${jobTitle}`, { fallback: () => ({ error: 'API_KEY_MISSING', retry: true }) });
     }
@@ -192,7 +208,15 @@ export class SalaryEstimator {
         };
 
         try {
-            const response = await this.apiClient.batchEstimateSalary(batchRequest);
+            let response;
+            if (this.rateLimiter) {
+                response = await this.rateLimiter.queueRequest(
+                    () => this.apiClient.batchEstimateSalary(batchRequest),
+                    'batch salary estimation'
+                );
+            } else {
+                response = await this.apiClient.batchEstimateSalary(batchRequest);
+            }
             
             // Transform AI response to our format
             const results = {};

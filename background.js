@@ -157,191 +157,11 @@ async function upsertRecentJobEntry(entry) {
 }
 
 async function handleJobChanged(request, sender, sendResponse) {
-    let jobKey;
-    try {
-        const { data } = request || {};
-        const tabId = sender?.tab?.id;
-        const jobTitle = data?.jobTitle || '';
-        const companyName = data?.companyName || '';
-        const location = data?.location || '';
-        const jobUrl = data?.jobUrl || '';
-
-        const settings = await StorageManager.get(['aiModeEnabled', 'aiFilters'], 'sync');
-        const aiEnabled = !!settings.aiModeEnabled;
-        const aiFilters = {
-            autoTailorOnView: false,
-            autoFetchSalary: true,
-            requireSalary: false,
-            salaryThreshold: null,
-            minJDLength: 200,
-            ...(settings.aiFilters || {})
-        };
-        
-        // Remove old requireResume if present
-        if (aiFilters.requireResume !== undefined) {
-            delete aiFilters.requireResume;
-        }
-
-        if (!aiEnabled || !aiFilters.autoTailorOnView) {
-            return sendResponse?.({ queued: false, reason: 'AI disabled or autoTailor off' });
-        }
-        if (!tabId) {
-            return sendResponse?.({ queued: false, reason: 'No tabId' });
-        }
-        jobKey = `${jobUrl}|${jobTitle}|${companyName}`;
-        if (inFlightJobs.has(jobKey)) {
-            return sendResponse?.({ queued: false, reason: 'Already processing' });
-        }
-        inFlightJobs.add(jobKey);
-
-        // Always check for resume - auto tailor requires resume
-        const resume = await StorageManager.getResume();
-        if (!resume?.content) {
-            inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: 'No resume' });
-        }
-
-        // Extract JD (with caching to avoid redundant calls)
-        const jd = await extractJDFromTab(tabId, true, true);
-        if (!jd || jd.length < (aiFilters.minJDLength || 200)) {
-            inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: 'JD too short' });
-        }
-
-        // Fetch salary if enabled (using existing SalaryEstimator)
-        let salary = null;
-        let salaryValue = null;
-        if (aiFilters.autoFetchSalary && salaryEstimator) {
-            try {
-                salary = await salaryEstimator.estimate(jobTitle, location, companyName, jobUrl);
-                // Extract numeric salary value for threshold comparison
-                // Salary format: { totalCompensation: "₹10-15L", base: "...", bonus: "...", stock: "..." }
-                if (salary && !salary.error && salary.totalCompensation) {
-                    // Parse salary string like "₹10-15L", "$100k-150k", "₹50-70L", etc.
-                    const salaryStr = salary.totalCompensation;
-                    // Extract numbers and unit
-                    const match = salaryStr.match(/([\d,]+)[\s-]*([\d,]+)?([LKMkm]|thousand|million)?/i);
-                    if (match) {
-                        let min = parseFloat(match[1].replace(/,/g, ''));
-                        let max = match[2] ? parseFloat(match[2].replace(/,/g, '')) : min;
-                        const unit = (match[3] || '').toLowerCase();
-                        
-                        // Convert to base units (same currency as threshold)
-                        // Threshold is stored in base units (e.g., 2600000 for 26L in INR)
-                        // Keep salary in same currency units for comparison
-                        if (unit === 'l' || unit === 'lakh') {
-                            salaryValue = max * 100000; // Convert Lakhs to base units (INR)
-                        } else if (unit === 'k' || unit === 'thousand') {
-                            salaryValue = max * 1000;
-                        } else if (unit === 'm' || unit === 'million') {
-                            salaryValue = max * 1000000;
-                        } else if (unit.includes('cr') || unit.includes('crore')) {
-                            salaryValue = max * 10000000; // Convert crores to base units
-                        } else {
-                            // Assume already in base units
-                            salaryValue = max;
-                        }
-                    } else {
-                        // Try direct number extraction
-                        const numMatch = salaryStr.match(/[\d,]+/);
-                        if (numMatch) {
-                            salaryValue = parseFloat(numMatch[0].replace(/,/g, ''));
-                        }
-                    }
-                }
-            } catch (e) {
-                salary = { error: e.message };
-            }
-        }
-        
-        // Check salary threshold if required
-        if (aiFilters.requireSalary && aiFilters.salaryThreshold) {
-            if (!salary || salary.error || !salaryValue) {
-                inFlightJobs.delete(jobKey);
-                return sendResponse?.({ queued: false, reason: 'Salary missing or invalid' });
-            }
-            // Compare in same currency units (both in base units, same currency)
-            // Threshold is stored in base units (e.g., 2600000 for 26L)
-            // Salary value is also in base units (same currency)
-            if (salaryValue < aiFilters.salaryThreshold) {
-                inFlightJobs.delete(jobKey);
-                return sendResponse?.({ queued: false, reason: `Salary ${salaryValue} below threshold ${aiFilters.salaryThreshold}` });
-            }
-        }
-
-        // Tailor resume using the same function as "Generate Tailored Resume"
-        if (!apiClient) {
-            inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: 'API key missing' });
-        }
-
-        // Get resume data
-        const resumeData = await StorageManager.getResume();
-        if (!resumeData?.content) {
-            inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: 'No resume data' });
-        }
-
-        // Get API token for extraction method
-        const apiToken = await StorageManager.getAPIToken();
-
-        // Call the same function as "Generate Tailored Resume"
-        const tailorRequest = {
-            resumeData,
-            jobDescriptionOverride: jd,
-            apiToken: apiToken,
-            extractionMethod: 'ai',
-            isAutoTailor: true // Flag to indicate this is an auto-tailor operation
-        };
-
-        // Use handleCreateTailoredResume to generate the tailored resume
-        const tailorResponse = await new Promise((resolve) => {
-            handleCreateTailoredResume(tailorRequest, resolve);
-        });
-
-        if (!tailorResponse || !tailorResponse.success) {
-            inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: tailorResponse?.error || 'Failed to tailor resume' });
-        }
-
-        const tailoredResumeJSON = tailorResponse.tailoredResumeJSON;
-        if (!tailoredResumeJSON) {
-            inFlightJobs.delete(jobKey);
-            return sendResponse?.({ queued: false, reason: 'No tailored resume returned' });
-        }
-
-        // Cache recent job
-        await upsertRecentJobEntry({
-            jobTitle,
-            companyName,
-            location,
-            jobUrl,
-            jobDescription: jd,
-            salary,
-            tailoredResumeJSON,
-            isAutoTailor: true // Mark as auto-tailored
-        });
-
-        // Notify content script that auto-tailor is complete
-        console.log('[ResumeHub BG] Auto-tailor completed for job:', jobTitle, 'at', companyName);
-        
-        // Try to notify the specific tab if tabId is available
-        if (tabId) {
-            chrome.tabs.sendMessage(tabId, {
-                action: 'autoTailorComplete',
-                data: { jobUrl, jobTitle, companyName, tailoredResumeJSON }
-            }, () => {
-                // Ignore errors if tab is no longer available
-            });
-        }
-
-        inFlightJobs.delete(jobKey);
-        return sendResponse?.({ queued: true, success: true });
-    } catch (error) {
-        if (jobKey) inFlightJobs.delete(jobKey);
-        console.error('[ResumeHub BG] jobChanged pipeline failed:', error);
-        return sendResponse?.({ queued: false, error: error.message });
-    }
+    // Auto-tailor functionality has been removed.
+    // This handler is kept as a placeholder or for future non-AI job tracking if needed.
+    const { data } = request || {};
+    console.log('[ResumeHub BG] Job changed detected:', data?.jobTitle, 'at', data?.companyName);
+    return sendResponse?.({ queued: false, success: true });
 }
 
 // Listen for startup and storage changes to re-initialize.
@@ -694,77 +514,29 @@ const ACTION_HANDLERS = {
         try {
             const { jobTitle, companyName, location, jobUrl, jobDescription } = request.data || {};
             
+            if (!jobTitle || !companyName) {
+                sendResponse({ success: false, error: 'Missing job details (jobTitle or companyName)' });
+                return; // Do not return true here, as it's handled by the outer listener
+            }
+
             if (!salaryEstimator) {
                 return sendResponse({ success: false, error: 'Salary estimator not available' });
             }
 
             // First get base estimate
-            let salary = await salaryEstimator.estimate(jobTitle, location || '', companyName, jobUrl || '');
+            let salary = await salaryEstimator.estimate(jobTitle, location || '', companyName, jobUrl || '', jobDescription);
             
-            // If we have job description, enhance the estimate with AI
-            if (jobDescription && jobDescription.length > 100 && apiClient) {
-                try {
-                    const enhancePrompt = `Based on this job description, refine the salary estimate. Consider:
-- Required experience level and seniority
-- Specific technical skills mentioned
-- Responsibilities and scope
-- Industry and company size indicators
-
-Job Title: ${jobTitle}
-Company: ${companyName}
-Location: ${location}
-Current Estimate: ${salary.totalCompensation || 'N/A'}
-
-Job Description (first 2000 chars):
-${jobDescription.substring(0, 2000)}
-
-Return a JSON object with refined estimates:
-{
-  "totalCompensation": "range in format like '₹43L-72L' or '$100k-150k'",
-  "base": "base salary range",
-  "bonus": "bonus range",
-  "stock": "stock/equity range",
-  "confidence": "High|Medium|Low",
-  "reasoning": "brief explanation"
-}
-
-If the current estimate seems reasonable, keep it. Otherwise, adjust based on job description details.`;
-
-                    const enhanced = await apiClient.callAPI('gemini-flash-latest', enhancePrompt, {
-                        temperature: 0.2,
-                        maxOutputTokens: 500
-                    });
-
-                    if (enhanced && enhanced.candidates && enhanced.candidates[0]) {
-                        const content = enhanced.candidates[0].content.parts[0].text;
-                        try {
-                            const jsonMatch = content.match(/\{[\s\S]*\}/);
-                            if (jsonMatch) {
-                                const enhancedData = JSON.parse(jsonMatch[0]);
-                                // Merge enhanced data with original
-                                salary = {
-                                    ...salary,
-                                    totalCompensation: enhancedData.totalCompensation || salary.totalCompensation,
-                                    base: enhancedData.base || salary.base,
-                                    bonus: enhancedData.bonus || salary.bonus,
-                                    stock: enhancedData.stock || salary.stock,
-                                    confidence: enhancedData.confidence || salary.confidence || 'Medium'
-                                };
-                            }
-                        } catch (parseErr) {
-                            console.warn('[ResumeHub BG] Failed to parse enhanced salary:', parseErr);
-                        }
-                    }
-                } catch (enhanceErr) {
-                    console.warn('[ResumeHub BG] Failed to enhance salary with JD:', enhanceErr);
-                    // Continue with base estimate
-                }
-            }
+            // Secondary enhancement logic removed as it is now handled in the primary estimate call
+            // which includes the job description context directly.
 
             sendResponse({ success: true, salary });
         } catch (error) {
             console.error('[ResumeHub BG] estimateSalaryWithJD error:', error);
-            sendResponse({ success: false, error: error.message });
+            sendResponse({ 
+                success: false, 
+                error: error.message,
+                details: error.context || error.originalError || error.stack
+            });
         }
     },
     'getAIResponse': async (request, sender, sendResponse) => {

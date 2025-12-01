@@ -74,16 +74,28 @@ export const SELECTORS = {
             // Additional selectors for potential new UI
             ".job-details-jobs-unified-top-card__job-title",
             ".artdeco-entity-lockup__title",
+            // New UI from user HTML - more generic
+            "div[data-view-name='job-detail-page'] .job-details-jobs-unified-top-card__job-title h1",
+            "div[data-view-name='job-detail-page'] h1",
+            "div[data-view-name='job-detail-page'] a[href*='/jobs/view/']", // Covers Ticketmaster, Live Nation, etc. 
         ],
         companyInfo: [
-            // Current selectors
+            // New UI: Target the link inside the aria-label container for clean text ("ETS")
+            "div[aria-label^='Company,'] a",
+            // Restoring this as it's needed for some layouts (e.g. GreyOrange) where nested links might cause issues
+            "div[aria-label^='Company,']",
+            
+            // Old/Standard UI
+            ".job-details-jobs-unified-top-card__company-name a",
+            ".job-details-jobs-unified-top-card__company-name",
+            ".artdeco-entity-lockup__subtitle",
+            
+            // Fallback/Older selectors
+            ".job-details-jobs-unified-top-card__primary-description", // Restored
             ".jobs-unified-top-card__primary-description",
             ".jobs-unified-top-card__primary-description-without-tagline",
             ".jobs-unified-top-card__company-name",
             ".jobs-unified-top-card__subtitle",
-            // Additional selectors for potential new UI
-            ".job-details-jobs-unified-top-card__primary-description",
-            ".artdeco-entity-lockup__subtitle",
         ],
         jobDescription: [
             // Current selectors
@@ -104,6 +116,8 @@ export const SELECTORS = {
             // Additional selectors for potential new UI
             ".job-details-jobs-unified-top-card",
             ".jobs-details-top-card",
+            // New UI from user HTML
+            "div[data-view-name='job-detail-page']",
         ],
     },
     // Our custom UI elements

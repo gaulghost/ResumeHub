@@ -241,42 +241,66 @@ ${JSON.stringify(originalSectionData, null, 2)}
    * @param {string} jobTitle
    * @param {string} location
    * @param {string} companyName
+   * @param {string} [jobDescription] - Optional full job description
    * @returns {Promise<object>} - A promise that resolves to an object like {min: string, max: string, currency: string}
    */
-  async estimateSalary(jobTitle, location, companyName) {
+  async estimateSalary(jobTitle, location, companyName, jobDescription = '') {
     const prompt = `**Instruction:**
-Analyze the provided job title, location, and company name to estimate the annual salary range.
+Analyze the provided job title, location, company name${jobDescription ? ', and job description' : ''} to estimate the annual salary range.
 
 **Job Information:**
 - **Title:** ${jobTitle}
 - **Company:** ${companyName}
 - **Location:** ${location}
+${jobDescription ? `- **Job Description:**\n\`\`\`\n${jobDescription}\n\`\`\`` : ''}
 
-**Output Format:**
-Return a JSON object with the estimated annual salary range. The "min" and "max" values should be formatted as strings representing thousands (e.g., "120k", "150k").
-- Do not add any commentary or extra text.
-- Output *only* the valid JSON object.
+**Output Requirements:**
+- **CRITICAL:** Estimate salary specifically for the **${location}** market. Do NOT use US/Global averages unless the location is in the US.
+- **CRITICAL:** Use the **LOCAL CURRENCY** for that location (e.g., ₹ for India, € for Europe, £ for UK, $ for US).
+- Provide detailed compensation breakdown (Base, Bonus, Stock).
+- Format amounts in local units (e.g., "25L-30L" for Indian Lakhs, "120k-150k" for US thousands).
+- Provide confidence level (High/Medium/Low).
 
 **JSON Schema:**
 \`\`\`json
 {
-  "min": "string",
-  "max": "string",
+  "totalCompensation": "string",
+  "baseSalary": "string",
+  "bonus": "string",
+  "stockOptions": "string",
+  "confidence": "High|Medium|Low",
   "currency": "string"
 }
 \`\`\`
 
-**Example:**
-For a "Senior Software Engineer" in "San Francisco, CA", the output might be:
+**Example (India):**
 \`\`\`json
 {
-  "min": "150k",
-  "max": "200k",
+  "totalCompensation": "25L-30L",
+  "baseSalary": "15L-20L",
+  "bonus": "3L-5L",
+  "stockOptions": "5L-7L",
+  "confidence": "High",
+  "currency": "₹"
+}
+\`\`\`
+
+**Example (US):**
+\`\`\`json
+{
+  "totalCompensation": "150k-200k",
+  "baseSalary": "120k-160k",
+  "bonus": "15k-20k",
+  "stockOptions": "15k-20k",
+  "confidence": "High",
   "currency": "$"
 }
 \`\`\`
 
 **--- Estimated Salary JSON Output ---**`;
+
+    console.log('[ResumeHub API] Salary Estimation Prompt:', prompt);
+    console.log('[ResumeHub API] Location:', location);
 
     const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.3,
@@ -287,7 +311,13 @@ For a "Senior Software Engineer" in "San Francisco, CA", the output might be:
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
       const jsonText = response.candidates[0].content.parts[0].text;
       try {
-        return JSON.parse(jsonText);
+        const result = JSON.parse(jsonText);
+        // Attach debug info
+        result.debug = {
+            prompt: prompt,
+            location: location
+        };
+        return result;
       } catch (parseError) {
         console.error('Failed to parse JSON response for salary estimation:', parseError);
         throw new Error('Failed to parse salary estimation JSON response');
