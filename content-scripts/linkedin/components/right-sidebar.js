@@ -164,6 +164,18 @@ export class ResumeHubSidebar {
     // Enable drag
     this._initDrag();
 
+    // Load small icon state
+    try {
+      const data = await new Promise(resolve => chrome.storage.local.get(['isSmallIconMode'], resolve));
+      this.isSmallIconMode = !!data.isSmallIconMode;
+      if (this.isSmallIconMode) {
+        container.classList.add('rh-small-icon');
+        host.style.height = '48px';
+      }
+    } catch (e) {
+      this.isSmallIconMode = false;
+    }
+
     // Load theme setting and sync with storage changes
     this._loadTheme();
     
@@ -345,6 +357,10 @@ export class ResumeHubSidebar {
       .rh-sidebar.collapsed {
         width: var(--rh-width-collapsed);
       }
+      
+      .rh-sidebar.collapsed.rh-small-icon {
+        width: 36px;
+      }
 
       .rh-sidebar.expanded {
         width: var(--rh-width-expanded);
@@ -435,6 +451,31 @@ export class ResumeHubSidebar {
         letter-spacing: 0.8px;
         transition: all var(--rh-transition-base);
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+
+      .rh-sidebar.collapsed.rh-small-icon .rh-tab-label {
+        display: none;
+      }
+      
+      .rh-sidebar.collapsed.rh-small-icon .rh-tab-icon {
+        width: 24px;
+        height: 24px;
+        font-size: 14px;
+        margin-right: 8px;
+      }
+
+      .rh-sidebar.collapsed.rh-small-icon .rh-collapsed-tab {
+        width: 36px;
+        min-width: 36px;
+        border-radius: var(--rh-radius) 0 0 var(--rh-radius);
+      }
+      
+      .rh-sidebar.collapsed.rh-small-icon .rh-tab-content {
+        padding: 0;
+        margin: 0;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
       }
 
       .rh-collapsed-tab:hover .rh-tab-label {
@@ -580,14 +621,18 @@ export class ResumeHubSidebar {
       .rh-theme-toggle-label::after {
         content: "";
         position: absolute;
-        width: 20px;
-        height: 20px;
+        width: 18px;
+        height: 18px;
         border-radius: 50%;
         background: var(--rh-bg);
         border: 1px solid var(--rh-border);
-        top: 2px;
-        left: 2px;
-        transition: transform var(--rh-transition-base), background-color var(--rh-transition-base);
+        top: 3px;
+        left: 3px;
+        transition: transform var(--rh-transition-base), inherit;
+      }
+      
+      .theme-dark .rh-theme-toggle-label::after {
+        background: var(--rh-bg-2);
       }
       
       .rh-theme-toggle-checkbox:checked + .rh-theme-toggle-label {
@@ -599,6 +644,67 @@ export class ResumeHubSidebar {
         transform: translateX(24px);
         background: white;
         border-color: transparent;
+      }
+
+      /* Generic Feature Toggle */
+      .rh-feature-switch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+      }
+
+      .rh-feature-toggle {
+        position: relative;
+        width: 44px;
+        height: 24px;
+      }
+
+      .rh-feature-toggle-checkbox {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+
+      .rh-feature-toggle-bg {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--rh-bg-3);
+        transition: .3s;
+        border-radius: 12px;
+        border: 1px solid var(--rh-border);
+      }
+
+      .rh-feature-toggle-bg:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+        box-shadow: var(--rh-shadow-sm);
+      }
+
+      .theme-dark .rh-feature-toggle-bg:before {
+        background-color: var(--rh-bg);
+      }
+
+      .rh-feature-toggle-checkbox:checked + .rh-feature-toggle-bg {
+        background-color: var(--rh-accent);
+        border-color: var(--rh-accent);
+      }
+
+      .rh-feature-toggle-checkbox:checked + .rh-feature-toggle-bg:before {
+        transform: translateX(20px);
+        background-color: white;
       }
       
       .rh-theme-toggle-label .rh-theme-icon {
@@ -1168,6 +1274,18 @@ export class ResumeHubSidebar {
           </div>
         </div>
         <div class="rh-content">
+        
+          <div class="rh-section" id="rh-behavior" style="padding-bottom: 8px;">
+            <div class="rh-feature-switch">
+              <span style="font-size: 13px; font-weight: 500;">Compact Icon</span>
+              <label class="rh-feature-toggle">
+                <input type="checkbox" id="rh-minify-checkbox" class="rh-feature-toggle-checkbox">
+                <span class="rh-feature-toggle-bg" id="rh-minify-bg"></span>
+              </label>
+            </div>
+            <div style="font-size: 11px; color: var(--rh-text-secondary); margin-top: 4px;">Shrink the sidebar tab when closed.</div>
+          </div>
+
           <div class="rh-section rh-collapsible collapsed" id="rh-api">
             <h4 class="rh-collapsible-header" id="rh-api-header">🔑 API Configuration <span class="rh-chevron">▼</span></h4>
             <div class="rh-collapsible-content" id="rh-api-content">
@@ -1294,7 +1412,13 @@ export class ResumeHubSidebar {
           host.style.transform = 'none';
           host.style.right = '12px'; // detach from edge when open
         } else {
-          host.style.height = '30vh';
+          if (this.isSmallIconMode) {
+            host.style.height = '48px';
+            host.style.width = '36px';
+          } else {
+            host.style.height = '30vh';
+            host.style.width = '48px';
+          }
           host.style.transform = 'none';
           host.style.right = '0px'; // flush to edge when collapsed
         }
@@ -1325,6 +1449,20 @@ export class ResumeHubSidebar {
       themeToggle.addEventListener('change', async (e) => {
         const newTheme = e.target.checked ? 'dark' : 'light';
         await this._setTheme(newTheme);
+      });
+    }
+
+    // Minify toggle
+    const minifyCheckbox = this.root.getElementById('rh-minify-checkbox');
+    
+    if (minifyCheckbox) {
+      minifyCheckbox.checked = this.isSmallIconMode;
+      minifyCheckbox.addEventListener('change', (e) => {
+        this.isSmallIconMode = e.target.checked;
+        container.classList.toggle('rh-small-icon', this.isSmallIconMode);
+        try {
+          chrome.storage.local.set({ isSmallIconMode: this.isSmallIconMode });
+        } catch (err) { }
       });
     }
 

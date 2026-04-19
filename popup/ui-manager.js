@@ -23,8 +23,12 @@ class UIManager {
       // Cards
       apiKeyCard: document.getElementById('api-key-card'),
       extractionCard: document.getElementById('extraction-method-card'),
+      settingsCard: document.getElementById('settings-card'),
       resumeCard: document.getElementById('resume-card'),
       collapsibleHeaders: document.querySelectorAll('.card-header'),
+      
+      // Settings UI
+      sidebarToggle: document.getElementById('sidebar-toggle'),
       
       // Status elements
       statusMessageDiv: document.getElementById('status-message'),

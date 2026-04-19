@@ -20,6 +20,7 @@ class StateManager {
       // Settings
       selectedExtractionMethod: 'standard',
       currentTheme: 'light',
+      sidebarEnabled: true,
       
       // Generated data
       currentGeneratedResumeJSON: null,
@@ -203,6 +204,15 @@ class StateManager {
     return this.getState('currentTheme');
   }
 
+  async setSidebarEnabled(enabled) {
+    this.setState('sidebarEnabled', enabled);
+    await StorageManager.setSetting('sidebarEnabled', enabled);
+  }
+
+  getSidebarEnabled() {
+    return this.getState('sidebarEnabled');
+  }
+
   /**
    * Generated resume management
    */
@@ -243,6 +253,10 @@ class StateManager {
       
       if (settings.extractionMethod) {
         this.setState('selectedExtractionMethod', settings.extractionMethod);
+      }
+      
+      if (settings.sidebarEnabled !== undefined) {
+        this.setState('sidebarEnabled', settings.sidebarEnabled);
       }
       
       // Apply resume data

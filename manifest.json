@@ -1,68 +1,58 @@
 {
-  "manifest_version": 3,
-  "name": "ResumeHub AI – Smart Resume & Job Form Assistant",
-  "version": "1.5",
-  "description": "AI-powered resume tailoring and job form auto-filling based on job descriptions with real-time customization.",
-  "author": "Pradhuman Singh",
-  "homepage_url": "https://github.com/gaulghost",
-  "permissions": [
-    "activeTab",
-    "scripting",
-    "storage"
-  ],
-  "host_permissions": [
-    "https://*.linkedin.com/*",
-    "https://generativelanguage.googleapis.com/*"
-  ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "assets/logo128.png",
-      "48": "assets/logo128.png",
-      "128": "assets/logo128.png"
-    }
-  },
-  "icons": {
-    "16": "assets/logo128.png",
-    "48": "assets/logo128.png",
-    "128": "assets/logo128.png"
-  },
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://*.linkedin.com/jobs/**"
-      ],
-      "js": [
-        "content-scripts/linkedin/linkedin-controller.js"
-      ]
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "utils/salary-estimator.js",
-        "utils/storage-manager.js",
-        "utils/unified-error-handler.js",
-        "utils/shared-utilities.js",
-        "lib/pdfmake.min.js",
-        "lib/vfs_fonts.js",
-        "utils/pdf-generator.js",
-        "utils/docx-generator.js",
-        "content-scripts/linkedin/pages/job-search-handler.js",
-        "content-scripts/linkedin/pages/job-details-handler.js",
-        "content-scripts/linkedin/components/salary-badge.js",
-        "content-scripts/linkedin/components/right-sidebar.js",
-        "content-scripts/linkedin/components/job-insights-manager.js",
-        "content-scripts/linkedin/config/selectors.js",
-        "core/config/app-config.js"
-      ],
-      "matches": [
-        "https://*.linkedin.com/*"
-      ]
-    }
-  ]
+    "manifest_version": 3,
+    "name": "ResumeHub AI – Smart Resume & Job Form Assistant",
+    "version": "1.6",
+    "description": "AI-powered resume tailoring and job form auto-filling based on job descriptions with real-time customization.",
+    "author": "Pradhuman Singh",
+    "homepage_url": "https://github.com/gaulghost",
+    "permissions": ["activeTab", "scripting", "storage"],
+    "host_permissions": [
+        "https://*.linkedin.com/*",
+        "https://generativelanguage.googleapis.com/*"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "assets/logo128.png",
+            "48": "assets/logo128.png",
+            "128": "assets/logo128.png"
+        }
+    },
+    "icons": {
+        "16": "assets/logo128.png",
+        "48": "assets/logo128.png",
+        "128": "assets/logo128.png"
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": ["https://*.linkedin.com/jobs/**"],
+            "js": ["content-scripts/linkedin/linkedin-controller.js"]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "utils/salary-estimator.js",
+                "utils/storage-manager.js",
+                "utils/unified-error-handler.js",
+                "utils/shared-utilities.js",
+                "lib/pdfmake.min.js",
+                "lib/vfs_fonts.js",
+                "utils/pdf-generator.js",
+                "utils/docx-generator.js",
+                "content-scripts/linkedin/pages/job-search-handler.js",
+                "content-scripts/linkedin/pages/job-details-handler.js",
+                "content-scripts/linkedin/components/salary-badge.js",
+                "content-scripts/linkedin/components/right-sidebar.js",
+                "content-scripts/linkedin/components/job-insights-manager.js",
+                "content-scripts/linkedin/config/selectors.js",
+                "core/config/app-config.js"
+            ],
+            "matches": ["https://*.linkedin.com/*"]
+        }
+    ]
 }

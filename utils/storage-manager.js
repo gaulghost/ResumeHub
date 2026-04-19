@@ -159,10 +159,11 @@ export class StorageManager {
   // Settings methods (sync storage)
   static async getSettings() {
     try {
-      const data = await this.get(['theme', 'extractionMethod'], 'sync');
+      const data = await this.get(['theme', 'extractionMethod', 'sidebarEnabled'], 'sync');
       return {
         theme: data.theme || 'light',
-        extractionMethod: data.extractionMethod || 'standard'
+        extractionMethod: data.extractionMethod || 'standard',
+        sidebarEnabled: data.sidebarEnabled !== false // default to true
       };
     } catch (error) {
       console.error('Error getting settings from storage:', error);

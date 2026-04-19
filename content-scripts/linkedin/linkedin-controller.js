@@ -164,6 +164,17 @@ class LinkedInController {
                 )
             );
             isSidebarEnabled = window.AppConfig?.isFeatureEnabled?.('linkedIn.rightSidebar') ?? true;
+            
+            // Check user preferences in chrome storage
+            try {
+                const storageResult = await new Promise(resolve => chrome.storage.sync.get(['sidebarEnabled'], resolve));
+                if (storageResult && storageResult.sidebarEnabled !== undefined) {
+                    isSidebarEnabled = isSidebarEnabled && storageResult.sidebarEnabled;
+                }
+            } catch (storageErr) {
+                console.warn("[ResumeHub] Failed to read sidebar settings from storage.", storageErr);
+            }
+            
         } catch (e) {
             console.warn("[ResumeHub] AppConfig import failed, defaulting sidebar enabled.", e);
             isSidebarEnabled = true;

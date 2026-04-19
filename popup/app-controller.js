@@ -197,6 +197,11 @@ class AppController {
     const radio = document.querySelector(`input[name="extractionMethod"][value="${extractionMethod}"]`);
     if (radio) radio.checked = true;
 
+    // Update sidebar toggle
+    if (ui.elements.sidebarToggle) {
+      ui.elements.sidebarToggle.checked = state.getSidebarEnabled() !== false;
+    }
+
     // Update download buttons based on generated resume
     const hasGeneratedResume = state.hasGeneratedResume();
     ui.toggleDownloadButtons(hasGeneratedResume);

@@ -267,6 +267,22 @@ class EventHandlers {
       });
     }
 
+    // Sidebar toggle event
+    if (this.elements.sidebarToggle) {
+      this.elements.sidebarToggle.addEventListener('change', async (event) => {
+        const isEnabled = event.target.checked;
+        console.log('Sidebar toggle clicked, new state:', isEnabled);
+        await this.stateManager.setSidebarEnabled(isEnabled);
+      });
+    }
+
+    // Sidebar state subscription
+    this.stateManager.subscribe('sidebarEnabled', (isEnabled) => {
+      if (this.elements.sidebarToggle) {
+        this.elements.sidebarToggle.checked = isEnabled !== false; // Default to true
+      }
+    });
+
     // Generated resume state changes
     this.stateManager.subscribe('currentGeneratedResumeJSON', (resumeJSON) => {
       this.uiManager.toggleDownloadButtons(!!resumeJSON);
