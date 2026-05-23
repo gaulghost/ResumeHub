@@ -31,6 +31,14 @@
         {
             "matches": ["https://*.linkedin.com/jobs/**"],
             "js": ["content-scripts/linkedin/linkedin-controller.js"]
+        },
+        {
+            "matches": ["https://*.naukri.com/*"],
+            "js": ["content-scripts/naukri/naukri-controller.js"]
+        },
+        {
+            "matches": ["https://*.instahyre.com/*"],
+            "js": ["content-scripts/instahyre/instahyre-controller.js"]
         }
     ],
     "web_accessible_resources": [
@@ -44,15 +52,42 @@
                 "lib/vfs_fonts.js",
                 "utils/pdf-generator.js",
                 "utils/docx-generator.js",
+                "core/config/app-config.js"
+            ],
+            "matches": [
+                "https://*.linkedin.com/*",
+                "https://*.naukri.com/*",
+                "https://*.instahyre.com/*"
+            ]
+        },
+        {
+            "resources": [
                 "content-scripts/linkedin/pages/job-search-handler.js",
                 "content-scripts/linkedin/pages/job-details-handler.js",
                 "content-scripts/linkedin/components/salary-badge.js",
                 "content-scripts/linkedin/components/right-sidebar.js",
                 "content-scripts/linkedin/components/job-insights-manager.js",
-                "content-scripts/linkedin/config/selectors.js",
-                "core/config/app-config.js"
+                "content-scripts/linkedin/config/selectors.js"
             ],
             "matches": ["https://*.linkedin.com/*"]
+        },
+        {
+            "resources": [
+                "content-scripts/naukri/pages/job-search-handler.js",
+                "content-scripts/naukri/pages/job-details-handler.js",
+                "content-scripts/naukri/components/salary-badge.js",
+                "content-scripts/naukri/config/selectors.js"
+            ],
+            "matches": ["https://*.naukri.com/*"]
+        },
+        {
+            "resources": [
+                "content-scripts/instahyre/pages/job-search-handler.js",
+                "content-scripts/instahyre/pages/job-details-handler.js",
+                "content-scripts/instahyre/components/salary-badge.js",
+                "content-scripts/instahyre/config/selectors.js"
+            ],
+            "matches": ["https://*.instahyre.com/*"]
         }
     ]
 }
