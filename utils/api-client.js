@@ -1,76 +1,212 @@
 // Centralized API client for Google Gemini
 export class GeminiAPIClient {
   constructor(apiKey) {
-    this.apiKey = apiKey;
+    // Accept a single key string, a comma-separated string, or an array
+    if (Array.isArray(apiKey)) {
+      this.apiKeys = apiKey.map(k => String(k).trim()).filter(Boolean);
+    } else if (typeof apiKey === 'string') {
+      this.apiKeys = apiKey.split(',').map(k => k.trim()).filter(Boolean);
+    } else {
+      this.apiKeys = [];
+    }
+
+    // Legacy single-key reference kept for any external code that reads it
+    this.apiKey = this.apiKeys[0] || '';
+
+    this.models = [
+      'gemini-flash-latest',
+      'gemini-3-flash-preview',
+      'gemini-flash-lite-latest'
+    ];
+
+    // Known RPM and RPD limits per model
+    this.limits = {
+      'gemini-flash-latest':    { rpm: 5,  rpd: 20  },
+      'gemini-3-flash-preview': { rpm: 5,  rpd: 20  },
+      'gemini-flash-lite-latest': { rpm: 15, rpd: 500 }
+    };
+
+    // call timestamps per "keyIndex_modelIndex" slot — in-memory only, resets on SW restart
+    this.callHistory = {};  // `${keyIdx}_${modelIdx}` -> [timestamp, ...]
+    // reactive blocks written when a 429/403 arrives from the API
+    this.blockedPairs = {}; // `${keyIdx}_${modelIdx}` -> { rpm?: ts, rpd?: ts }
+
+    // Round-robin cursor (persists between calls within the same SW lifetime)
+    this._cursor = 0; // indexes into the flattened key×model space
+
     this.baseURL = 'https://generativelanguage.googleapis.com/v1beta/models';
-    this.defaultModel = 'gemini-flash-latest';
+    // defaultModel is kept so internal callers using this.defaultModel still work;
+    // _getNextSlot() picks the actual model — this value is effectively ignored at call-time.
+    this.defaultModel = this.models[0];
   }
+
+  // ─── Internal limit helpers ───────────────────────────────────────────────
+
+  _slotKey(ki, mi) { return `${ki}_${mi}`; }
+
+  _isSlotAvailable(ki, mi) {
+    const slot = this._slotKey(ki, mi);
+    const now  = Date.now();
+
+    // Reactive block written on a real 429/403 from the API
+    const block = this.blockedPairs[slot];
+    if (block) {
+      if (block.rpd && now - block.rpd < 24 * 60 * 60 * 1000) return false; // daily exhausted
+      if (block.rpm && now - block.rpm < 60 * 1000)             return false; // per-minute exhausted
+    }
+
+    // Proactive local tracking
+    const model   = this.models[mi];
+    const limit   = this.limits[model];
+    if (!limit) return true;
+
+    const history = this.callHistory[slot] || [];
+    const oneDayAgo    = now - 24 * 60 * 60 * 1000;
+    const oneMinuteAgo = now - 60 * 1000;
+
+    // Prune stale entries
+    const dayHistory = history.filter(t => t > oneDayAgo);
+    this.callHistory[slot] = dayHistory;
+
+    if (dayHistory.length >= limit.rpd)                              return false;
+    if (dayHistory.filter(t => t > oneMinuteAgo).length >= limit.rpm) return false;
+
+    return true;
+  }
+
+  _markBlocked(ki, mi, reason) {
+    const slot = this._slotKey(ki, mi);
+    if (!this.blockedPairs[slot]) this.blockedPairs[slot] = {};
+    this.blockedPairs[slot][reason] = Date.now();
+    const label = reason === 'rpd' ? '24 h (daily quota)' : '1 min (rate limit)';
+    console.warn(`[GeminiAPIClient] key[${ki}] + ${this.models[mi]} blocked for ${label}`);
+  }
+
+  _recordCall(ki, mi) {
+    const slot = this._slotKey(ki, mi);
+    (this.callHistory[slot] = this.callHistory[slot] || []).push(Date.now());
+  }
+
+  // ─── Slot picker ─────────────────────────────────────────────────────────
+
+  /**
+   * Returns the next available {key, model, ki, mi} combination using round-robin,
+   * skipping slots known to be rate-limited.
+   * If ALL slots are blocked, falls through to the next cursor position anyway
+   * (the real 429 will fire and `_markBlocked` will update state for next time).
+   */
+  _getNextSlot() {
+    const nKeys   = this.apiKeys.length || 1;
+    const nModels = this.models.length;
+    const total   = nKeys * nModels;
+
+    for (let i = 0; i < total; i++) {
+      const idx = (this._cursor + i) % total;
+      const ki  = Math.floor(idx / nModels);
+      const mi  = idx % nModels;
+
+      if (this._isSlotAvailable(ki, mi)) {
+        this._cursor = (idx + 1) % total; // advance past the slot we're about to use
+        return {
+          key:   this.apiKeys[ki] || this.apiKey,
+          model: this.models[mi],
+          ki, mi
+        };
+      }
+    }
+
+    // All slots exhausted locally — return current cursor slot and let the API decide
+    const idx = this._cursor % total;
+    const ki  = Math.floor(idx / nModels);
+    const mi  = idx % nModels;
+    this._cursor = (this._cursor + 1) % total;
+    console.warn('[GeminiAPIClient] All key/model combinations appear rate-limited locally; trying anyway.');
+    return {
+      key:   this.apiKeys[ki] || this.apiKey,
+      model: this.models[mi],
+      ki, mi
+    };
+  }
+
+  // ─── Shared fetch error handler ───────────────────────────────────────────
+
+  _handleErrorResponse(status, errorText, ki, mi) {
+    const lower = errorText.toLowerCase();
+    if (status === 429 || status === 403) {
+      // 403 can also mean quota exceeded on free-tier keys
+      const isDailyExhausted =
+        lower.includes('quota')     ||
+        lower.includes('daily')     ||
+        lower.includes('exhausted') ||
+        lower.includes('resource has been exhausted');
+      this._markBlocked(ki, mi, isDailyExhausted ? 'rpd' : 'rpm');
+    }
+  }
+
+  // ─── Public API call methods ──────────────────────────────────────────────
 
   async callAPI(model, prompt, config = {}, operation = 'API call') {
-    // Use simple rate limiter if available
-    const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) || 
-                       (typeof self !== 'undefined' && self.simpleRateLimiter) ||
-                       (typeof global !== 'undefined' && global.simpleRateLimiter);
-                       
-    if (rateLimiter) {
-      return await rateLimiter.queueRequest(
-        () => this._makeAPICall(model, prompt, config),
-        operation
-      );
-    } else {
-      // Fallback to direct call if rate limiter not available
-      return await this._makeAPICall(model, prompt, config);
+    const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) ||
+                        (typeof self   !== 'undefined' && self.simpleRateLimiter)   ||
+                        (typeof global !== 'undefined' && global.simpleRateLimiter);
+
+    const maxAttempts = Math.max(
+      this.apiKeys.length * this.models.length,
+      3
+    );
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const slot = this._getNextSlot();
+
+      try {
+        const call = () => this._makeAPICall(slot.model, slot.key, slot.ki, slot.mi, prompt, config);
+        return rateLimiter
+          ? await rateLimiter.queueRequest(call, operation)
+          : await call();
+      } catch (err) {
+        console.error(`[GeminiAPIClient] ${operation} attempt ${attempt + 1}/${maxAttempts} failed:`, err.message);
+        lastError = err;
+        if (attempt < maxAttempts - 1) await new Promise(r => setTimeout(r, 500));
+      }
     }
+    throw lastError || new Error(`${operation} failed after ${maxAttempts} attempts`);
   }
 
-  async _makeAPICall(model, prompt, config = {}) {
-    // Use default model if not specified or if it's an old model name
-    if (!model || model.includes('gemini-2.5-flash') || model.includes('gemini-1.5-flash')) {
-      model = this.defaultModel;
-    }
-
-    const endpoint = `${this.baseURL}/${model}:generateContent?key=${this.apiKey}`;
+  async _makeAPICall(model, apiKey, ki, mi, prompt, config = {}) {
     const defaultConfig = {
       temperature: 0.3,
       maxOutputTokens: 8192,
-      responseMimeType: "application/json",
-      // Add thinking parameter to disable thinking mode for faster responses on smaller tasks
+      responseMimeType: 'application/json',
       thinking: false
     };
-    
-    const mergedConfig = { ...defaultConfig, ...config };
-    
     const requestBody = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: mergedConfig,
+      generationConfig: { ...defaultConfig, ...config },
       safetySettings: this.getSafetySettings()
     };
 
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+    const response = await fetch(
+      `${this.baseURL}/${model}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) }
+    );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        // If error is due to invalid argument (like 'thinking'), we might need to retry without it.
-        if (response.status === 400 && errorText.includes('thinking')) {
-             console.warn('Thinking parameter not supported, retrying without it.');
-             if (requestBody.generationConfig && requestBody.generationConfig.thinking !== undefined) {
-                 delete requestBody.generationConfig.thinking;
-                 return await this._makeAPICallWithCustomBody(model, requestBody);
-             }
-        }
-        throw new Error(`API request failed: ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      this._handleErrorResponse(response.status, errorText, ki, mi);
+
+      // 'thinking' not supported — retry same slot without it
+      if (response.status === 400 && errorText.includes('thinking') &&
+          requestBody.generationConfig.thinking !== undefined) {
+        delete requestBody.generationConfig.thinking;
+        return this._makeAPICallWithCustomBody(model, apiKey, ki, mi, requestBody);
       }
-
-      const responseData = await response.json();
-      return responseData;
-    } catch (error) {
-      throw error;
+      throw new Error(`API error ${response.status}: ${errorText}`);
     }
+
+    const data = await response.json();
+    this._recordCall(ki, mi);
+    return data;
   }
 
   // Specialized method for resume parsing
@@ -457,56 +593,58 @@ Value:`;
     return null;
   }
 
-  // Helper method for custom request body
+  // Helper method for custom request body (used for resume parsing with file data, etc.)
   async callAPIWithCustomBody(model, requestBody, operation = 'API call') {
-    // Use simple rate limiter if available
-    const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) || 
-                       (typeof self !== 'undefined' && self.simpleRateLimiter) ||
-                       (typeof global !== 'undefined' && global.simpleRateLimiter);
-                       
-    if (rateLimiter) {
-      return await rateLimiter.queueRequest(
-        () => this._makeAPICallWithCustomBody(model, requestBody),
-        operation
-      );
-    } else {
-      // Fallback to direct call if rate limiter not available
-      return await this._makeAPICallWithCustomBody(model, requestBody);
+    const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) ||
+                        (typeof self   !== 'undefined' && self.simpleRateLimiter)   ||
+                        (typeof global !== 'undefined' && global.simpleRateLimiter);
+
+    const maxAttempts = Math.max(
+      this.apiKeys.length * this.models.length,
+      3
+    );
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const slot = this._getNextSlot();
+
+      try {
+        const call = () => this._makeAPICallWithCustomBody(slot.model, slot.key, slot.ki, slot.mi, requestBody);
+        return rateLimiter
+          ? await rateLimiter.queueRequest(call, operation)
+          : await call();
+      } catch (err) {
+        console.error(`[GeminiAPIClient] ${operation} attempt ${attempt + 1}/${maxAttempts} failed:`, err.message);
+        lastError = err;
+        if (attempt < maxAttempts - 1) await new Promise(r => setTimeout(r, 500));
+      }
     }
+    throw lastError || new Error(`${operation} failed after ${maxAttempts} attempts`);
   }
 
-  async _makeAPICallWithCustomBody(model, requestBody) {
-    // Use default model if not specified or if it's an old model name
-    if (!model || model.includes('gemini-2.5-flash') || model.includes('gemini-1.5-flash')) {
-      model = this.defaultModel;
-    }
+  async _makeAPICallWithCustomBody(model, apiKey, ki, mi, requestBody) {
+    const response = await fetch(
+      `${this.baseURL}/${model}:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) }
+    );
 
-    const endpoint = `${this.baseURL}/${model}:generateContent?key=${this.apiKey}`;
-    
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+    if (!response.ok) {
+      const errorText = await response.text();
+      this._handleErrorResponse(response.status, errorText, ki, mi);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        // If error is due to invalid argument (like 'thinking'), we might need to retry without it.
-        if (response.status === 400 && errorText.includes('thinking')) {
-             console.warn('Thinking parameter not supported, retrying without it.');
-             if (requestBody.generationConfig && requestBody.generationConfig.thinking !== undefined) {
-                 delete requestBody.generationConfig.thinking;
-                 return await this._makeAPICallWithCustomBody(model, requestBody);
-             }
-        }
-        throw new Error(`API request failed: ${response.status}`);
+      // 'thinking' not supported — retry same slot without it
+      if (response.status === 400 && errorText.includes('thinking') &&
+          requestBody.generationConfig?.thinking !== undefined) {
+        delete requestBody.generationConfig.thinking;
+        return this._makeAPICallWithCustomBody(model, apiKey, ki, mi, requestBody);
       }
-
-      return await response.json();
-    } catch (error) {
-      throw error;
+      throw new Error(`API error ${response.status}: ${errorText}`);
     }
+
+    const data = await response.json();
+    this._recordCall(ki, mi);
+    return data;
+
   }
 
   // Helper method to create compact resume data for field mapping

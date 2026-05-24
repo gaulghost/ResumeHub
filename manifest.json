@@ -1,11 +1,15 @@
 {
     "manifest_version": 3,
     "name": "ResumeHub AI – Smart Resume & Job Form Assistant",
-    "version": "1.6",
+    "version": "1.7",
     "description": "AI-powered resume tailoring and job form auto-filling based on job descriptions with real-time customization.",
     "author": "Pradhuman Singh",
     "homepage_url": "https://github.com/gaulghost",
-    "permissions": ["activeTab", "scripting", "storage"],
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "storage"
+    ],
     "host_permissions": [
         "https://*.linkedin.com/*",
         "https://generativelanguage.googleapis.com/*"
@@ -29,16 +33,28 @@
     },
     "content_scripts": [
         {
-            "matches": ["https://*.linkedin.com/jobs/**"],
-            "js": ["content-scripts/linkedin/linkedin-controller.js"]
+            "matches": [
+                "https://*.linkedin.com/jobs/**"
+            ],
+            "js": [
+                "content-scripts/linkedin/linkedin-controller.js"
+            ]
         },
         {
-            "matches": ["https://*.naukri.com/*"],
-            "js": ["content-scripts/naukri/naukri-controller.js"]
+            "matches": [
+                "https://*.naukri.com/*"
+            ],
+            "js": [
+                "content-scripts/naukri/naukri-controller.js"
+            ]
         },
         {
-            "matches": ["https://*.instahyre.com/*"],
-            "js": ["content-scripts/instahyre/instahyre-controller.js"]
+            "matches": [
+                "https://*.instahyre.com/*"
+            ],
+            "js": [
+                "content-scripts/instahyre/instahyre-controller.js"
+            ]
         }
     ],
     "web_accessible_resources": [
@@ -69,7 +85,9 @@
                 "content-scripts/linkedin/components/job-insights-manager.js",
                 "content-scripts/linkedin/config/selectors.js"
             ],
-            "matches": ["https://*.linkedin.com/*"]
+            "matches": [
+                "https://*.linkedin.com/*"
+            ]
         },
         {
             "resources": [
@@ -78,7 +96,9 @@
                 "content-scripts/naukri/components/salary-badge.js",
                 "content-scripts/naukri/config/selectors.js"
             ],
-            "matches": ["https://*.naukri.com/*"]
+            "matches": [
+                "https://*.naukri.com/*"
+            ]
         },
         {
             "resources": [
@@ -87,7 +107,9 @@
                 "content-scripts/instahyre/components/salary-badge.js",
                 "content-scripts/instahyre/config/selectors.js"
             ],
-            "matches": ["https://*.instahyre.com/*"]
+            "matches": [
+                "https://*.instahyre.com/*"
+            ]
         }
     ]
 }
