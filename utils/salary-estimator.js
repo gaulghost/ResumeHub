@@ -10,7 +10,7 @@ export class SalaryEstimator {
         this.apiClient = apiClient;
         this.rateLimiter = rateLimiter;
         this.sessionCache = new Map(); // Simple in-memory cache for the session
-        this.cacheKey = 'salaryCacheV3';
+        this.cacheKey = 'salaryCacheV4';
         this.cacheDuration = 24 * 60 * 60 * 1000; // 24 hours
         this.isContentScript = !apiClient && !rateLimiter; // Detect if running in content script
         
@@ -51,8 +51,19 @@ export class SalaryEstimator {
                 try {
                     let estimates;
                     if (this.isContentScript) {
-                        // Content script must ask background to estimate
+                        // Content script delegates to background which returns already-processed results.
+                        // Background's batchEstimate already validates, caches, and formats everything —
+                        // we must NOT re-validate here, just pass the results through.
                         estimates = await this._batchAIEstimateViaMessage(chunk);
+                        for (const job of chunk) {
+                            const est = estimates[job.jobUrl];
+                            if (est) {
+                                results[job.jobUrl] = { ...est, jobUrl: job.jobUrl };
+                            } else {
+                                results[job.jobUrl] = { error: 'No data' };
+                            }
+                        }
+                        continue; // skip the else branch below
                     } else {
                         // Background can call API directly in batch
                         estimates = await this._batchAIEstimate(chunk);
@@ -60,7 +71,7 @@ export class SalaryEstimator {
 
                     for (const job of chunk) {
                         const est = estimates[job.jobUrl];
-                        if (est && !est.error) {
+                        if (est && !est.error && est.totalCompensation && est.totalCompensation !== 'N/A') {
                             results[job.jobUrl] = { ...est, jobUrl: job.jobUrl, location: job.location };
                             await this._cacheResult(job, est);
                         } else if (est && (est.error === 'API_KEY_MISSING' || est.error === 'No Api Key')) {
@@ -70,10 +81,19 @@ export class SalaryEstimator {
                         }
                     }
                 } catch (chunkErr) {
+                    const errorMsg = chunkErr.message || '';
                     // If the error is due to missing API key, mark entire chunk accordingly
-                    if (chunkErr.message === 'API_KEY_MISSING' || chunkErr.message === 'No Api Key' || !this.apiClient) {
+                    if (errorMsg.includes('API_KEY_MISSING') || errorMsg.includes('No Api Key') || (!this.isContentScript && !this.apiClient)) {
                         for (const job of chunk) {
                             results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                        }
+                        continue;
+                    }
+                    
+                    // If the error is due to a backend service/server error, map it to Server Error
+                    if (errorMsg.includes('BACKEND_SERVICE_ERROR') || errorMsg.includes('502') || errorMsg.includes('500')) {
+                        for (const job of chunk) {
+                            results[job.jobUrl] = { error: 'Server Error', retry: true };
                         }
                         continue;
                     }
@@ -89,17 +109,22 @@ export class SalaryEstimator {
                                 singleEst = await this.estimate(job.jobTitle, job.location, job.companyName, job.jobUrl);
                             }
 
-                            if (singleEst && !singleEst.error) {
+                            if (singleEst && !singleEst.error && singleEst.totalCompensation && singleEst.totalCompensation !== 'N/A') {
                                 results[job.jobUrl] = { ...singleEst, jobUrl: job.jobUrl, location: job.location };
                                 await this._cacheResult(job, singleEst);
                             } else if (singleEst && (singleEst.error === 'API_KEY_MISSING' || singleEst.error === 'No Api Key')) {
                                 results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                            } else if (singleEst && (singleEst.error === 'Server Error' || (typeof singleEst.error === 'string' && singleEst.error.includes('BACKEND_SERVICE_ERROR')))) {
+                                results[job.jobUrl] = { error: 'Server Error', retry: true };
                             } else {
                                 results[job.jobUrl] = { error: 'No data' };
                             }
                         } catch (singleErr) {
-                            if (singleErr.message === 'API_KEY_MISSING' || singleErr.message === 'No Api Key' || !this.apiClient) {
+                            const singleMsg = singleErr.message || '';
+                            if (singleMsg.includes('API_KEY_MISSING') || singleMsg.includes('No Api Key') || (!this.isContentScript && !this.apiClient)) {
                                 results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                            } else if (singleMsg.includes('BACKEND_SERVICE_ERROR') || singleMsg.includes('502') || singleMsg.includes('500')) {
+                                results[job.jobUrl] = { error: 'Server Error', retry: true };
                             } else {
                                 results[job.jobUrl] = { error: 'No data' };
                             }
@@ -122,7 +147,7 @@ export class SalaryEstimator {
      * @returns {Object} - Salary data or an error object.
      */
     async estimate(jobTitle, location, companyName, jobUrl, jobDescription = '') {
-        return UnifiedErrorHandler.safeAPICall(async () => {
+        try {
             if (!this.apiClient) {
                 console.warn('[ResumeHub BG] API client not available for salary estimation – API key missing.');
                 return { error: 'API_KEY_MISSING', retry: true };
@@ -131,11 +156,11 @@ export class SalaryEstimator {
             let salary;
             if (this.rateLimiter) {
                 salary = await this.rateLimiter.queueRequest(
-                    () => this.apiClient.estimateSalary(jobTitle, location, companyName, jobDescription),
+                    () => this.apiClient.estimateSalary(jobTitle, location, companyName, jobUrl, jobDescription),
                     `salary estimation for ${jobTitle}`
                 );
             } else {
-                salary = await this.apiClient.estimateSalary(jobTitle, location, companyName, jobDescription);
+                salary = await this.apiClient.estimateSalary(jobTitle, location, companyName, jobUrl, jobDescription);
             }
             
             // Map API response fields to UI expected format
@@ -149,8 +174,24 @@ export class SalaryEstimator {
                 source: 'api',
                 debug: salary.debug // Pass debug info
             };
-
-        }, `salary estimation for ${jobTitle}`, { fallback: () => ({ error: 'API_KEY_MISSING', retry: true }) });
+        } catch (error) {
+            if (error.message === 'API_KEY_MISSING') {
+                return { error: 'API_KEY_MISSING', retry: true };
+            }
+            // Log clean error message
+            const cleanMessage = UnifiedErrorHandler.createCleanErrorMessage(error);
+            console.error(cleanMessage);
+            
+            // Create user-friendly error
+            const userFriendlyError = UnifiedErrorHandler.getUserFriendlyError(error, { operation: `salary estimation for ${jobTitle}` });
+            
+            // Throw structured error
+            throw UnifiedErrorHandler.createError(userFriendlyError.message, 'API_ERROR', { 
+                operation: `salary estimation for ${jobTitle}`,
+                errorType: userFriendlyError.errorType,
+                originalError: error.message
+            });
+        }
     }
 
     /**
@@ -221,15 +262,21 @@ export class SalaryEstimator {
             // Transform AI response to our format
             const results = {};
             for (const jobResult of response.results || []) {
-                results[jobResult.jobUrl] = {
-                    totalCompensation: jobResult.totalCompensation,
-                    base: jobResult.baseSalary,
-                    bonus: jobResult.bonus,
-                    stock: jobResult.stockOptions,
-                    confidence: jobResult.confidence,
-                    currency: jobResult.currency || '₹',
-                    source: 'ai'
-                };
+                if (jobResult.error) {
+                    results[jobResult.jobUrl] = {
+                        error: jobResult.error
+                    };
+                } else {
+                    results[jobResult.jobUrl] = {
+                        totalCompensation: jobResult.totalCompensation,
+                        base: jobResult.baseSalary,
+                        bonus: jobResult.bonus,
+                        stock: jobResult.stockOptions,
+                        confidence: jobResult.confidence,
+                        currency: jobResult.currency || '₹',
+                        source: 'ai'
+                    };
+                }
             }
             
             return results;
@@ -400,11 +447,14 @@ export class SalaryEstimator {
     }
 
     /**
-     * Parses a range string like "25L-30L" or "120k-150k" into numeric min/max rupees
+     * Parses a range string like "25L-30L", "₹32L-₹48L", "$120k-$150k" into numeric min/max.
+     * Strips currency symbols and whitespace before matching.
      */
     _parseRange(rangeStr) {
         if (!rangeStr) return null;
-        const match = rangeStr.replace(/[,\s]/g, '').match(/([\d\.]+)([kKlL]?)-([\d\.]+)([kKlL]?)/);
+        // Strip currency symbols (₹, $, €, £, ¥), commas, and spaces before parsing
+        const cleaned = rangeStr.replace(/[₹$€£¥,\s]/g, '');
+        const match = cleaned.match(/([\d\.]+)([kKlL]?)-([\d\.]+)([kKlL]?)/);
         if (!match) return null;
         const unit = match[2] || match[4] || '';
         const multiplier = unit.toLowerCase() === 'k' ? 1000 : (unit.toLowerCase() === 'l' ? 100000 : 1);

@@ -686,31 +686,33 @@ ResumeHub-v1/
    ↓
    Try standard parsing first
 
-2. IF NOT FOUND
+2. CLIENT CACHE CHECK
    ↓
-   Use AI to extract from job description
+   Check session cache & persistent storage (Chrome storage)
    ↓
-   GeminiAPIClient.estimateSalary()
+   If cached, display immediately
 
-3. APPLY MARKET DATA
+3. BACKEND ESTIMATION REQUEST
    ↓
-   SalaryService adjusts based on:
-   ├─ Job title
-   ├─ Location
-   ├─ Company
-   └─ Experience level
+   Call self-hosted endpoint: https://resumehub.duckdns.org/api/salary-estimate
+   ├─ Checks server-side SQLite cache first
+   └─ For cache misses, requests estimate from server-side LLM chain (Groq / Gemini)
 
-4. CACHE RESULT
+4. CLIENT-SIDE FALLBACK (IF BACKEND FAILS / KEY MISSING)
    ↓
-   Store with 24h TTL
-   ↓
-   Reuse for similar jobs
+   If backend request fails or returns an error:
+   └─ GeminiAPIClient.estimateSalary() (direct client-side fallback using local Gemini Key)
 
-5. DISPLAY BADGE
+5. SERVER CACHE REPORTING (ON SUCCESSFUL FALLBACK)
    ↓
-   SalaryBadge injects into page
+   Asynchronously report client-side successful estimates to server cache:
+   └─ POST https://resumehub.duckdns.org/api/salary-estimate/report
+
+6. CACHE & DISPLAY BADGE
    ↓
-   Show estimated range with currency
+   Cache result locally (24h TTL) and inject SalaryBadge
+   ↓
+   Show estimated range with local currency
 ```
 
 ---
@@ -778,7 +780,13 @@ export const JOB_DESCRIPTION_SELECTORS = [
 
 ### API Configuration
 
-#### Gemini API Setup
+#### Self-Hosted Backend API Setup
+No API key is required from the user to use the default backend-enabled services (such as salary estimation), as the extension connects to the self-hosted backend server:
+- Backend URL: `https://resumehub.duckdns.org/api/salary-estimate`
+- Cache Reporting: `https://resumehub.duckdns.org/api/salary-estimate/report`
+
+#### Direct Gemini API Setup (Local Fallback & Summaries)
+To use local summaries or as a fallback when the backend is unreachable:
 
 1. **Get API Key**:
    ```
@@ -789,12 +797,13 @@ export const JOB_DESCRIPTION_SELECTORS = [
 
 2. **Store API Key**:
    ```javascript
-   // In popup or settings
+   // Saved in Extension popup Settings or Sidebar Config
    await StorageManager.setAPIToken(apiKey);
    ```
 
 3. **Use in Background Worker**:
    ```javascript
+   // Lazily initialized in background.js
    const apiClient = new GeminiAPIClient(apiKey);
    const response = await apiClient.tailorResume(resume, jobDescription);
    ```

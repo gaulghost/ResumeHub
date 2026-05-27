@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "ResumeHub AI – Smart Resume & Job Form Assistant",
-    "version": "1.7",
+    "version": "1.8",
     "description": "AI-powered resume tailoring and job form auto-filling based on job descriptions with real-time customization.",
     "author": "Pradhuman Singh",
     "homepage_url": "https://github.com/gaulghost",
@@ -12,7 +12,8 @@
     ],
     "host_permissions": [
         "https://*.linkedin.com/*",
-        "https://generativelanguage.googleapis.com/*"
+        "https://generativelanguage.googleapis.com/*",
+        "https://resumehub.duckdns.org/*"
     ],
     "action": {
         "default_popup": "popup.html",

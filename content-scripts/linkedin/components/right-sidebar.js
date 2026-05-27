@@ -1287,10 +1287,10 @@ export class ResumeHubSidebar {
           </div>
 
           <div class="rh-section rh-collapsible collapsed" id="rh-api">
-            <h4 class="rh-collapsible-header" id="rh-api-header">🔑 API Configuration <span class="rh-chevron">▼</span></h4>
+            <h4 class="rh-collapsible-header" id="rh-api-header">🔑 Self-Hosted API Config <span class="rh-chevron">▼</span></h4>
             <div class="rh-collapsible-content" id="rh-api-content">
               <div class="rh-row">
-                <input type="password" id="rh-api-input" placeholder="Enter your Gemini API key" />
+                <input type="password" id="rh-api-input" placeholder="Self-Hosted Gemini API Key" />
                 <button class="rh-btn secondary icon-btn" id="rh-api-show" title="Show/Hide">👁</button>
               </div>
               <div class="rh-actions">
@@ -1653,7 +1653,7 @@ export class ResumeHubSidebar {
       const token = resp && resp.token;
       statusEl.textContent = token ? 'Key: Set' : 'Key: Not Set';
       inputEl.value = '';
-      inputEl.placeholder = token ? '********' : 'Google Gemini API Key';
+      inputEl.placeholder = token ? '********' : 'Self-Hosted Gemini API Key';
     });
 
     // Show/hide password - fixed functionality
@@ -1675,7 +1675,7 @@ export class ResumeHubSidebar {
         showBtn.title = 'Show key';
         chrome.runtime.sendMessage({ action: 'getAPIToken' }, (resp) => {
           const token = resp && resp.token;
-          inputEl.placeholder = token ? '********' : 'Google Gemini API Key';
+          inputEl.placeholder = token ? '********' : 'Self-Hosted Gemini API Key';
         });
       }
     });
@@ -1687,7 +1687,7 @@ export class ResumeHubSidebar {
         if (resp && resp.success) {
           statusEl.textContent = clean ? 'Key: Set' : 'Key: Not Set';
           inputEl.value = '';
-          inputEl.placeholder = clean ? '********' : 'Google Gemini API Key';
+          inputEl.placeholder = clean ? '********' : 'Self-Hosted Gemini API Key';
         } else {
           statusEl.textContent = 'Error saving key';
         }
@@ -1706,7 +1706,7 @@ export class ResumeHubSidebar {
       chrome.runtime.sendMessage({ action: 'clearAPIToken' }, (resp) => {
         statusEl.textContent = 'Key: Not Set';
         inputEl.value = '';
-        inputEl.placeholder = 'Google Gemini API Key';
+        inputEl.placeholder = 'Self-Hosted Gemini API Key';
       });
     });
 

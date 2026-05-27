@@ -147,7 +147,11 @@ export class JobSearchHandler {
         const jobsNeedingEstimation = [];
         for (const card of jobCards) {
             const jobData = this.extractJobData(card);
-            if (!jobData || !jobData.jobUrl) continue;
+            if (!jobData || !jobData.jobUrl) {
+                console.warn('[ResumeHub][Instahyre] extractJobData returned null/no jobUrl for card:', card?.className || card);
+                continue;
+            }
+
 
             const jobId = this._normalizeJobUrl(jobData.jobUrl);
             if (this.processedJobIds.has(jobId)) continue;
@@ -165,7 +169,12 @@ export class JobSearchHandler {
             jobsNeedingEstimation.push(jobData);
         }
 
-        if (jobsNeedingEstimation.length === 0) return;
+        if (jobsNeedingEstimation.length === 0) {
+            console.warn('[ResumeHub][Instahyre] No jobs to estimate — all cards had N/A data or were already processed.');
+            return;
+        }
+
+        console.log('[ResumeHub][Instahyre] Sending to backend:', jobsNeedingEstimation.map(j => `${j.companyName} / ${j.jobTitle}`));
 
         try {
             const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);

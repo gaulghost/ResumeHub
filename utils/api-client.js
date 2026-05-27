@@ -146,6 +146,10 @@ export class GeminiAPIClient {
   // ─── Public API call methods ──────────────────────────────────────────────
 
   async callAPI(model, prompt, config = {}, operation = 'API call') {
+    if (!this.apiKeys || this.apiKeys.length === 0) {
+      throw new Error('API_KEY_MISSING');
+    }
+
     const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) ||
                         (typeof self   !== 'undefined' && self.simpleRateLimiter)   ||
                         (typeof global !== 'undefined' && global.simpleRateLimiter);
@@ -380,7 +384,38 @@ ${JSON.stringify(originalSectionData, null, 2)}
    * @param {string} [jobDescription] - Optional full job description
    * @returns {Promise<object>} - A promise that resolves to an object like {min: string, max: string, currency: string}
    */
-  async estimateSalary(jobTitle, location, companyName, jobDescription = '') {
+  async estimateSalary(jobTitle, location, companyName, jobUrl = '', jobDescription = '') {
+    // 1. Attempt backend estimation first (by calling batchEstimateSalary with 1 job)
+    const batchRequest = {
+      jobs: [{
+        position: jobTitle,
+        company: companyName,
+        location: location,
+        jobUrl: jobUrl
+      }]
+    };
+    
+    try {
+      const batchResult = await this.batchEstimateSalary(batchRequest);
+      if (batchResult && batchResult.results && batchResult.results.length > 0) {
+        const jobResult = batchResult.results[0];
+        // If there was no error, return the successful result mapped to estimate's format
+        if (jobResult && !jobResult.error) {
+          return {
+            totalCompensation: jobResult.totalCompensation,
+            baseSalary: jobResult.baseSalary,
+            bonus: jobResult.bonus,
+            stockOptions: jobResult.stockOptions,
+            confidence: jobResult.confidence,
+            currency: jobResult.currency
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[ResumeHub API] Single backend estimate failed, falling back to direct:', e);
+    }
+
+    // 2. Direct client-side AI fallback (original logic)
     const prompt = `**Instruction:**
 Analyze the provided job title, location, company name${jobDescription ? ', and job description' : ''} to estimate the annual salary range.
 
@@ -435,8 +470,6 @@ ${jobDescription ? `- **Job Description:**\n\`\`\`\n${jobDescription}\n\`\`\`` :
 
 **--- Estimated Salary JSON Output ---**`;
 
-    console.log('[ResumeHub API] Salary Estimation Prompt:', prompt);
-    console.log('[ResumeHub API] Location:', location);
 
     const response = await this.callAPI(this.defaultModel, prompt, {
       temperature: 0.3,
@@ -463,14 +496,48 @@ ${jobDescription ? `- **Job Description:**\n\`\`\`\n${jobDescription}\n\`\`\`` :
     }
   }
 
-  /**
-   * Estimates salaries for multiple jobs in a single batch request.
-   * @param {object} batchRequest - Contains jobs array and format specification
-   * @returns {Promise<object>} - A promise that resolves to batch results
-   */
   async batchEstimateSalary(batchRequest) {
-    const { jobs, format } = batchRequest;
+    const { jobs } = batchRequest;
     
+    let backendFailed = false;
+    let backendErrorDetail = '';
+    try {
+      const backendURL = 'https://resumehub.duckdns.org/api/salary-estimate';
+      const response = await fetch(backendURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobs: jobs.map(j => ({
+          position: j.position,
+          company: j.company,
+          location: j.location,
+          jobUrl: j.jobUrl
+        })) })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.results) {
+          return data;
+        }
+      } else {
+        backendFailed = true;
+        backendErrorDetail = `HTTP ${response.status}`;
+        console.warn('[ResumeHub API] Backend returned status:', response.status, '- falling back to direct client-side AI');
+      }
+    } catch (e) {
+      backendFailed = true;
+      backendErrorDetail = e.message || 'Fetch error';
+      console.warn('[ResumeHub API] Backend request failed - falling back to direct client-side AI:', e);
+    }
+
+    // 2. Direct client-side AI fallback (original logic)
+    if (!this.apiKeys || this.apiKeys.length === 0) {
+      if (backendFailed) {
+        throw new Error(`BACKEND_SERVICE_ERROR: Self-hosted server returned error (${backendErrorDetail}) and no local Gemini API key is configured.`);
+      } else {
+        throw new Error('API_KEY_MISSING');
+      }
+    }
     const jobsText = jobs.map((job, index) => 
       `${index + 1}. Position: ${job.position}
    Company: ${job.company}
@@ -536,7 +603,42 @@ ${jobsText}
     if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
       const jsonText = response.candidates[0].content.parts[0].text;
       try {
-        return JSON.parse(jsonText);
+        const parsed = JSON.parse(jsonText);
+        
+        // Asynchronously report successful client-side estimates to the backend server to cache them
+        if (parsed && parsed.results && parsed.results.length > 0) {
+          const reportURL = 'https://resumehub.duckdns.org/api/salary-estimate/report';
+          const reports = parsed.results.map(res => {
+            const matchedJob = jobs.find(j => j.jobUrl === res.jobUrl);
+            return {
+              position: matchedJob ? matchedJob.position : '',
+              company: matchedJob ? matchedJob.company : '',
+              location: matchedJob ? matchedJob.location : '',
+              totalCompensation: res.totalCompensation,
+              baseSalary: res.baseSalary,
+              bonus: res.bonus,
+              stockOptions: res.stockOptions,
+              confidence: res.confidence,
+              currency: res.currency
+            };
+          }).filter(r => r.position && r.company);
+
+          if (reports.length > 0) {
+            fetch(reportURL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reports })
+            }).then(resp => {
+              if (resp.ok) {
+                console.log('[ResumeHub API] Reported client-side estimates to server cache successfully');
+              }
+            }).catch(reportErr => {
+              console.warn('[ResumeHub API] Failed to report client-side estimates to server cache:', reportErr);
+            });
+          }
+        }
+
+        return parsed;
       } catch (parseError) {
         console.error('Failed to parse JSON response for batch salary estimation:', parseError);
         throw new Error('Failed to parse batch salary estimation JSON response');
@@ -595,6 +697,10 @@ Value:`;
 
   // Helper method for custom request body (used for resume parsing with file data, etc.)
   async callAPIWithCustomBody(model, requestBody, operation = 'API call') {
+    if (!this.apiKeys || this.apiKeys.length === 0) {
+      throw new Error('API_KEY_MISSING');
+    }
+
     const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) ||
                         (typeof self   !== 'undefined' && self.simpleRateLimiter)   ||
                         (typeof global !== 'undefined' && global.simpleRateLimiter);

@@ -4,6 +4,7 @@ class NaukriController {
         this.JobSearchHandler = JobSearchHandler;
         this.JobDetailsHandler = JobDetailsHandler;
         this.pageHandler = null;
+        this.currentPageType = null;
         this.currentUrl = window.location.href; 
         this.mutationObserver = null;
         this.initializationTimeout = null;
@@ -36,12 +37,25 @@ class NaukriController {
     initialize() {
         console.log('[ResumeHub] Naukri Controller initializing at URL:', this.currentUrl);
 
+        let newPageType = null;
+        if (this.currentUrl.includes('/job-listings')) {
+            newPageType = 'details';
+        } else {
+            newPageType = 'search';
+        }
+
+        if (this.currentPageType === newPageType && this.pageHandler) {
+            console.log(`[ResumeHub] Page type remained ${newPageType}, skipping page handler re-creation.`);
+            return;
+        }
+
+        this.currentPageType = newPageType;
+
         if (this.pageHandler && typeof this.pageHandler.destroy === 'function') {
             this.pageHandler.destroy();
         }
 
-        // Detect Naukri page type
-        if (this.currentUrl.includes('/job-listings')) {
+        if (newPageType === 'details') {
             console.log('[ResumeHub] Naukri Job Details Page detected.');
             this.pageHandler = new this.JobDetailsHandler(this.salaryEstimator);
         } else {

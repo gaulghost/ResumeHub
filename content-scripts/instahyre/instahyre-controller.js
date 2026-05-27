@@ -4,6 +4,7 @@ class InstahyreController {
         this.JobSearchHandler = JobSearchHandler;
         this.JobDetailsHandler = JobDetailsHandler;
         this.pageHandler = null;
+        this.currentPageType = null;
         this.currentUrl = window.location.href; 
         this.mutationObserver = null;
         this.initializationTimeout = null;
@@ -61,12 +62,25 @@ class InstahyreController {
     initialize() {
         console.log('[ResumeHub] Instahyre Controller initializing at URL:', this.currentUrl);
 
+        let newPageType = null;
+        if (this.isJobDetailsPage(this.currentUrl)) {
+            newPageType = 'details';
+        } else {
+            newPageType = 'search';
+        }
+
+        if (this.currentPageType === newPageType && this.pageHandler) {
+            console.log(`[ResumeHub] Page type remained ${newPageType}, skipping page handler re-creation.`);
+            return;
+        }
+
+        this.currentPageType = newPageType;
+
         if (this.pageHandler && typeof this.pageHandler.destroy === 'function') {
             this.pageHandler.destroy();
         }
 
-        // Detect Instahyre page type
-        if (this.isJobDetailsPage(this.currentUrl)) {
+        if (newPageType === 'details') {
             console.log('[ResumeHub] Instahyre Job Details Page detected.');
             this.pageHandler = new this.JobDetailsHandler(this.salaryEstimator);
         } else {

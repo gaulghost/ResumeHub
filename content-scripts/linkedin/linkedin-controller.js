@@ -13,6 +13,7 @@ class LinkedInController {
         this.JobDetailsHandler = JobDetailsHandler;
         this.sidebar = sidebar || null;
         this.pageHandler = null;
+        this.currentPageType = null;
         this.currentUrl = window.location.href; 
         this.mutationObserver = null;
         this.initializationTimeout = null;
@@ -57,16 +58,29 @@ class LinkedInController {
     initialize() {
         console.log('[ResumeHub] LinkedIn Controller initializing at URL:', this.currentUrl);
 
+        let newPageType = null;
+        if (this.currentUrl.includes('/jobs/view/')) {
+            newPageType = 'details';
+        } else if (this.currentUrl.includes('/jobs/')) {
+            newPageType = 'search';
+        }
+
+        if (this.currentPageType === newPageType && this.pageHandler) {
+            console.log(`[ResumeHub] Page type remained ${newPageType}, skipping page handler re-creation.`);
+            return;
+        }
+
+        this.currentPageType = newPageType;
+
         // Clean up any existing handler
         if (this.pageHandler && typeof this.pageHandler.destroy === 'function') {
             this.pageHandler.destroy();
         }
 
-        // Simple URL-based detection
-        if (this.currentUrl.includes('/jobs/view/')) {
+        if (newPageType === 'details') {
             console.log('[ResumeHub] Job Details Page detected.');
             this.pageHandler = new this.JobDetailsHandler(this.salaryEstimator);
-        } else if (this.currentUrl.includes('/jobs/')) {
+        } else if (newPageType === 'search') {
             console.log('[ResumeHub] Job Search/List Page detected.');
             this.pageHandler = new this.JobSearchHandler(this.salaryEstimator);
         } else {

@@ -169,13 +169,14 @@ This document provides a detailed breakdown of the file structure, including fun
 ## Infrastructure Layer (`utils/`)
 
 ### `utils/api-client.js`
-**Description**: Client for interacting with the Google Gemini API.
+**Description**: Client for interacting with the Google Gemini API (client-side fallback) and the self-hosted backend API.
 **Functions**:
-- `constructor(apiKey)`: Initializes with API key.
+- `constructor(apiKey)`: Initializes with API key(s).
 - `callAPI(model, prompt, options, operation)`: Makes a request to the Gemini API with retries and error handling.
 - `tailorResume(resumeData, jobDescription)`: Specific method to tailor a resume.
 - `extractJobDescription(htmlContent)`: Uses AI to extract structured job description from HTML.
-- `estimateSalary(jobData)`: Uses AI to estimate salary based on job data.
+- `estimateSalary(jobTitle, location, companyName, jobUrl, jobDescription)`: Estimates salary for a single job by attempting backend estimation first, and falling back to direct client-side AI.
+- `batchEstimateSalary(batchRequest)`: Performs batch salary estimation by calling the self-hosted backend first, falling back to direct batch client-side AI.
 - `_handleError(error, operation)`: Internal error handler.
 
 ### `utils/storage-manager.js`
@@ -226,16 +227,15 @@ This document provides a detailed breakdown of the file structure, including fun
 - `clearQueue()`: Clears all pending requests.
 
 ### `utils/salary-estimator.js`
-**Description**: Estimates salary based on job details using heuristics and AI.
+**Description**: Estimates salary based on job details using caches, self-hosted backend, and direct Gemini AI fallback.
 **Functions**:
 - `constructor(apiClient, rateLimiter)`: Initializes with dependencies.
-- `estimate(jobTitle, location, company, jobUrl)`: Main estimation method.
-- `batchEstimate(jobs, options)`: Estimates salary for multiple jobs.
-- `_getCacheKey(jobUrl)`: Generates cache key.
-- `_estimateWithHeuristics(jobTitle, location)`: Fallback estimation using rules.
-- `_estimateWithAI(jobTitle, location, company, jobUrl)`: AI-based estimation.
-- `_parseAIResponse(response)`: Parses AI output.
-- `_mergeEstimates(heuristic, ai)`: Combines heuristic and AI estimates.
+- `estimate(jobTitle, location, companyName, jobUrl, jobDescription)`: Estimates salary for a single job using caches and `apiClient.estimateSalary`.
+- `batchEstimate(jobs, options)`: Estimates salary for a batch of jobs by checking cache first, then processing misses via `_batchAIEstimate`.
+- `_batchAIEstimate(jobs)`: Direct batch AI estimation via `apiClient.batchEstimateSalary`.
+- `_batchAIEstimateViaMessage(jobs)`: Content script helper to request batch estimation from background worker.
+- `_checkCache(job)`: Verifies if job salary is cached.
+- `_cacheResult(job, data)`: Stores successful salary estimates in persistent caches.
 
 ### `utils/salary-parser.js`
 **Description**: Parses salary strings into structured data.

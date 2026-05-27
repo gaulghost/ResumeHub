@@ -24,19 +24,14 @@
         </header>
 
         <main class="content">
-            <section class="card collapsible" id="api-key-card">
+            <!-- Hidden dummy card to maintain compatibility with legacy state/event handlers -->
+            <section class="card collapsible" id="api-key-card" style="display: none;">
                 <div class="card-header">
                     <h2>Google API Key</h2>
                     <button class="toggle-button" aria-expanded="true" aria-controls="api-key-content">▼</button>
                 </div>
                 <div class="card-content" id="api-key-content">
-                    <div class="input-group">
-                        <input type="password" id="api-token" placeholder="Enter your Gemini API Key">
-                        <span id="api-token-status" class="status-text"></span>
-                    </div>
-                    <p class="help-text">Your API key is stored locally and only used to generate summaries.</p>
-                    <a href="https://aistudio.google.com/apikey" target="_blank" class="help-text link">Get your Google
-                        API Key</a>
+                    <!-- Kept dynamically to ensure no null pointer references -->
                 </div>
             </section>
 
@@ -94,6 +89,16 @@
                             <input type="checkbox" id="sidebar-toggle" class="feature-toggle-checkbox">
                             <span class="feature-toggle-bg"></span>
                         </label>
+                    </div>
+
+                    <div class="setting-group" style="margin-top: var(--spacing-md); border-top: 1px solid var(--color-border-light); padding-top: var(--spacing-md);">
+                        <label for="api-token" class="setting-label" style="font-size: var(--font-size-sm); font-weight: 600; display: block; margin-bottom: var(--spacing-xs); color: var(--color-text);">Self-Hosted Gemini API Key</label>
+                        <div class="input-group" style="margin-bottom: var(--spacing-xs);">
+                            <input type="password" id="api-token" placeholder="Enter your Gemini API Key">
+                            <span id="api-token-status" class="status-text"></span>
+                        </div>
+                        <p class="help-text">Your API key is stored locally and only used to generate summaries.</p>
+                        <a href="https://aistudio.google.com/apikey" target="_blank" class="help-text link">Get your Google API Key</a>
                     </div>
                 </div>
             </section>

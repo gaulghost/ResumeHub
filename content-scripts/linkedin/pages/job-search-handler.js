@@ -233,7 +233,7 @@ export class JobSearchHandler {
                 skippedCount++;
                 // Debug failed extractions
                 if (skippedCount <= 3) { // Only log first 3 failures to avoid spam
-                    console.warn(`[ResumeHub] Failed to extract job data from card ${skippedCount}:`, card);
+                    console.log(`[ResumeHub] Skip non-job card ${skippedCount}:`, card);
                 }
             }
         });
@@ -340,7 +340,7 @@ export class JobSearchHandler {
                     
                     if (!foundUrl) {
                         // Log failed extractions for debugging
-                        console.warn('[ResumeHub] Failed to extract URL from job card:', jobCard);
+                        console.log('[ResumeHub] URL missing or not a job card:', jobCard);
                         return null;
                     }
                     
