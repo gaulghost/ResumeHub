@@ -290,10 +290,6 @@ class StateManager {
       errors.push('Please upload your resume file first.');
     }
     
-    if (!this.hasApiToken()) {
-      errors.push('Please enter your Google API Key.');
-    }
-    
     const extractionMethod = this.getExtractionMethod();
 
     
@@ -311,10 +307,6 @@ class StateManager {
     
     if (!this.hasResume()) {
       errors.push('Missing resume data - please upload a resume first');
-    }
-    
-    if (!this.hasApiToken()) {
-      errors.push('API token is required for auto-fill functionality');
     }
     
     return {

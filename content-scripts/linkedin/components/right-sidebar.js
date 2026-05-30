@@ -15,6 +15,9 @@ export class ResumeHubSidebar {
     this.selectors = null; // Loaded lazily
     this._dragJustHappened = false;
     this._lastJobSig = '';
+    this._lastJobId = '';
+    this._lastJobTitle = '';
+    this._lastJobCompany = '';
     this._lastExtractedJobSig = ''; // Track last extracted job to avoid duplicates
     this._isTailoring = false; // Track if tailoring is in progress
     this._currentTabId = null; // Track current tab ID for storage
@@ -1811,6 +1814,26 @@ export class ResumeHubSidebar {
     return null;
   }
 
+  _getJobId(url) {
+    if (!url) return '';
+    try {
+      // Handle both old and new URL formats
+      let match = url.match(/\/jobs\/view\/(\d+)/); // Old format
+      if (match) return match[1];
+      
+      match = url.match(/currentJobId=(\d+)/); // New format
+      if (match) return match[1];
+      
+      match = url.match(/jobId=(\d+)/); // Alternative new format
+      if (match) return match[1];
+      
+      const parsedUrl = new URL(url);
+      return parsedUrl.origin + parsedUrl.pathname;
+    } catch (e) {
+      return url;
+    }
+  }
+
   async _updateJobContext() {
     await this._ensureSelectors();
     let title = '—';
@@ -2027,10 +2050,25 @@ export class ResumeHubSidebar {
     // Update job details section
     this._updateJobDetailsDisplay(salary, applicants, companySize, industry, linkedinEmployees);
 
+    const currentJobId = this._getJobId(location.href);
+    const jobIdChanged = currentJobId !== this._lastJobId;
+    
+    // Fall back to previous values if we got invalid/empty values for the same job ID
+    if (!jobIdChanged && this._lastJobId !== '') {
+      if ((!title || title === '—') && this._lastJobTitle) {
+        title = this._lastJobTitle;
+        if (titleEl2) titleEl2.textContent = title;
+      }
+      if ((!displayCompany || displayCompany === '—' || displayCompany.includes('follower')) && this._lastJobCompany) {
+        displayCompany = this._lastJobCompany;
+        if (metaEl) metaEl.textContent = `${displayCompany} • ${displayLocation || '—'}`;
+      }
+    }
+
     // Check if this is a different job than what we have extracted
     // Use the displayed values for the signature to ensure consistency
-    const currentJobSig = `${title}|${displayCompany}|${location.href}`;
-    const jobChanged = currentJobSig !== this._lastJobSig;
+    const currentJobSig = `${title}|${displayCompany}|${currentJobId}`;
+    const jobChanged = jobIdChanged;
     const extractionNeeded = currentJobSig !== this._lastExtractedJobSig;
     
     if (jobChanged && this._lastJobSig !== '') {
@@ -2067,11 +2105,14 @@ export class ResumeHubSidebar {
       this._lastExtractedJobSig = '';
     }
 
-    // Update last job signature
+    // Update last job signature, ID, title, company
     this._lastJobSig = currentJobSig;
+    this._lastJobId = currentJobId;
+    if (title && title !== '—') this._lastJobTitle = title;
+    if (displayCompany && displayCompany !== '—' && !displayCompany.includes('follower')) this._lastJobCompany = displayCompany;
 
     // Notify background of job change (throttled by signature)
-    this._maybeNotifyJobChanged(title, company, locationText);
+    this._maybeNotifyJobChanged(title, displayCompany, displayLocation);
 
     // Wire buttons that rely on context
     this._wireActions();
@@ -2916,7 +2957,11 @@ ${jobDescription.substring(0, 2000)}`;
                 resolve(null);
               }
               // Update last extracted signature
-              const currentJobSig = `${this.root.getElementById('rh-job-title')?.textContent || ''}|${this.root.getElementById('rh-job-meta')?.textContent || ''}|${location.href}`;
+              const currentJobId = this._getJobId(location.href);
+              const titleText = this.root.getElementById('rh-job-title')?.textContent || '';
+              const metaText = this.root.getElementById('rh-job-meta')?.textContent || '';
+              const companyText = metaText.split('•')[0]?.trim() || '';
+              const currentJobSig = `${titleText}|${companyText}|${currentJobId}`;
               this._lastExtractedJobSig = currentJobSig;
             });
             return;
@@ -2927,7 +2972,11 @@ ${jobDescription.substring(0, 2000)}`;
             this._lastExtractedJD = resp.jobDescription;
             this._updateExtractedJDDisplay(resp.jobDescription, false);
             // Update last extracted signature
-            const currentJobSig = `${this.root.getElementById('rh-job-title')?.textContent || ''}|${this.root.getElementById('rh-job-meta')?.textContent || ''}|${location.href}`;
+            const currentJobId = this._getJobId(location.href);
+            const titleText = this.root.getElementById('rh-job-title')?.textContent || '';
+            const metaText = this.root.getElementById('rh-job-meta')?.textContent || '';
+            const companyText = metaText.split('•')[0]?.trim() || '';
+            const currentJobSig = `${titleText}|${companyText}|${currentJobId}`;
             this._lastExtractedJobSig = currentJobSig;
             // Fetch AI insights after extraction (no force refresh needed)
             this._extractAndDisplayJobInsights(false);

@@ -1,3 +1,7 @@
+import { SalaryEstimator } from '../../utils/salary-estimator.js';
+import { JobSearchHandler } from './pages/job-search-handler.js';
+import { JobDetailsHandler } from './pages/job-details-handler.js';
+
 class InstahyreController {
     constructor(salaryEstimator, JobSearchHandler, JobDetailsHandler) {
         this.salaryEstimator = salaryEstimator;
@@ -126,11 +130,7 @@ class InstahyreController {
 
 (async () => {
     try {
-        console.log('[ResumeHub] Instahyre Content script loaded. Importing modules dynamically...');
-
-        const { SalaryEstimator } = await import(chrome.runtime.getURL('utils/salary-estimator.js'));
-        const { JobSearchHandler } = await import(chrome.runtime.getURL('content-scripts/instahyre/pages/job-search-handler.js'));
-        const { JobDetailsHandler } = await import(chrome.runtime.getURL('content-scripts/instahyre/pages/job-details-handler.js'));
+        console.log('[ResumeHub] Instahyre Content script loaded.');
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
 

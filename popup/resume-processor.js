@@ -179,11 +179,6 @@ class ResumeProcessor {
       const extractionMethod = this.stateManager.getExtractionMethod();
       const apiToken = this.stateManager.getApiToken();
 
-      // Validate API token for AI method
-      if (extractionMethod === 'ai' && !apiToken) {
-        throw new Error('API Key is required for AI extraction preview.');
-      }
-
       // Send message to background script
       const response = await this.sendBackgroundMessage({
         action: "getJobDescription",

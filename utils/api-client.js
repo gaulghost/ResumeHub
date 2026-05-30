@@ -145,9 +145,54 @@ export class GeminiAPIClient {
 
   // ─── Public API call methods ──────────────────────────────────────────────
 
+  async _callAIHostProxy(prompt, config = {}, operation = 'API call') {
+    console.log(`[GeminiAPIClient] Routing ${operation} to backend proxy...`);
+    const backendURL = 'https://resumehub.duckdns.org/api/get-ai-response';
+    
+    let userId = 'anonymous';
+    try {
+      const storage = typeof chrome !== 'undefined' && chrome.storage ? chrome.storage.local : null;
+      if (storage) {
+        const data = await new Promise(resolve => storage.get(['userId'], resolve));
+        if (data && data.userId) userId = data.userId;
+      }
+    } catch (e) {}
+
+    const response = await fetch(backendURL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: prompt,
+        response_mime_type: config.responseMimeType || 'text/plain',
+        temperature: config.temperature || 0.3,
+        user_id: userId
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Backend AI Proxy error ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Backend AI Proxy failed');
+    }
+
+    return {
+      candidates: [{
+        content: {
+          parts: [{
+            text: data.content
+          }]
+        }
+      }]
+    };
+  }
+
   async callAPI(model, prompt, config = {}, operation = 'API call') {
     if (!this.apiKeys || this.apiKeys.length === 0) {
-      throw new Error('API_KEY_MISSING');
+      return this._callAIHostProxy(prompt, config, operation);
     }
 
     const rateLimiter = (typeof window !== 'undefined' && window.simpleRateLimiter) ||

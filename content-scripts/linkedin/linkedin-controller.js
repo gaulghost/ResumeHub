@@ -4,7 +4,11 @@
  * It's injected by the manifest.json onto LinkedIn job pages.
  */
 
-// Dynamic imports will be used below to ensure compatibility with classic content-script execution.
+import { SalaryEstimator } from '../../utils/salary-estimator.js';
+import { JobSearchHandler } from './pages/job-search-handler.js';
+import { JobDetailsHandler } from './pages/job-details-handler.js';
+import '../../core/config/app-config.js';
+import { ResumeHubSidebar } from './components/right-sidebar.js';
 
 class LinkedInController {
     constructor(salaryEstimator, JobSearchHandler, JobDetailsHandler, sidebar) {
@@ -146,57 +150,22 @@ class LinkedInController {
  */
 (async () => {
     try {
-        console.log('[ResumeHub] Content script loaded. Starting dynamic imports...');
+        console.log('[ResumeHub] Content script loaded. Starting static imports...');
 
-        console.log('[ResumeHub] Importing SalaryEstimator...');
-        const { SalaryEstimator } = await import(chrome.runtime.getURL('utils/salary-estimator.js'));
-        console.log('[ResumeHub] SalaryEstimator imported successfully.');
-
-        console.log("[ResumeHub] Importing JobSearchHandler...");
-        const { JobSearchHandler } = await import(
-            chrome.runtime.getURL(
-                "content-scripts/linkedin/pages/job-search-handler.js"
-            )
-        );
-        console.log("[ResumeHub] JobSearchHandler imported successfully.");
-
-        console.log("[ResumeHub] Importing JobDetailsHandler...");
-        const { JobDetailsHandler } = await import(
-            chrome.runtime.getURL(
-                "content-scripts/linkedin/pages/job-details-handler.js"
-            )
-        );
-        console.log("[ResumeHub] JobDetailsHandler imported successfully.");
-
-        // Load AppConfig to check feature flags (sets window.AppConfig)
-        console.log("[ResumeHub] Importing AppConfig...");
-        let isSidebarEnabled = true;
+        let isSidebarEnabled = window.AppConfig?.isFeatureEnabled?.('linkedIn.rightSidebar') ?? true;
+        
+        // Check user preferences in chrome storage
         try {
-            await import(
-                chrome.runtime.getURL(
-                    "core/config/app-config.js"
-                )
-            );
-            isSidebarEnabled = window.AppConfig?.isFeatureEnabled?.('linkedIn.rightSidebar') ?? true;
-            
-            // Check user preferences in chrome storage
-            try {
-                const storageResult = await new Promise(resolve => chrome.storage.sync.get(['sidebarEnabled'], resolve));
-                if (storageResult && storageResult.sidebarEnabled !== undefined) {
-                    isSidebarEnabled = isSidebarEnabled && storageResult.sidebarEnabled;
-                }
-            } catch (storageErr) {
-                console.warn("[ResumeHub] Failed to read sidebar settings from storage.", storageErr);
+            const storageResult = await new Promise(resolve => chrome.storage.sync.get(['sidebarEnabled'], resolve));
+            if (storageResult && storageResult.sidebarEnabled !== undefined) {
+                isSidebarEnabled = isSidebarEnabled && storageResult.sidebarEnabled;
             }
-            
-        } catch (e) {
-            console.warn("[ResumeHub] AppConfig import failed, defaulting sidebar enabled.", e);
-            isSidebarEnabled = true;
+        } catch (storageErr) {
+            console.warn("[ResumeHub] Failed to read sidebar settings from storage.", storageErr);
         }
+        
         console.log("[ResumeHub] Sidebar feature enabled:", isSidebarEnabled);
         let sidebar = null;
-
-        console.log("[ResumeHub] All modules imported dynamically.");
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -206,19 +175,26 @@ class LinkedInController {
 
         if (isSidebarEnabled) {
             try {
-                console.log("[ResumeHub] Importing ResumeHubSidebar...");
-                const { ResumeHubSidebar } = await import(
-                    chrome.runtime.getURL(
-                        "content-scripts/linkedin/components/right-sidebar.js"
-                    )
-                );
-                console.log("[ResumeHub] ResumeHubSidebar imported successfully.");
                 console.log("[ResumeHub] Mounting ResumeHubSidebar...");
                 sidebar = new ResumeHubSidebar();
                 await sidebar.mount();
                 console.log("[ResumeHub] ResumeHubSidebar mounted.");
             } catch (e) {
-                console.warn("[ResumeHub] Sidebar import/mount failed; continuing without sidebar.", e);
+                console.warn("[ResumeHub] Sidebar mount failed; continuing without sidebar.", e);
+                try {
+                    chrome.runtime.sendMessage({
+                        action: 'telemetry',
+                        eventType: 'ui_extraction_failed',
+                        metadata: {
+                            domain: 'linkedin.com',
+                            url: window.location.href,
+                            source: 'sidebar_mount',
+                            detail: `Sidebar mount failed: ${e.message || e}`
+                        }
+                    });
+                } catch (err) {
+                    console.warn("[ResumeHub] Telemetry message failed to send:", err);
+                }
             }
         } else {
             console.log("[ResumeHub] Right sidebar is disabled via feature flag.");

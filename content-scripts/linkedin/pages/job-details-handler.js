@@ -38,12 +38,22 @@ export class JobDetailsHandler {
         
         if (!jobData) {
             console.warn('[ResumeHub] Could not extract job data');
+            chrome.runtime.sendMessage({
+                action: 'telemetry',
+                eventType: 'ui_extraction_failed',
+                metadata: { domain: 'linkedin.com', url: window.location.href, source: 'job_details', detail: 'Could not extract jobData (title/company)' }
+            });
             return;
         }
 
         const badge = this.createSalaryBadge();
         if (!badge) {
             console.warn('[ResumeHub] Could not create salary badge');
+            chrome.runtime.sendMessage({
+                action: 'telemetry',
+                eventType: 'ui_extraction_failed',
+                metadata: { domain: 'linkedin.com', url: window.location.href, source: 'job_details', detail: 'Could not create salary badge container' }
+            });
             return;
         }
 

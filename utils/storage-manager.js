@@ -271,6 +271,23 @@ export class StorageManager {
       });
     });
   }
+
+  // Get or generate unique user ID for tracking
+  static async getUserId() {
+    try {
+      const data = await this.get(['userId']);
+      if (data.userId) {
+        return data.userId;
+      }
+      const newUserId = 'rh_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      await this.set({ userId: newUserId });
+      console.log('[ResumeHub Storage] Generated new userId:', newUserId);
+      return newUserId;
+    } catch (error) {
+      console.error('Error getting user ID:', error);
+      return 'rh_anonymous';
+    }
+  }
 }
 
 // Expose globally for legacy access

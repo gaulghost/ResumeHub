@@ -118,6 +118,20 @@ export class SalaryBadge {
     create() {
         if (!this.parentElement?.isConnected) {
             console.warn('[ResumeHub] Parent element not available or not connected to DOM');
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'telemetry',
+                    eventType: 'ui_extraction_failed',
+                    metadata: {
+                        domain: 'naukri.com',
+                        url: window.location.href,
+                        source: 'salary_badge_mount',
+                        detail: 'Parent element not connected to DOM'
+                    }
+                });
+            } catch (err) {
+                console.warn("[ResumeHub] Telemetry message failed to send:", err);
+            }
             return false;
         }
 
@@ -137,6 +151,20 @@ export class SalaryBadge {
             return true;
         } catch (error) {
             console.error('[ResumeHub] Error appending salary badge to parent:', error);
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'telemetry',
+                    eventType: 'ui_extraction_failed',
+                    metadata: {
+                        domain: 'naukri.com',
+                        url: window.location.href,
+                        source: 'salary_badge_mount',
+                        detail: `Append child failed: ${error.message || error}`
+                    }
+                });
+            } catch (err) {
+                console.warn("[ResumeHub] Telemetry message failed to send:", err);
+            }
             return false;
         }
     }

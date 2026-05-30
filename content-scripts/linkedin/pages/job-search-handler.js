@@ -407,9 +407,18 @@ export class JobSearchHandler {
                     console.log('[ResumeHub] Using alternative company extraction');
                 }
                 
+                const finalTitle = alternativeTitle || jobTitle;
+                const finalCompany = alternativeCompany || companyName;
+                if (finalTitle === 'N/A' || finalCompany === 'N/A') {
+                    chrome.runtime.sendMessage({
+                        action: 'telemetry',
+                        eventType: 'ui_extraction_failed',
+                        metadata: { domain: 'linkedin.com', url: window.location.href, source: 'job_search', extractedTitle: finalTitle, extractedCompany: finalCompany }
+                    });
+                }
                 return {
-                    jobTitle: alternativeTitle || jobTitle,
-                    companyName: alternativeCompany || companyName,
+                    jobTitle: finalTitle,
+                    companyName: finalCompany,
                     location,
                     jobUrl
                 };
@@ -418,6 +427,12 @@ export class JobSearchHandler {
             // Only log successful extractions to reduce noise
             if (jobTitle !== 'N/A' && companyName !== 'N/A' && location !== 'N/A') {
                 console.log('[ResumeHub] Extracted job data:', { jobTitle, companyName, location, jobUrl });
+            } else {
+                chrome.runtime.sendMessage({
+                    action: 'telemetry',
+                    eventType: 'ui_extraction_failed',
+                    metadata: { domain: 'linkedin.com', url: window.location.href, source: 'job_search', extractedTitle: jobTitle, extractedCompany: companyName }
+                });
             }
             
             return { jobTitle, companyName, location, jobUrl };

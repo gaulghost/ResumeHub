@@ -265,6 +265,14 @@ export class JobSearchHandler {
                 jobUrl = `https://www.instahyre.com/jobs/opportunity-dummy-${stableId}`;
             }
 
+            if (jobTitle === 'N/A' || companyName === 'N/A') {
+                chrome.runtime.sendMessage({
+                    action: 'telemetry',
+                    eventType: 'ui_extraction_failed',
+                    metadata: { domain: 'instahyre.com', url: window.location.href, source: 'job_search', extractedTitle: jobTitle, extractedCompany: companyName }
+                });
+            }
+
             return { jobTitle, companyName, location, jobUrl };
         } catch (error) {
             console.error('[ResumeHub] Error extracting Instahyre job data:', error);

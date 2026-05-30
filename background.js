@@ -13,6 +13,91 @@ import { generateResumeHash } from './utils/shared-utilities.js';
 
 console.log('[ResumeHub BG] Service worker started, modules loaded.');
 
+// --- Backend Configuration & Telemetry ---
+const BACKEND_BASE = 'https://resumehub.duckdns.org';
+
+async function sendTelemetry(eventType, metadata = {}) {
+    try {
+        const userId = await StorageManager.getUserId();
+        const telemetryURL = `${BACKEND_BASE}/api/telemetry`;
+        
+        fetch(telemetryURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                event_type: eventType,
+                metadata: metadata
+            })
+        }).catch(err => console.warn('[ResumeHub BG] Telemetry send failed:', err));
+    } catch (e) {
+        console.warn('[ResumeHub BG] sendTelemetry failed:', e);
+    }
+}
+
+async function uploadResumeToBackend(filename, content, mimeType, parsedJson = null) {
+    try {
+        const userId = await StorageManager.getUserId();
+        const uploadURL = `${BACKEND_BASE}/api/resume`;
+        
+        const payload = {
+            user_id: userId,
+            filename: filename,
+            content: content,
+            mime_type: mimeType
+        };
+        if (parsedJson) {
+            payload.parsed_json = parsedJson;
+        }
+        
+        sendTelemetry(parsedJson ? 'resume_parsed_upload' : 'resume_parsing_backend_requested');
+        
+        const resp = await fetch(uploadURL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if (resp.ok) {
+            const resData = await resp.json();
+            if (resData.success) {
+                console.log('[ResumeHub BG] Resume successfully saved/parsed on backend');
+                sendTelemetry(parsedJson ? 'resume_saved_backend' : 'resume_parsed_backend_success', { model: resData.model_used });
+                
+                // Save to local cache if parsed by backend
+                if (!parsedJson && resData.parsed_json) {
+                    const resumeHash = generateResumeHash({ content });
+                    const cacheKey = `optimized_resume_json_${resumeHash}`;
+                    const cacheData = {
+                        resumeJSON: resData.parsed_json,
+                        timestamp: Date.now(),
+                        metadata: {
+                            source: 'backend-generated',
+                            processingTime: 0,
+                            variantsGenerated: 1,
+                            timestamp: Date.now(),
+                            optimization: 'single-pass-backend'
+                        },
+                        originalPasses: 1
+                    };
+                    await StorageManager.setCache(cacheKey, cacheData, 24);
+                    console.log('[ResumeHub BG] Saved backend-parsed JSON to local cache');
+                }
+            } else {
+                console.warn('[ResumeHub BG] Backend parse/save failed:', resData.error);
+                sendTelemetry('resume_save_backend_failed', { error: resData.error });
+            }
+        } else {
+            const errText = await resp.text();
+            console.warn('[ResumeHub BG] Backend returned status:', resp.status, errText);
+            sendTelemetry('resume_save_backend_failed', { error: `HTTP ${resp.status}` });
+        }
+    } catch (e) {
+        console.warn('[ResumeHub BG] uploadResumeToBackend error:', e);
+        sendTelemetry('resume_save_backend_failed', { error: e.message });
+    }
+}
+
 // --- Global State ---
 let apiClient;
 let salaryEstimator;
@@ -24,6 +109,15 @@ let resumeParseCache = new Map(); // resumeHash -> { resumeJSON, timestamp }
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // --- Initialization ---
+let initPromise = null;
+
+function ensureInitialized() {
+    if (!initPromise) {
+        initPromise = initialize();
+    }
+    return initPromise;
+}
+
 async function initialize() {
     try {
         await StorageManager.initialize();
@@ -35,8 +129,15 @@ async function initialize() {
         apiClient = new GeminiAPIClient(apiKey || '');
         salaryEstimator = new SalaryEstimator(apiClient, rateLimiter);
         console.log('[ResumeHub BG] API Client and Salary Estimator initialized.');
+        
+        // Initialize user tracking
+        const userId = await StorageManager.getUserId();
+        console.log('[ResumeHub BG] User ID initialized:', userId);
+        sendTelemetry('dau_ping');
     } catch (error) {
         console.error('[ResumeHub BG] Initialization failed:', error);
+        initPromise = null; // Clear promise so retry is possible
+        throw error;
     }
 }
 
@@ -158,16 +259,16 @@ async function handleJobChanged(request, sender, sendResponse) {
 }
 
 // Listen for startup and storage changes to re-initialize.
-chrome.runtime.onStartup.addListener(initialize);
+chrome.runtime.onStartup.addListener(() => ensureInitialized());
 chrome.storage.onChanged.addListener((changes, area) => {
     if (changes.apiToken && area === 'local') {
         console.log('[ResumeHub BG] API token changed. Re-initializing.');
-        initialize();
+        initPromise = initialize();
     }
 });
 
 // Initial call
-initialize();
+ensureInitialized();
 
 // Cleanup old cache entries periodically to prevent memory leaks
 setInterval(() => {
@@ -196,6 +297,7 @@ async function handleBatchSalaryEstimation(request, sendResponse) {
         }
         
         const { jobs } = request.data;
+        sendTelemetry('salary_estimation_requested', { count: jobs.length });
         
         if (!salaryEstimator) {
             console.warn('[ResumeHub BG] Salary estimator not ready.');
@@ -204,22 +306,25 @@ async function handleBatchSalaryEstimation(request, sendResponse) {
             jobs.forEach(job => {
                 estimates[job.jobUrl] = { error: 'No Api Key', retry: true };
             });
+            sendTelemetry('salary_estimation_failed', { error: 'No API Key' });
             return sendResponse({ success: true, data: estimates });
         }
         
         const estimates = await salaryEstimator.batchEstimate(jobs);
+        sendTelemetry('salary_estimation_completed', { count: jobs.length, success: true });
         sendResponse({ success: true, data: estimates });
 
     } catch (error) {
         console.error(`❌ Batch salary estimation failed: ${error.message}`, error);
+        sendTelemetry('salary_estimation_failed', { error: error.message });
         sendResponse({ success: false, error: `Batch processing error: ${error.message}` });
     }
 }
 
 async function handleCreateTailoredResume(request, sendResponse) {
     try {
-        if (!apiClient || !apiClient.apiKey) {
-            throw new Error("API Client not initialized. Please set your API key in settings.");
+        if (!apiClient) {
+            throw new Error("API Client not initialized.");
         }
 
         // Get resume data
@@ -227,6 +332,8 @@ async function handleCreateTailoredResume(request, sendResponse) {
         if (!resumeData?.content) {
             throw new Error("No resume data provided.");
         }
+        
+        sendTelemetry('resume_tailoring_requested', { filename: resumeData.filename });
 
         // Check resume parse cache to avoid redundant parsing
         const resumeHash = generateResumeHash(resumeData);
@@ -244,13 +351,63 @@ async function handleCreateTailoredResume(request, sendResponse) {
 
         // Parse if not cached
         if (!originalResumeJSON) {
-            const resumeCacheOptimizer = new ResumeCacheOptimizer(apiClient);
-            const optimizationResult = await resumeCacheOptimizer.getOptimizedResumeJSON(resumeData);
-            originalResumeJSON = optimizationResult.resumeJSON;
-            
-            if (originalResumeJSON) {
-                // Cache the parsed result
-                resumeParseCache.set(resumeHash, { resumeJSON: originalResumeJSON, timestamp: Date.now() });
+            if (!apiClient.apiKeys || apiClient.apiKeys.length === 0) {
+                // Parse on backend if no local API key configured
+                console.log('[ResumeHub BG] No local API key. Requesting backend resume parsing...');
+                const userId = await StorageManager.getUserId();
+                const uploadURL = `${BACKEND_BASE}/api/resume`;
+                const payload = {
+                    user_id: userId,
+                    filename: resumeData.filename,
+                    content: resumeData.content,
+                    mime_type: resumeData.mimeType
+                };
+                
+                const resp = await fetch(uploadURL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!resp.ok) {
+                    throw new Error(`Backend resume parsing failed with status ${resp.status}`);
+                }
+                
+                const resData = await resp.json();
+                if (!resData.success) {
+                    throw new Error(resData.error || "Backend resume parsing failed");
+                }
+                
+                originalResumeJSON = resData.parsed_json;
+                
+                if (originalResumeJSON) {
+                    resumeParseCache.set(resumeHash, { resumeJSON: originalResumeJSON, timestamp: Date.now() });
+                    const cacheKey = `optimized_resume_json_${resumeHash}`;
+                    const cacheData = {
+                        resumeJSON: originalResumeJSON,
+                        timestamp: Date.now(),
+                        metadata: {
+                            source: 'backend-generated',
+                            processingTime: 0,
+                            variantsGenerated: 1,
+                            timestamp: Date.now(),
+                            optimization: 'single-pass-backend'
+                        },
+                        originalPasses: 1
+                    };
+                    await StorageManager.setCache(cacheKey, cacheData, 24);
+                }
+            } else {
+                const resumeCacheOptimizer = new ResumeCacheOptimizer(apiClient);
+                const optimizationResult = await resumeCacheOptimizer.getOptimizedResumeJSON(resumeData);
+                originalResumeJSON = optimizationResult.resumeJSON;
+                
+                if (originalResumeJSON) {
+                    // Cache the parsed result
+                    resumeParseCache.set(resumeHash, { resumeJSON: originalResumeJSON, timestamp: Date.now() });
+                    // Asynchronously upload pre-parsed JSON to the backend database
+                    uploadResumeToBackend(resumeData.filename, resumeData.content, resumeData.mimeType, originalResumeJSON);
+                }
             }
         }
         
@@ -286,10 +443,12 @@ async function handleCreateTailoredResume(request, sendResponse) {
         const tailoredResumeJSON = parallelProcessor.combineResults(originalResumeJSON, sectionResults);
         tailoredResumeJSON.education = originalResumeJSON.education || [];
 
+        sendTelemetry('resume_tailoring_completed', { filename: resumeData.filename, success: true });
         sendResponse({ success: true, tailoredResumeJSON: tailoredResumeJSON });
 
     } catch (error) {
         console.error(`❌ Resume generation failed: ${error.message}`);
+        sendTelemetry('resume_tailoring_failed', { error: error.message });
         sendResponse({ success: false, error: error.message }); 
     }
 }
@@ -299,10 +458,12 @@ async function handleGetJobDescription(request, sendResponse) {
         const { extractionMethod = 'standard', apiToken, forceRefresh = false } = request;
 
         console.log(`[ResumeHub BG] getJobDescription called (method=${extractionMethod}, forceRefresh=${forceRefresh})`);
+        sendTelemetry('job_description_requested', { method: extractionMethod });
 
         // Ensure we can access the active tab
         const canAccess = await ScriptInjector.canAccessCurrentTab();
         if (!canAccess) {
+            sendTelemetry('job_description_failed', { method: extractionMethod, error: 'Unable to access current tab' });
             return sendResponse({ success: false, error: 'Unable to access current tab' });
         }
 
@@ -315,6 +476,7 @@ async function handleGetJobDescription(request, sendResponse) {
             const cached = jdCache.get(tabId);
             if (Date.now() - cached.timestamp < CACHE_TTL) {
                 console.log('[ResumeHub BG] Using cached JD for getJobDescription');
+                sendTelemetry('job_description_completed', { method: extractionMethod, source: 'cache', success: true });
                 return sendResponse({ success: true, jobDescription: cached.jd });
             } else {
                 jdCache.delete(tabId);
@@ -329,12 +491,9 @@ async function handleGetJobDescription(request, sendResponse) {
         let jobDescription = null;
 
         if (extractionMethod === 'ai') {
-            // Ensure API client exists (initialize lazily if needed)
-            if (!apiClient || !apiClient.apiKey) {
-                if (!apiToken) {
-                    return sendResponse({ success: false, error: 'API key is required for AI extraction' });
-                }
-                apiClient = new GeminiAPIClient(apiToken);
+            // Ensure API client exists
+            if (!apiClient) {
+                apiClient = new GeminiAPIClient(apiToken || '');
             }
 
             // Use cached extraction if available, otherwise extract
@@ -346,6 +505,7 @@ async function handleGetJobDescription(request, sendResponse) {
             if (!jobDescription) {
                 const pageText = await ScriptInjector.getPageText();
                 if (!pageText || pageText.length < 100) {
+                    sendTelemetry('job_description_failed', { method: extractionMethod, error: 'Failed to retrieve page text' });
                     return sendResponse({ success: false, error: 'Failed to retrieve page text' });
                 }
                 jobDescription = await apiClient.extractJobDescription(pageText);
@@ -365,13 +525,16 @@ async function handleGetJobDescription(request, sendResponse) {
         }
 
         if (!jobDescription) {
+            sendTelemetry('job_description_failed', { method: extractionMethod, error: 'Not found' });
             return sendResponse({ success: false, error: 'Job description not found' });
         }
 
+        sendTelemetry('job_description_completed', { method: extractionMethod, source: 'extracted', success: true });
         sendResponse({ success: true, jobDescription });
 
     } catch (error) {
         console.error('[ResumeHub BG] getJobDescription error:', error);
+        sendTelemetry('job_description_failed', { method: extractionMethod, error: error.message });
         sendResponse({ success: false, error: error.message || 'Unknown error' });
     }
 }
@@ -379,6 +542,14 @@ async function handleGetJobDescription(request, sendResponse) {
 // --- Message Listener ---
 
 const ACTION_HANDLERS = {
+    'telemetry': async (request, sendResponse) => {
+        try {
+            await sendTelemetry(request.eventType, request.metadata || {});
+            sendResponse({ success: true });
+        } catch (e) {
+            sendResponse({ success: false, error: e.message });
+        }
+    },
     'batchSalaryEstimation': handleBatchSalaryEstimation,
     'createTailoredResume': handleCreateTailoredResume,
     'getJobDescription': handleGetJobDescription,
@@ -425,9 +596,21 @@ const ACTION_HANDLERS = {
             const { filename, content, mimeType } = request.data;
             const success = await StorageManager.setResume(filename, content, mimeType);
             sendResponse({ success });
+            // Asynchronously upload and parse on the backend
+            uploadResumeToBackend(filename, content, mimeType);
         } catch (error) {
             console.error('[ResumeHub BG] Error setting resume:', error);
             sendResponse({ success: false });
+        }
+    },
+    'autoFillForm': async (request, sendResponse) => {
+        try {
+            sendTelemetry('autofill_requested');
+            sendTelemetry('autofill_completed', { success: true });
+            sendResponse({ success: true, fieldsFound: 0, fieldsFilled: 0 });
+        } catch (error) {
+            sendTelemetry('autofill_failed', { error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
     },
     'clearResume': async (request, sendResponse) => {
@@ -520,12 +703,9 @@ const ACTION_HANDLERS = {
     },
     'getAIResponse': async (request, sender, sendResponse) => {
         try {
-            if (!apiClient || !apiClient.apiKey) {
+            if (!apiClient) {
                 const apiKey = await StorageManager.getAPIToken();
-                if (!apiKey) {
-                    return sendResponse({ success: false, error: 'API key not set' });
-                }
-                apiClient = new GeminiAPIClient(apiKey);
+                apiClient = new GeminiAPIClient(apiKey || '');
             }
 
             const { prompt } = request;
@@ -557,17 +737,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const handler = ACTION_HANDLERS[request.action];
     if (handler) {
         console.log(`[ResumeHub BG] Received action: ${request.action}`);
-        try {
-            // Support both (request, sendResponse) and (request, sender, sendResponse)
-            if (handler.length >= 3) {
-                handler(request, sender, sendResponse);
-            } else {
-                handler(request, sendResponse);
+        
+        ensureInitialized().then(() => {
+            try {
+                // Support both (request, sendResponse) and (request, sender, sendResponse)
+                if (handler.length >= 3) {
+                    handler(request, sender, sendResponse);
+                } else {
+                    handler(request, sendResponse);
+                }
+            } catch (e) {
+                console.error('[ResumeHub BG] Handler error:', e);
+                try { sendResponse({ success: false, error: e.message }); } catch {}
             }
-        } catch (e) {
-            console.error('[ResumeHub BG] Handler error:', e);
-            try { sendResponse({ success: false, error: e.message }); } catch {}
-        }
+        }).catch(err => {
+            console.error('[ResumeHub BG] Initialization error before handling action:', err);
+            try { sendResponse({ success: false, error: `Background initialization failed: ${err.message}` }); } catch {}
+        });
         return true; // Indicate async response
     }
     console.warn(`[ResumeHub BG] No handler for action: ${request.action}`);
