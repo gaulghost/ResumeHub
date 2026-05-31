@@ -1772,6 +1772,9 @@ export class ResumeHubSidebar {
       const details = this.selectors?.JOB_DETAILS_PAGE || {};
       const containerSelectors = [
         ...(Array.isArray(details.detailsPanelContainer) ? details.detailsPanelContainer : []),
+        // New LinkedIn UI (2025+) LazyColumn containers
+        '[data-testid="lazy-column"][data-component-type="LazyColumn"]',
+        '[data-component-type="LazyColumn"]',
         '.scaffold-layout__detail',
         '.jobs-details',
         '.jobs-unified-top-card',
@@ -1807,7 +1810,7 @@ export class ResumeHubSidebar {
         try {
           const el = document.querySelector(sel);
           if (!el) continue;
-          const isInList = el.closest('li[data-occludable-job-id], .job-card-container, .jobs-search-results-list, .jobs-search__results-list, .semantic-search-results-list__list-item, .job-card-job-posting-card-wrapper');
+          const isInList = el.closest('li[data-occludable-job-id], .job-card-container, .jobs-search-results-list, .jobs-search__results-list, .semantic-search-results-list__list-item, .job-card-job-posting-card-wrapper, [componentkey*="job-card-component-ref-"]');
           if (isInList) continue;
           if (el.innerText && el.innerText.trim().length > 0) return el;
         } catch {}
@@ -1834,6 +1837,15 @@ export class ResumeHubSidebar {
     } catch (e) {
       return url;
     }
+  }
+
+  _getActiveJobCard() {
+    const currentJobId = this._getJobId(location.href);
+    if (currentJobId) {
+      const card = document.querySelector(`[componentkey="job-card-component-ref-${currentJobId}"]`) || document.querySelector(`[componentkey*="${currentJobId}"]`);
+      if (card) return card;
+    }
+    return document.querySelector('.jobs-search-results-list__list-item--active');
   }
 
   async _updateJobContext() {
@@ -1882,6 +1894,48 @@ export class ResumeHubSidebar {
       }
     } catch (e) {
       // ignore extraction errors
+    }
+
+    // ── Fallback title extraction for new LinkedIn UI ──────────────────────────
+    // The new UI renders the job title as an <a href='/jobs/view/...'> inside a <p>
+    // inside a LazyColumn; standard selectors may miss it.
+    if (!title || title === '—') {
+      try {
+        // Strategy A: Active job card in left list (most reliable when switching jobs)
+        const activeCard = this._getActiveJobCard();
+        if (activeCard) {
+          const cardTitleEl = activeCard.querySelector('a[href*="/jobs/view/"] strong') ||
+                              activeCard.querySelector('a[href*="/jobs/view/"]');
+          if (cardTitleEl && cardTitleEl.innerText && cardTitleEl.innerText.trim()) {
+            title = cardTitleEl.innerText.trim();
+          }
+        }
+
+        // Strategy B: LazyColumn detail panel — first job-view link text
+        if (!title || title === '—') {
+          const lazyCols = document.querySelectorAll('[data-testid="lazy-column"], [data-component-type="LazyColumn"]');
+          for (const col of lazyCols) {
+            // Skip left-side list containers
+            if (col.closest('.scaffold-layout__list, .jobs-search-results-list, .semantic-search-results-list')) continue;
+            const linkEl = col.querySelector('p a[href*="/jobs/view/"]');
+            if (linkEl && linkEl.innerText && linkEl.innerText.trim()) {
+              title = linkEl.innerText.trim();
+              break;
+            }
+          }
+        }
+
+        // Strategy C: Current URL contains a job ID → match a link with that ID
+        if (!title || title === '—') {
+          const jobId = this._getJobId(location.href);
+          if (jobId) {
+            const jobLink = document.querySelector(`a[href*="/jobs/view/${jobId}"]`);
+            if (jobLink && jobLink.innerText && jobLink.innerText.trim()) {
+              title = jobLink.innerText.trim();
+            }
+          }
+        }
+      } catch (_) { /* ignore */ }
     }
 
     // Update basic UI
@@ -1973,9 +2027,9 @@ export class ResumeHubSidebar {
     // Strategy E: Left Sidebar (Active Job Card) - High Priority Fallback
     // This is often the most reliable source when switching jobs
     if (isInvalidCompany || !displayCompany || displayCompany.includes('follower')) {
-        const activeCard = document.querySelector('.jobs-search-results-list__list-item--active');
+        const activeCard = this._getActiveJobCard();
         if (activeCard) {
-            const companyEl = activeCard.querySelector('.job-card-container__primary-description');
+            const companyEl = activeCard.querySelector('.job-card-container__primary-description') || activeCard.querySelector('div._3d2f5c77 p');
             if (companyEl) {
                 displayCompany = companyEl.textContent.trim();
             }
@@ -2038,12 +2092,12 @@ export class ResumeHubSidebar {
     
     // Strategy C: Left Sidebar (Active Job Card) for Location
     if (!displayLocation || displayLocation === '—' || displayLocation === '-') {
-         const activeCard = document.querySelector('.jobs-search-results-list__list-item--active');
+         const activeCard = this._getActiveJobCard();
          if (activeCard) {
-             const locEl = activeCard.querySelector('.job-card-container__metadata-item');
-             if (locEl) {
-                 displayLocation = locEl.textContent.trim();
-             }
+              const locEl = activeCard.querySelector('.job-card-container__metadata-item') || activeCard.querySelector('p._3d2f5c77');
+              if (locEl) {
+                  displayLocation = locEl.textContent.trim();
+              }
          }
     }
 
@@ -2415,10 +2469,10 @@ ${jobDescription.substring(0, 3000)}`;
 
       // Second fallback: try to get it from the active job card in the list
       if (!location || location === '—' || location === '-') {
-           const activeCard = document.querySelector('.jobs-search-results-list__list-item--active');
+           const activeCard = this._getActiveJobCard();
            if (activeCard) {
-               const locEl = activeCard.querySelector('.job-card-container__metadata-item');
-               if (locEl) location = locEl.textContent.trim();
+                const locEl = activeCard.querySelector('.job-card-container__metadata-item') || activeCard.querySelector('p._3d2f5c77');
+                if (locEl) location = locEl.textContent.trim();
            }
       }
       

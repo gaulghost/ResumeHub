@@ -7,9 +7,11 @@ export const SELECTORS = {
             "li.semantic-search-results-list__list-item", // New UI
             "li.scaffold-layout__list-item", // Alternative new UI
             "div[data-job-id]", // New UI with data-job-id
+            "[componentkey*='job-card-component-ref-']", // New UI with componentkey
         ],
         jobTitle: [
             // New UI selectors (prioritized)
+            "span._028ae6a1", // Obfuscated class for verified job title in new UI
             ".artdeco-entity-lockup__title strong",
             ".job-card-job-posting-card-wrapper__title strong",
             ".artdeco-entity-lockup__title span[aria-hidden='true'] strong",
@@ -22,6 +24,7 @@ export const SELECTORS = {
         ],
         companyName: [
             // New UI selectors (prioritized)
+            "div._3d2f5c77 p", // Obfuscated layout for company name in new UI
             ".artdeco-entity-lockup__subtitle div",
             ".artdeco-entity-lockup__subtitle",
             // Old UI selectors (fallback)
@@ -32,6 +35,7 @@ export const SELECTORS = {
         ],
         location: [
             // New UI selectors (prioritized)
+            "p._3d2f5c77", // Obfuscated class for location in new UI
             ".artdeco-entity-lockup__caption div",
             ".artdeco-entity-lockup__caption",
             // Old UI selectors (fallback)
@@ -52,6 +56,7 @@ export const SELECTORS = {
         ],
         cardActionsContainer: [
             // New UI selectors (prioritized) - more specific targeting
+            "div.c3a4baa6", // Obfuscated footer container class in new UI
             ".artdeco-entity-lockup__metadata:last-child",
             ".artdeco-entity-lockup__metadata:has(.job-card-job-posting-card-wrapper__footer-items)",
             ".job-card-job-posting-card-wrapper__footer-items",
@@ -66,7 +71,11 @@ export const SELECTORS = {
     // Selectors for the individual job view page (e.g., /jobs/view/)
     JOB_DETAILS_PAGE: {
         jobTitle: [
-            // Current selectors
+            // New LinkedIn UI (2025+) - LazyColumn layout
+            // Title is an <a href='/jobs/view/...'> inside a <p> inside the detail column
+            "[data-testid='lazy-column'] p a[href*='/jobs/view/']",
+            "[data-component-type='LazyColumn'] p a[href*='/jobs/view/']",
+            // Current/old standard selectors
             ".jobs-unified-top-card__job-title",
             ".jobs-unified-top-card__job-title a",
             "h1.t-24.t-bold",
@@ -77,12 +86,20 @@ export const SELECTORS = {
             // New UI from user HTML - more generic
             "div[data-view-name='job-detail-page'] .job-details-jobs-unified-top-card__job-title h1",
             "div[data-view-name='job-detail-page'] h1",
-            "div[data-view-name='job-detail-page'] a[href*='/jobs/view/']", // Covers Ticketmaster, Live Nation, etc. 
+            "div[data-view-name='job-detail-page'] a[href*='/jobs/view/']",
+            ".scaffold-layout__detail h1",
+            ".scaffold-layout__detail h2",
+            ".jobs-search__job-details h1",
+            // Generic fallback: any <a> directly linking to a jobs/view page in the detail panel
+            'a[href*="/jobs/view/"][href*="trackingId"]',
         ],
         companyInfo: [
-            // New UI: Target the link inside the aria-label container for clean text ("ETS")
+            // New LinkedIn UI (2025+) - company name is an <a> inside a <p> inside aria-label div
             "div[aria-label^='Company,'] a",
-            // Restoring this as it's needed for some layouts (e.g. GreyOrange) where nested links might cause issues
+            // New UI: LazyColumn layout - company link
+            "[data-testid='lazy-column'] a[href*='/company/']",
+            "[data-component-type='LazyColumn'] a[href*='/company/']",
+            // Restoring this as it's needed for some layouts
             "div[aria-label^='Company,']",
             
             // Old/Standard UI
@@ -91,11 +108,14 @@ export const SELECTORS = {
             ".artdeco-entity-lockup__subtitle",
             
             // Fallback/Older selectors
-            ".job-details-jobs-unified-top-card__primary-description", // Restored
+            ".job-details-jobs-unified-top-card__primary-description",
             ".jobs-unified-top-card__primary-description",
             ".jobs-unified-top-card__primary-description-without-tagline",
             ".jobs-unified-top-card__company-name",
             ".jobs-unified-top-card__subtitle",
+            ".scaffold-layout__detail [class*='company-name']",
+            ".scaffold-layout__detail a[href*='/company/']",
+            ".jobs-search__job-details a[href*='/company/']",
         ],
         jobDescription: [
             // Current selectors
@@ -105,9 +125,15 @@ export const SELECTORS = {
             // Additional selectors for potential new UI
             ".job-details-description__text",
             ".jobs-description-content",
+            ".jobs-description",
+            ".job-details-description",
+            ".jobs-description__container",
         ],
         // Container to inject analysis panel
         detailsPanelContainer: [
+            // New LinkedIn UI (2025+) - LazyColumn is the main detail container
+            "[data-testid='lazy-column'][data-component-type='LazyColumn']",
+            "[data-component-type='LazyColumn']",
             // Current selectors
             ".jobs-details__main-content",
             ".jobs-unified-top-card__content--two-pane",
@@ -118,6 +144,9 @@ export const SELECTORS = {
             ".jobs-details-top-card",
             // New UI from user HTML
             "div[data-view-name='job-detail-page']",
+            ".scaffold-layout__detail",
+            ".jobs-search__job-details--container",
+            ".jobs-search__job-details",
         ],
     },
     // Our custom UI elements

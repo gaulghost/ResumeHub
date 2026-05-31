@@ -321,6 +321,19 @@ export class JobSearchHandler {
                 }
             }
             
+            // Check componentkey attribute on the card itself or its children (new UI fallback)
+            if (!jobId) {
+                const compKey = jobCard.getAttribute('componentkey') || jobCard.querySelector('[componentkey*="job-card-component-ref-"]')?.getAttribute('componentkey');
+                if (compKey) {
+                    const match = compKey.match(/job-card-component-ref-(\d+)/);
+                    if (match) {
+                        jobId = match[1];
+                        jobUrl = `https://www.linkedin.com/jobs/view/${jobId}`;
+                        console.log(`[ResumeHub] Extracted job ID from componentkey: ${jobId}`);
+                    }
+                }
+            }
+            
             // Fallback to URL extraction if no data attribute found
             if (!jobUrl) {
                 if (!urlElement || !urlElement.href) {

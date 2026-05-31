@@ -32,6 +32,25 @@ class LinkedInController {
         window.addEventListener("popstate", handleUrlChange);
         window.addEventListener("hashchange", handleUrlChange);
         document.addEventListener("click", handleUrlChange, true);
+
+        // ── Intercept history.pushState / replaceState ──────────────────────────
+        // LinkedIn's SPA router uses pushState internally. The native `popstate`
+        // event does NOT fire for pushState calls, so we must patch these methods
+        // to detect in-app navigation (e.g. clicking a job card in search results).
+        const patchHistory = (method) => {
+            const original = history[method];
+            history[method] = (...args) => {
+                original.apply(history, args);
+                window.dispatchEvent(new Event('locationchange'));
+            };
+        };
+        // Only patch once (guard against multiple controller instances)
+        if (!window.__rhHistoryPatched) {
+            patchHistory('pushState');
+            patchHistory('replaceState');
+            window.__rhHistoryPatched = true;
+        }
+        window.addEventListener('locationchange', handleUrlChange);
     }
 
     /**
@@ -69,8 +88,17 @@ class LinkedInController {
             newPageType = 'search';
         }
 
-        if (this.currentPageType === newPageType && this.pageHandler) {
-            console.log(`[ResumeHub] Page type remained ${newPageType}, skipping page handler re-creation.`);
+        // ── Same-page-type guard (revised) ─────────────────────────────────────
+        // For the SEARCH page we must NOT skip re-initialization when navigating
+        // between jobs (URL stays under /jobs/ but the job panel changes).
+        // We only skip if:
+        //   • The page TYPE changed to the same non-null type AND
+        //   • The JobDetailsHandler already processed the exact same URL.
+        // For the search handler we always let it run — it internally deduplicates
+        // by job ID and will only add new badges.
+        if (this.currentPageType === newPageType && newPageType === 'details' && this.pageHandler) {
+            // Allow the existing details handler to re-check (it dedupes internally)
+            this.pageHandler.initialize();
             return;
         }
 
@@ -105,7 +133,9 @@ class LinkedInController {
         if (this.initializationTimeout) {
             clearTimeout(this.initializationTimeout);
         }
-        this.initializationTimeout = setTimeout(() => this.initialize(), 250);
+        // 800ms gives LinkedIn's React router time to settle the DOM
+        // after a pushState / replaceState call before we start querying selectors.
+        this.initializationTimeout = setTimeout(() => this.initialize(), 800);
     }
 
 
@@ -115,16 +145,31 @@ class LinkedInController {
      * We use a short delay to allow the DOM to update after a navigation event.
      */
     handleUrlChange() {
+        // For 'locationchange' (our pushState patch) the URL is already updated;
+        // schedule initialize immediately via the debounce so we don't miss it.
+        const newUrl = window.location.href;
+        if (newUrl !== this.currentUrl) {
+            console.log('[ResumeHub] URL change detected, re-initializing controller.');
+            this.currentUrl = newUrl;
+            this.debouncedInitialize();
+            if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
+                this.sidebar.onNavigate();
+            }
+            return;
+        }
+
+        // For click / popstate events the URL may not have changed yet; wait a bit.
         setTimeout(() => {
-            if (window.location.href !== this.currentUrl) {
-                console.log('[ResumeHub] URL change detected, re-initializing controller.');
-                this.currentUrl = window.location.href;
+            const laterUrl = window.location.href;
+            if (laterUrl !== this.currentUrl) {
+                console.log('[ResumeHub] URL change detected (delayed), re-initializing controller.');
+                this.currentUrl = laterUrl;
                 this.debouncedInitialize();
                 if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
                     this.sidebar.onNavigate();
                 }
             }
-        }, 500); // Delay to ensure new page content is loaded
+        }, 800);
     }
 
     /**

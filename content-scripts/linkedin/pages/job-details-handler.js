@@ -78,7 +78,7 @@ export class JobDetailsHandler {
         }
     }
 
-    async waitForJobData(maxAttempts = 3, delay = 1000) {
+    async waitForJobData(maxAttempts = 8, delay = 1500) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const jobData = this.extractJobData();
             if (jobData) return jobData;
