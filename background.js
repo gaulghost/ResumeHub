@@ -164,10 +164,19 @@ async function executeInTab(tabId, func, args = []) {
 
 async function extractJDFromTab(tabId, preferAI = true, useCache = true) {
     try {
+        // Fetch current tab URL safely
+        let tabUrl = '';
+        try {
+            const tab = await chrome.tabs.get(tabId);
+            tabUrl = tab?.url || '';
+        } catch (err) {
+            console.warn('[ResumeHub BG] Failed to get tab URL in extractJDFromTab:', err);
+        }
+
         // Check cache first
         if (useCache && jdCache.has(tabId)) {
             const cached = jdCache.get(tabId);
-            if (Date.now() - cached.timestamp < CACHE_TTL) {
+            if (cached.url === tabUrl && (Date.now() - cached.timestamp < CACHE_TTL)) {
                 console.log('[ResumeHub BG] Using cached JD for tab', tabId);
                 return cached.jd;
             } else {
@@ -186,7 +195,7 @@ async function extractJDFromTab(tabId, preferAI = true, useCache = true) {
                 jd = await apiClient.extractJobDescription(pageText);
                 if (jd && jd.length > 50) {
                     // Cache the result
-                    jdCache.set(tabId, { jd, timestamp: Date.now() });
+                    jdCache.set(tabId, { jd, url: tabUrl, timestamp: Date.now() });
                     return jd;
                 }
             }
@@ -222,7 +231,7 @@ async function extractJDFromTab(tabId, preferAI = true, useCache = true) {
         
         // Cache standard extraction result too
         if (jdStd) {
-            jdCache.set(tabId, { jd: jdStd, timestamp: Date.now() });
+            jdCache.set(tabId, { jd: jdStd, url: tabUrl, timestamp: Date.now() });
         }
         
         return jdStd;
@@ -467,14 +476,15 @@ async function handleGetJobDescription(request, sendResponse) {
             return sendResponse({ success: false, error: 'Unable to access current tab' });
         }
 
-        // Get tab ID for caching
+        // Get tab ID and URL for caching
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const tabId = tab?.id;
+        const tabUrl = tab?.url || '';
 
         // Check cache first (if we have a tab ID and not forcing refresh)
         if (!forceRefresh && tabId && jdCache.has(tabId)) {
             const cached = jdCache.get(tabId);
-            if (Date.now() - cached.timestamp < CACHE_TTL) {
+            if (cached.url === tabUrl && (Date.now() - cached.timestamp < CACHE_TTL)) {
                 console.log('[ResumeHub BG] Using cached JD for getJobDescription');
                 sendTelemetry('job_description_completed', { method: extractionMethod, source: 'cache', success: true });
                 return sendResponse({ success: true, jobDescription: cached.jd });
@@ -512,7 +522,7 @@ async function handleGetJobDescription(request, sendResponse) {
                 
                 // Cache the result
                 if (tabId && jobDescription) {
-                    jdCache.set(tabId, { jd: jobDescription, timestamp: Date.now() });
+                    jdCache.set(tabId, { jd: jobDescription, url: tabUrl, timestamp: Date.now() });
                 }
             }
         } else {
@@ -738,13 +748,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (handler) {
         console.log(`[ResumeHub BG] Received action: ${request.action}`);
         
-        ensureInitialized().then(() => {
+        ensureInitialized().then(async () => {
             try {
                 // Support both (request, sendResponse) and (request, sender, sendResponse)
                 if (handler.length >= 3) {
-                    handler(request, sender, sendResponse);
+                    await handler(request, sender, sendResponse);
                 } else {
-                    handler(request, sendResponse);
+                    await handler(request, sendResponse);
                 }
             } catch (e) {
                 console.error('[ResumeHub BG] Handler error:', e);
