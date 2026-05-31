@@ -463,8 +463,12 @@ async function handleCreateTailoredResume(request, sendResponse) {
 }
 
 async function handleGetJobDescription(request, sendResponse) {
+    let extractionMethod = 'standard';
     try {
-        const { extractionMethod = 'standard', apiToken, forceRefresh = false } = request;
+        const { apiToken, forceRefresh = false } = request;
+        if (request.extractionMethod) {
+            extractionMethod = request.extractionMethod;
+        }
 
         console.log(`[ResumeHub BG] getJobDescription called (method=${extractionMethod}, forceRefresh=${forceRefresh})`);
         sendTelemetry('job_description_requested', { method: extractionMethod });

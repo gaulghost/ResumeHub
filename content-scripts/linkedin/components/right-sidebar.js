@@ -9,6 +9,7 @@ export class ResumeHubSidebar {
     this.hostId = 'resumehub-right-sidebar-host';
     this.root = null; // ShadowRoot
     this.expanded = false;
+    this.isSmallIconMode = false;
     this.theme = 'light';
     this.lastUrl = location.href;
     this.mutationObserver = null;
@@ -161,12 +162,6 @@ export class ResumeHubSidebar {
     const initTop = Math.max(8, Math.round((window.innerHeight - initRect.height) / 2));
     host.style.top = `${initTop}px`;
 
-    // Wire events
-    this._wireEvents();
-
-    // Enable drag
-    this._initDrag();
-
     // Load small icon state
     try {
       const data = await new Promise(resolve => chrome.storage.local.get(['isSmallIconMode'], resolve));
@@ -178,6 +173,12 @@ export class ResumeHubSidebar {
     } catch (e) {
       this.isSmallIconMode = false;
     }
+
+    // Wire events
+    this._wireEvents();
+
+    // Enable drag
+    this._initDrag();
 
     // Load theme setting and sync with storage changes
     this._loadTheme();
@@ -655,6 +656,7 @@ export class ResumeHubSidebar {
         align-items: center;
         justify-content: space-between;
         width: 100%;
+        color: var(--rh-text);
       }
 
       .rh-feature-toggle {

@@ -6,12 +6,15 @@
   "scripts": {
     "build": ".build/build.sh",
     "install-deps": "npm install -g terser clean-css-cli",
+    "test": "jest",
     "test-build": "node -e \"console.log('Build tools check:', process.version)\""
   },
   "devDependencies": {
+    "clean-css-cli": "^5.6.2",
     "esbuild": "^0.20.1",
-    "terser": "^5.24.0",
-    "clean-css-cli": "^5.6.2"
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "terser": "^5.24.0"
   },
   "keywords": [
     "browser-extension",
@@ -20,5 +23,8 @@
     "obfuscation"
   ],
   "author": "Pradhuman Singh",
-  "license": "MIT"
-} 
+  "license": "MIT",
+  "jest": {
+    "testEnvironment": "jsdom"
+  }
+}
