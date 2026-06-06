@@ -27,8 +27,17 @@ export class SalaryBadge {
             .${SELECTORS.SALARY_BADGE.container} {
                 margin-top: 6px;
                 margin-bottom: 6px;
-                display: inline-block;
-                width: 100%;
+                display: block !important;
+                width: 100% !important;
+                flex-basis: 100% !important;
+            }
+            
+            .cust-job-tuple .row3,
+            .srp-jobtuple-wrapper .row3,
+            .srp-jobtuple-container .row3 {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: flex-start !important;
             }
             
             .${SELECTORS.SALARY_BADGE.badge} {

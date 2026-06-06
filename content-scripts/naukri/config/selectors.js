@@ -2,6 +2,7 @@ export const SELECTORS = {
     // Selectors for Naukri job search results pages
     JOB_SEARCH_PAGE: {
         jobListItem: [
+            ".srp-jobtuple-wrapper",    // New UI job card wrapper
             ".srp-jobtuple-container",  // Modern Naukri listing cards
             "article.jobTuple",         // Legacy Naukri listing cards
             ".jobTuple",                // Alternate container
@@ -35,6 +36,9 @@ export const SELECTORS = {
             "a[href*='/job-listings']"
         ],
         cardActionsContainer: [
+            ".row3",                    // Row containing location/exp
+            ".job-details",             // Inside details row
+            ".cust-job-tuple",          // Card inner wrapper
             ".job-info",
             ".jobTupleHeader",
             ".srp-jobtuple-container",
