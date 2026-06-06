@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — ResumeHub AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #08070d;
+      --bg-card: rgba(16, 15, 28, 0.7);
+      --border-card: rgba(255, 255, 255, 0.08);
+      --text-primary: #f3f4f6;
+      --text-secondary: #8b8fa3;
+      --primary: #8b5cf6;
+      --accent: #3b82f6;
+      --font-heading: 'Outfit', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      padding: 120px 24px 60px;
+    }
+
+    header {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background-color: rgba(8, 7, 13, 0.8);
+      border-bottom: 1px solid var(--border-card);
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 1000;
+    }
+
+    .nav-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo-link {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      color: var(--text-primary);
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-family: var(--font-heading);
+      color: white;
+    }
+
+    .logo-text {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-text span {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      padding: 40px;
+    }
+
+    h1 {
+      font-family: var(--font-heading);
+      font-size: 36px;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .last-updated {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border-card);
+      padding-bottom: 12px;
+    }
+
+    h2 {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      margin: 28px 0 12px;
+      color: var(--text-primary);
+    }
+
+    p {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      font-size: 15px;
+    }
+
+    ul {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      padding-left: 20px;
+      font-size: 15px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    strong {
+      color: var(--text-primary);
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="nav-container">
+      <a href="/" class="logo-link">
+        <div class="logo-icon">📄</div>
+        <div class="logo-text">ResumeHub <span>AI</span></div>
+      </a>
+      <a href="/" style="color: var(--text-secondary); text-decoration: none; font-size: 14px; font-weight: 500;">Back to Home</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <div class="last-updated">Last Updated: December 2, 2025</div>
+
+    <p>This Privacy Policy describes how the ResumeHub Chrome Extension ("ResumeHub", "we", "us", or "our") collects, uses, and handles your information when you use our extension.</p>
+
+    <h2>1. Information We Collect</h2>
+    <p>ResumeHub processes the following types of information to provide its core functionality:</p>
+    <ul>
+      <li><strong>User-Provided API Key:</strong> To enable the resume tailoring features powered by Google's Generative AI, ResumeHub allows you to provide your own Google Generative AI API key. This key is stored locally on your device using <code>chrome.storage.local</code> and is sent directly to Google's API endpoints with each request you initiate.</li>
+      <li><strong>Resume Content:</strong> When you upload your resume file, its content is processed. The content is stored locally on your device using <code>chrome.storage.local</code> and is sent to Google's Generative AI API for parsing and tailoring against job descriptions. Resumes often contain Personally Identifiable Information (PII) such as your name, contact details, work history, and education.</li>
+      <li><strong>Web Page Content (Job Descriptions):</strong> When you activate the extension on a web page containing a job description, ResumeHub reads the text content of that page using Chrome's <code>activeTab</code> and <code>scripting</code> permissions. This extracted text is sent to Google's Generative AI API to either identify the core description or serve as the basis for tailoring your resume.</li>
+      <li><strong>User Preferences:</strong> We store your preferred theme (light/dark) and chosen extraction method using <code>chrome.storage.sync</code> to personalize your experience.</li>
+    </ul>
+
+    <h2>2. How We Use Your Information</h2>
+    <p>Your information is used solely for the following purposes:</p>
+    <ul>
+      <li>To authenticate your requests to the Google Generative AI API using your provided API key.</li>
+      <li>To send your resume content and extracted job description text to the Google Generative AI API for analysis, parsing, and generation of tailored resume content.</li>
+      <li>To store your API key, resume data, and preferences locally on your browser for your convenience.</li>
+      <li>To display the processed and tailored resume information within the extension's popup.</li>
+    </ul>
+
+    <h2>3. Data Storage and Security</h2>
+    <ul>
+      <li>Your Google AI API Key and uploaded resume data (filename, content, type) are stored locally on your computer using Chrome's Storage API (<code>chrome.storage.local</code>).</li>
+      <li>Your preferences (theme, extraction method) are stored using Chrome's Sync Storage API (<code>chrome.storage.sync</code>), which may sync across your logged-in Chrome profiles.</li>
+      <li>We do not store your API key, resume content, or web page content on any external servers controlled by us. Data required for processing is sent directly from your browser to Google's Generative AI API endpoints.</li>
+    </ul>
+
+    <h2>4. Data Sharing</h2>
+    <p>We do <strong>not</strong> sell or share your personal information with third parties, except as necessary to provide the extension's core functionality:</p>
+    <ul>
+      <li><strong>Google Generative AI API:</strong> Your API key, resume content, and extracted web page text are sent to Google's servers for processing via their Generative AI API. Your use of this extension is subject to Google's own Privacy Policy and Terms of Service regarding their handling of data sent to their APIs. You can find Google's policies here: <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">https://policies.google.com/privacy</a></li>
+    </ul>
+
+    <h2>5. User Control</h2>
+    <p>You can clear your stored API key and resume data at any time through the extension's popup interface. Uninstalling the extension will also remove all locally stored data.</p>
+
+    <h2>6. Changes to This Privacy Policy</h2>
+    <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy within the extension or on its web store listing.</p>
+
+    <h2>7. Contact Us</h2>
+    <p>If you have any questions about this Privacy Policy, please contact <a href="mailto:seeker.ent@gmail.com">seeker.ent@gmail.com</a>.</p>
+  </div>
+
+  <footer>
+    <p>© 2026 ResumeHub AI. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>

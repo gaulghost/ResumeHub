@@ -1,396 +1,234 @@
-# ResumeHub-v1 File Structure
+# ResumeHub File and Function Structure
 
-This document provides a detailed breakdown of the file structure, including functions and their descriptions.
+This document provides a complete breakdown of all actual files in the ResumeHub-v1 extension, including functions and their one-line descriptions.
 
-## Popup Layer (`popup/`)
+---
 
-### `popup/app-controller.js`
-**Description**: Main controller for the popup application. Orchestrates initialization, module management, and application lifecycle.
+## 📂 Extension Core Layer (Root)
+
+### 📄 `background.js`
+**Description**: Service worker handling API proxies, salary estimation routing, telemetry reporting, and extension lifecycle events.
 **Functions**:
-- `constructor()`: Initializes state and module placeholders.
-- `initialize()`: Sets up the application, initializes modules (Storage, State, UI, etc.), and handles errors.
-- `getStatus()`: Returns the current status of the application and its modules.
-- `restart()`: Re-initializes the application (useful for debugging).
-- `shutdown()`: Cleans up resources and shuts down the application.
-- `exposeForDebugging()`: Exposes the controller instance to `window` for debugging purposes.
+- `ACTION_HANDLERS`: Maps messaging action types (e.g. `getSettings`, `setAPIToken`, `estimateSalaryWithJD`) to their execution handlers.
+- `chrome.runtime.onMessage.addListener(...)`: Main chrome extension event listener coordinating asynchronous messaging between content scripts, popups, and utility models.
+- `chrome.runtime.onInstalled.addListener(...)`: Handles installation lifecycle, setting default sync configurations in storage.
 
-### `popup/storage-adapter.js`
-**Description**: Adapter for communicating with the background script for storage operations. Abstracts `chrome.runtime.sendMessage` calls.
+### 📄 `popup.html`
+**Description**: Popup interface layout structure showing API settings, resume upload status, and testing utilities.
+
+### 📄 `popup.js`
+**Description**: Main execution entry point for the popup interface.
 **Functions**:
-- `getSettings()`: Retrieves user settings (theme, extraction method).
-- `setSetting(key, value)`: Saves a specific setting.
-- `getResume()`: Retrieves the stored resume data.
+- `document.addEventListener('DOMContentLoaded', ...)`: Initializes the core Popup App Controller.
+- `showError(message)`: Renders error messages in the DOM if initialization fails.
+
+### 📄 `manifest.json`
+**Description**: Manifest configuration specifying scripts, permissions, styles, and extension rules.
+
+---
+
+## 📂 Popup Module (`popup/`)
+
+### 📄 `popup/app-controller.js`
+**Description**: Main orchestrator of the popup's MVVM lifecycle.
+**Functions**:
+- `constructor()`: Instantiates state placeholders.
+- `initialize()`: Sets up the managers, storage, and UI states.
+- `getStatus()`: Returns current status indicators for debugging.
+- `restart()`: Reboots the controller state.
+- `shutdown()`: Cleans up running resources.
+
+### 📄 `popup/storage-adapter.js`
+**Description**: Wraps storage message dispatches to the background service worker.
+**Functions**:
+- `getSettings()`: Retrieves theme and extraction methods.
+- `setSetting(key, value)`: Updates key-value configurations.
+- `getResume()`: Fetches uploaded resume binary.
 - `setResume(filename, content, mimeType)`: Saves resume data.
-- `clearResume()`: Removes stored resume data.
-- `getAPIToken()`: Retrieves the stored API token.
-- `setAPIToken(token)`: Saves the API token.
-- `clearAPIToken()`: Removes the API token.
-- `getValidCache(key)`: (Legacy) Returns null in popup context.
-- `setCache(key, value)`: (Legacy) No-op setter.
-- `setCacheWithExpiry(key, value, hours)`: (Legacy) No-op setter.
-
-### `popup.js`
-**Description**: Entry point for the popup. Initializes the `AppController` when the DOM is loaded.
-**Functions**:
-- `document.addEventListener('DOMContentLoaded', ...)`: Checks for required classes and initializes `AppController`.
-- `showError(message)`: Displays a critical error message in the UI if initialization fails.
-
-### `popup/file-handlers.js`
-**Description**: Handles file upload, reading, and download operations.
-**Functions**:
-- `constructor(stateManager, uiManager)`: Initializes with state and UI managers.
-- `handleResumeUpload(file)`: Processes a resume file upload, validates type/size, reads content, and updates state.
-- `readFileContent(file)`: Reads file content as text or array buffer based on type.
-- `downloadGeneratedResume(format)`: Initiates download of the tailored resume in the specified format (PDF, DOCX, TXT).
-- `_downloadAsPdf(resumeJSON, filename)`: Generates and downloads a PDF version of the resume.
-- `_downloadAsDocx(resumeJSON, filename)`: (Placeholder) Downloads as DOCX (currently falls back to text).
-- `_downloadAsText(resumeJSON, filename)`: Converts resume JSON to text and downloads it.
-- `_generateAndDownloadPdf(resumeJSON, filename)`: Internal method to generate PDF using `pdfMake`.
-
-### `popup/resume-processor.js`
-**Description**: Manages resume tailoring and job description analysis.
-**Functions**:
-- `constructor(stateManager, uiManager)`: Initializes with state and UI managers.
-- `generateTailoredResume()`: Orchestrates the resume tailoring process (validates inputs, calls API, handles response).
-- `handleGenerationResponse(response)`: Processes the API response for resume tailoring.
-- `handleGenerationError(error)`: Handles errors during generation and updates UI.
-- `previewJobDescription()`: Fetches and displays the job description from the current tab.
-- `handlePreviewResponse(response)`: Updates UI with the extracted job description.
-- `handlePreviewError(error)`: Handles errors during JD preview.
-- `autoFillForm()`: Initiates the auto-fill process for job application forms.
-- `handleAutoFillResponse(response)`: Displays results of the auto-fill operation.
-- `handleAutoFillError(error)`: Handles errors during auto-fill.
-- `sendBackgroundMessage(message)`: Helper to send messages to the background script.
-- `validateJobDescription(text, minLength)`: Validates the job description text.
-- `getExtractionMethodDisplayName(method)`: Returns a human-readable name for the extraction method.
-- `checkBackgroundScript()`: Pings the background script to ensure it's active.
-- `getProcessingStatus()`: Returns current processing flags.
-
-### `popup/state-manager.js`
-**Description**: Manages the application state (resume data, API token, theme, etc.) and notifies subscribers of changes.
-**Functions**:
-- `constructor()`: Initializes default state.
-- `initialize()`: Loads initial state from storage.
-- `subscribe(key, callback)`: Subscribes a listener to changes in a specific state key.
-- `notify(key, value)`: Notifies subscribers of a state change.
-- `setState(key, value, saveToStorage)`: Updates state and optionally saves to storage.
-- `setResume(filename, content, mimeType)`: Updates resume data in state and storage.
-- `getResume()`: Returns current resume data.
-- `setApiToken(token)`: Updates API token in state and storage.
-- `getApiToken()`: Returns current API token.
-- `setTheme(theme)`: Updates theme in state and storage.
-- `setProcessing(isProcessing)`: Updates processing status.
-- `isProcessing()`: Returns processing status.
-- `setPreviewing(isPreviewing)`: Updates previewing status.
-- `isPreviewing()`: Returns previewing status.
-- `setGeneratedResume(resumeJSON)`: Stores the generated resume JSON.
-- `getGeneratedResume()`: Returns the generated resume JSON.
-- `clearGeneratedResume()`: Clears the generated resume.
-- `validateForGeneration()`: Checks if all requirements for generation are met.
-- `validateForAutoFill()`: Checks if all requirements for auto-fill are met.
-- `getSnapshot()`: Returns a snapshot of the current state.
-
-### `popup/ui-manager.js`
-**Description**: Manages DOM elements and UI updates.
-**Functions**:
-- `constructor(stateManager)`: Initializes with state manager and caches DOM elements.
-- `initializeAllEvents()`: Sets up event listeners for UI interactions.
-- `cacheElements()`: Stores references to DOM elements.
-- `applyTheme(theme, isInitialLoad)`: Updates the UI theme (light/dark).
-- `toggleCard(cardElement, forceCollapse)`: Toggles the visibility of collapsible cards.
-- `updateStatus(message, type)`: Updates the main status message.
-- `updateApiTokenStatus(message, isSuccess)`: Updates the API token status indicator.
-- `updateResumeStatus(filename)`: Updates the resume upload status and buttons.
-- `updateAutoFillStatus(message, type)`: Updates the auto-fill status message.
-- `setButtonLoading(button, isLoading, loadingText, originalText)`: Toggles button loading state.
-- `toggleDownloadButtons(show)`: Shows or hides download buttons.
-- `updateExtractionMethodUI(method)`: Updates UI based on selected extraction method.
-- `initializeCardEvents()`: Sets up click handlers for collapsible cards.
-- `initializeThemeEvents()`: (Legacy) Theme events are now handled by EventHandlers.
-- `initializeEvents()`: Initializes all UI events.
-- `getCurrentTheme()`: Returns the current theme.
-- `isCardCollapsed(cardId)`: Checks if a card is collapsed.
-
-### `popup/event-handlers.js`
-**Description**: Centralizes event handling logic for the popup.
-**Functions**:
-- `constructor(stateManager, uiManager, fileHandlers, resumeProcessor)`: Initializes with all managers.
-- `initializeAllEvents()`: Sets up all event listeners.
-- `initializeInputEvents()`: Sets up input change listeners (API token, etc.).
-- `initializeButtonEvents()`: Sets up button click listeners (Create, Preview, Auto-fill, Clear).
-- `initializeDownloadEvents()`: Sets up download button listeners.
-- `initializeStateListeners()`: Subscribes to state changes to update UI.
-- `initializeKeyboardShortcuts()`: Sets up keyboard shortcuts (Ctrl+Enter, Ctrl+P).
-- `initializeWindowEvents()`: Sets up window-level events (beforeunload, visibilitychange).
-- `initializeDragAndDrop()`: Sets up drag-and-drop for file upload.
-- `initializeFormValidation()`: Sets up real-time form validation.
-- `initializeAccessibility()`: Adds accessibility features (keyboard nav, ARIA).
-- `initialize()`: Main initialization method.
-- `cleanup()`: Removes event listeners.
-- `getStatus()`: Returns initialization status.
-
-## Core Layer (`core/`)
-
-### `core/config/constants.js`
-**Description**: Defines application-wide constants.
-**Functions**:
-- (Exports constants like `STORAGE_KEYS`, `MESSAGE_ACTIONS`, `UI_SELECTORS`, etc. No functions.)
-
-### `core/config/app-config.js`
-**Description**: Configuration settings for the application.
-**Functions**:
-- (Exports configuration objects. No functions.)
-
-### `core/config/job-selectors.js`
-**Description**: CSS selectors for extracting job information from LinkedIn.
-**Functions**:
-- (Exports `SELECTORS` object. No functions.)
-
-## Background Script
-
-### `background.js`
-**Description**: Service worker that handles background tasks, API calls, and cross-component communication.
-**Functions**:
-- `ACTION_HANDLERS`: Object mapping action names to handler functions.
-  - `getSettings`: Retrieves settings from storage.
-  - `setSetting`: Saves settings to storage.
-  - `getResume`: Retrieves resume from storage.
-  - `setResume`: Saves resume to storage.
-  - `clearResume`: Clears resume from storage.
-  - `getAPIToken`: Retrieves API token.
-  - `setAPIToken`: Saves API token and re-initializes API client.
-  - `clearAPIToken`: Clears API token.
-  - `getCurrentTabId`: Returns the sender's tab ID.
-  - `estimateSalaryWithJD`: Orchestrates salary estimation using `SalaryEstimator` and AI enhancement.
-  - `getAIResponse`: Handles generic AI prompts using `GeminiAPIClient`.
-  - `ping`: Simple health check.
-- `chrome.runtime.onMessage.addListener`: Main message listener that dispatches to `ACTION_HANDLERS`.
-- `chrome.runtime.onInstalled.addListener`: Listener for extension installation/update events.
-## Infrastructure Layer (`utils/`)
-
-### `utils/api-client.js`
-**Description**: Client for interacting with the Google Gemini API (client-side fallback) and the self-hosted backend API.
-**Functions**:
-- `constructor(apiKey)`: Initializes with API key(s).
-- `callAPI(model, prompt, options, operation)`: Makes a request to the Gemini API with retries and error handling.
-- `tailorResume(resumeData, jobDescription)`: Specific method to tailor a resume.
-- `extractJobDescription(htmlContent)`: Uses AI to extract structured job description from HTML.
-- `estimateSalary(jobTitle, location, companyName, jobUrl, jobDescription)`: Estimates salary for a single job by attempting backend estimation first, and falling back to direct client-side AI.
-- `batchEstimateSalary(batchRequest)`: Performs batch salary estimation by calling the self-hosted backend first, falling back to direct batch client-side AI.
-- `_handleError(error, operation)`: Internal error handler.
-
-### `utils/storage-manager.js`
-**Description**: Wrapper around `chrome.storage` for consistent data access.
-**Functions**:
-- `getSettings()`: Retrieves settings.
-- `setSetting(key, value)`: Saves a setting.
-- `getResume()`: Retrieves resume data.
-- `setResume(filename, content, mimeType)`: Saves resume data.
-- `clearResume()`: Clears resume data.
-- `getAPIToken()`: Retrieves API token.
+- `clearResume()`: Removes uploaded resume.
+- `getAPIToken()`: Retrieves stored API keys.
 - `setAPIToken(token)`: Saves API token.
-- `clearAPIToken()`: Clears API token.
-- `getValidCache(key)`: Retrieves cached data if valid.
-- `setCache(key, value)`: Saves data to cache.
-- `setCacheWithExpiry(key, value, hours)`: Saves data with expiration.
+- `clearAPIToken()`: Removes API token.
 
-### `utils/logger.js`
-**Description**: Centralized logging utility.
+### 📄 `popup/file-handlers.js`
+**Description**: Coordinates resume file uploads, read streams, and tailored resume downloads.
 **Functions**:
-- `log(message, data)`: Logs info message.
-- `warn(message, data)`: Logs warning.
-- `error(message, error)`: Logs error.
-- `debug(message, data)`: Logs debug message (if enabled).
+- `constructor(stateManager, uiManager)`: Links state and UI management contexts.
+- `handleResumeUpload(file)`: Validates, reads, and updates state with uploaded resumes.
+- `readFileContent(file)`: Resolves file content as text or ArrayBuffer.
+- `downloadGeneratedResume(format)`: Dispatches file generation (PDF, DOCX, TXT).
+- `_downloadAsPdf(resumeJSON, filename)`: Triggers PDF export.
+- `_downloadAsDocx(resumeJSON, filename)`: Triggers DOCX template file export.
+- `_downloadAsText(resumeJSON, filename)`: Exports resume as standard formatting text.
 
-### `utils/unified-error-handler.js`
-**Description**: Centralized error handling and classification.
+### 📄 `popup/resume-processor.js`
+**Description**: Handles job description previewing, AI tailoring triggers, and auto-form filling workflows.
 **Functions**:
-- `handleError(error, context)`: Main entry point for handling errors.
-- `classifyError(error)`: Determines the type of error (Network, API, Validation, etc.).
-- `getUserFriendlyError(error)`: Returns a user-facing error message and action.
-- `shouldReportToUser(error)`: Determines if error should be shown to user.
-- `logError(error, context)`: Logs error to storage.
-- `getErrorSuggestions(errorType)`: Returns actionable suggestions for specific errors.
+- `constructor(stateManager, uiManager)`: Connects processor to state and UI contexts.
+- `generateTailoredResume()`: Coordinates background tailoring requests.
+- `handlePreviewResponse(response)`: Populates preview fields in the UI.
+- `autoFillForm()`: Sends message to active tab to trigger forms auto-filling.
 
-### `utils/simple-rate-limiter.js`
-**Description**: Rate limiter for API requests.
+### 📄 `popup/state-manager.js`
+**Description**: MVVM state manager storing token, theme, and processing indicators.
 **Functions**:
-- `constructor()`: Initializes queue and counters.
-- `queueRequest(requestFn, operation)`: Adds a request to the queue.
-- `processQueue()`: Processes queued requests respecting limits.
-- `processRequestConcurrently(queueItem)`: Executes a single request.
-- `isRateLimitError(error)`: Checks if an error is rate-limit related.
-- `waitForNextMinute()`: Pauses execution until next minute window.
-- `resetMinuteCounterIfNeeded()`: Resets counters if minute has passed.
-- `getStatus()`: Returns current limiter status.
-- `delay(ms)`: Utility delay function.
-- `clearQueue()`: Clears all pending requests.
+- `subscribe(key, callback)`: Binds callback methods to state changes.
+- `setState(key, value, saveToStorage)`: Mutates states and syncs with persistent local adapters.
+- `validateForGeneration()`: Checks requirements for trigger generation.
 
-### `utils/salary-estimator.js`
-**Description**: Estimates salary based on job details using caches, self-hosted backend, and direct Gemini AI fallback.
+### 📄 `popup/ui-manager.js`
+**Description**: Direct DOM access and UI element updates.
 **Functions**:
-- `constructor(apiClient, rateLimiter)`: Initializes with dependencies.
-- `estimate(jobTitle, location, companyName, jobUrl, jobDescription)`: Estimates salary for a single job using caches and `apiClient.estimateSalary`.
-- `batchEstimate(jobs, options)`: Estimates salary for a batch of jobs by checking cache first, then processing misses via `_batchAIEstimate`.
-- `_batchAIEstimate(jobs)`: Direct batch AI estimation via `apiClient.batchEstimateSalary`.
-- `_batchAIEstimateViaMessage(jobs)`: Content script helper to request batch estimation from background worker.
-- `_checkCache(job)`: Verifies if job salary is cached.
-- `_cacheResult(job, data)`: Stores successful salary estimates in persistent caches.
+- `applyTheme(theme)`: Switches styles for dark or light modes.
+- `updateStatus(message, type)`: Updates application logging status texts.
+- `setButtonLoading(button, isLoading)`: Adjusts loading flags and text for actions buttons.
 
-### `utils/salary-parser.js`
-**Description**: Parses salary strings into structured data.
+### 📄 `popup/event-handlers.js`
+**Description**: Sets up event listeners, keyboard shortcuts, and drag-and-drop triggers for the popup UI.
 **Functions**:
-- `parse(salaryString)`: Main parsing method.
-- `_normalize(salaryString)`: Cleans up input string.
-- `_extractRange(normalized)`: Extracts min/max values.
-- `_detectCurrency(salaryString)`: Identifies currency.
-- `_detectPeriod(salaryString)`: Identifies pay period (year, month, hour).
+- `initializeAllEvents()`: Connects DOM click, change, and key events to respective handlers.
+- `initializeDragAndDrop()`: Configures file upload zones.
 
-### `utils/file-downloader.js`
-**Description**: Handles file downloads in the browser.
+---
+
+## 📂 Content Scripts Layer (`content-scripts/`)
+
+### 📂 LinkedIn Integration (`content-scripts/linkedin/`)
+* **`linkedin-controller.js`**: Orchestrates SPA URL changes, observes mutations, and mounts handlers.
+  * *Functions*: `setupEventListeners()`, `setupMutationObserver()`, `initialize()`, `handleUrlChange()`, `destroy()`.
+* **`config/selectors.js`**: Static dictionary of CSS query strings targeting LinkedIn job components.
+* **`components/right-sidebar.js`**: Renders and wires the modern AI matching drawer on LinkedIn details page.
+  * *Functions*: `mount()`, `unmount()`, `updateJobData()`, `_handleTailorClick()`, `_storeTailoredResume()`, `_downloadResume()`.
+* **`components/job-insights-manager.js`**: Visualizes skills checklist, potential interview prep, and resources.
+  * *Functions*: `update(jobData)`, `_renderInsights()`, `_fetchInsights()`.
+* **`components/salary-badge.js`**: Elegant badge injection next to LinkedIn titles showing salary ranges.
+  * *Functions*: `create()`, `showLoading()`, `showSalary()`, `showError()`.
+* **`pages/job-details-handler.js`**: Controls extraction details and mounts elements on full-page detail views.
+  * *Functions*: `initialize()`, `processJobDetails()`, `extractJobData()`, `createSalaryBadge()`.
+* **`pages/job-search-handler.js`**: Renders batch estimates and badges on active search list results cards.
+  * *Functions*: `initialize()`, `processAllVisibleJobs()`, `processJobCards()`, `retryFailedJobs()`.
+
+### 📂 Naukri Integration (`content-scripts/naukri/`)
+* **`naukri-controller.js`**: Controls site layout initialization and detects active tabs.
+  * *Functions*: `setupEventListeners()`, `initialize()`, `handleUrlChange()`, `destroy()`.
+* **`config/selectors.js`**: Target selectors query maps for Naukri lists and panels.
+* **`components/salary-badge.js`**: Embeds compensation badge details inside Naukri listings.
+  * *Functions*: `create()`, `showSalary()`, `showError()`.
+* **`pages/job-details-handler.js`**: Parses Naukri detailed description parameters to compute values.
+  * *Functions*: `initialize()`, `processJobDetails()`, `extractJobData()`.
+* **`pages/job-search-handler.js`**: Tracks lazy scrolling results and queries batch listings on Naukri searches.
+  * *Functions*: `initialize()`, `processAllVisibleJobs()`, `processJobCards()`, `extractJobData()`.
+
+### 📂 Instahyre Integration (`content-scripts/instahyre/`)
+* **`instahyre-controller.js`**: Controller monitoring Instahyre URL routing and details card states.
+  * *Functions*: `setupEventListeners()`, `initialize()`, `handleUrlChange()`, `destroy()`.
+* **`config/selectors.js`**: Instahyre CSS selector reference points.
+* **`components/salary-badge.js`**: UI badges reporting Instahyre salary predictions.
+  * *Functions*: `create()`, `showSalary()`, `showError()`.
+* **`pages/job-details-handler.js`**: Extracts Instahyre job metadata and company info.
+  * *Functions*: `initialize()`, `processJobDetails()`, `extractJobData()`.
+* **`pages/job-search-handler.js`**: Batches query data and mounts components on cards list view in Instahyre search panel.
+  * *Functions*: `initialize()`, `processAllVisibleJobs()`, `processJobCards()`, `extractJobData()`.
+
+---
+
+## 📂 Utilities and Adapters (`utils/`)
+
+### 📄 `utils/api-client.js`
+**Description**: Network client coordinating calls to Gemini LLM model API or the self-hosted Flask API.
 **Functions**:
-- `downloadAsText(content, filename)`: Downloads string content as .txt.
-- `downloadAsPdf(content, filename)`: Downloads content as .pdf (using pdfMake).
-- `downloadAsDocx(content, filename)`: Downloads content as .docx.
-- `_saveFile(blob, filename)`: Internal method to trigger download.
+- `callAPI(model, prompt, options)`: Invokes direct Google Gemini endpoint queries.
+- `tailorResume(resumeData, jobDescription)`: Dispatches AI prompts to tailor resumes.
+- `estimateSalary(jobTitle, location, companyName, jobUrl)`: Queries the duckdns backend API for salary estimation.
+- `batchEstimateSalary(batchRequest)`: Batch queries backend proxy API for salary arrays.
 
-### `utils/input-validator.js`
-**Description**: Validates user input.
+### 📄 `utils/storage-manager.js`
+**Description**: Direct persistent browser local and sync storage interfaces.
 **Functions**:
-- `validateResume(file)`: Validates resume file (type, size).
-- `validateApiToken(token)`: Validates API token format.
-- `validateJobDescription(text)`: Validates job description content.
-- `validateAPIResponse(response, expectedType)`: Validates API response structure.
-- `validateSalaryInput(input)`: Validates salary strings.
-- `sanitizeAndValidateText(text, maxLength)`: Sanitizes and validates text.
-- `validateNumber(value, min, max)`: Validates numeric input.
+- `getSettings()`, `setSetting(key, value)`: Core configuration handlers.
+- `getResume()`, `setResume(filename, content, mimeType)`: Persistence managers for uploaded resumes.
+- `getValidCache(key)`: Fetches non-expired cached entries.
+- `setCacheWithExpiry(key, value, hours)`: Persists entries with validation lifetimes.
 
-### `utils/request-validator.js`
-**Description**: Validates message requests against schemas.
+### 📄 `utils/salary-estimator.js`
+**Description**: Coordinates database caches, backend API queries, and direct direct fallback methods.
 **Functions**:
-- `validateRequest(request, schema)`: Validates a request object.
-- `getSchemaForAction(action)`: Retrieves the schema for a specific action.
-- (Exports `REQUEST_SCHEMAS` constant).
+- `estimate(...)`: Estimates salary for details page.
+- `batchEstimate(...)`: Batches multiple card estimates simultaneously.
+- `_checkCache(...)`: Pulls local estimates if available to avoid redundant network hits.
 
-### `utils/script-injector.js`
-**Description**: Injects scripts and styles into web pages.
+### 📄 `utils/salary-parser.js`
+**Description**: Parses salary strings into numerical ranges, currencies, and payment schedules.
 **Functions**:
-- `injectScript(file)`: Injects a JS file.
-- `injectCSS(file)`: Injects a CSS file.
-- `removeScript(file)`: Removes an injected script.
-- `removeCSS(file)`: Removes an injected CSS file.
+- `parse(salaryString)`: Extracts ranges and structures raw texts.
+- `_normalize(...)`: Removes formatting clutter (commas, spaces).
 
-### `utils/resume-cache-optimizer.js`
-**Description**: Optimizes resume storage and caching.
+### 📄 `utils/pdf-generator.js`
+**Description**: Generates formatted PDF resume structures using the `pdfMake` library.
 **Functions**:
-- `compress(content)`: Compresses resume content (placeholder).
-- `decompress(content)`: Decompresses resume content.
-- `shouldCache(resumeData)`: Determines if resume should be cached.
+- `generatePDF(resumeData)`: Builds document visual streams.
+- `_createDocumentDefinition(...)`: Compiles sections layout rules (Education, Skills, Experience).
 
-### `utils/sanitizer.js`
-**Description**: Sanitizes input to prevent XSS and injection.
+### 📄 `utils/docx-generator.js`
+**Description**: Generates DOCX files. Currently acts as a formatter placeholder downloading formatted text.
 **Functions**:
-- `sanitizeHTML(html)`: Removes unsafe HTML tags/attributes.
-- `sanitizeText(text)`: Removes control characters.
-- `sanitizeJSON(json)`: Recursively sanitizes JSON objects.
+- `generateDocx(resumeJSON)`: Compiles data structure for download.
 
-### `utils/parallel-processor.js`
-**Description**: Helper for parallel processing with concurrency limits.
+### 📄 `utils/unified-error-handler.js`
+**Description**: Standardizes exception reporting, logs issues to background telemetry, and yields user-friendly errors.
 **Functions**:
-- `process(items, processFn, concurrency)`: Processes items in parallel.
-- `_processBatch(batch, processFn)`: Internal batch processor.
+- `handleError(error, context)`: Central log router.
+- `classifyError(error)`: Yields Network, API, or local storage validation classes.
 
-### `utils/shared-utilities.js`
-**Description**: Common utility functions.
+### 📄 `utils/simple-rate-limiter.js`
+**Description**: Prevents API throttling using request delay queues.
 **Functions**:
-- `delay(ms)`: Returns a promise that resolves after ms.
-- `generateTimestampedFilename(prefix, extension)`: Generates a filename with current timestamp.
-- `convertJSONToText(json)`: Converts resume JSON to a readable text format.
-- `debounce(func, wait)`: Debounces a function.
-- `throttle(func, limit)`: Throttles a function.
+- `queueRequest(requestFn, operation)`: Buffers API triggers.
+- `processQueue()`: Executes requests adhering to safe pacing limits.
 
-### `utils/pdf-generator.js`
-**Description**: Generates PDF documents from resume data.
+### 📄 `utils/parallel-processor.js`
+**Description**: Processes batches using a configured concurrency limit.
 **Functions**:
-- `generatePDF(resumeData)`: Main generation method.
-- `_createDocumentDefinition(resumeData)`: Creates pdfMake document definition.
-- `_formatContact(contact)`: Formats contact section.
-- `_formatExperience(experience)`: Formats experience section.
-- `_formatEducation(education)`: Formats education section.
-- `_formatSkills(skills)`: Formats skills section.
-## Content Scripts (`content-scripts/`)
+- `process(items, processFn, concurrency)`: Splits tasks into chunks to avoid browser blockages.
 
-### `content-scripts/linkedin/linkedin-controller.js`
-**Description**: Main controller for LinkedIn integration. Detects page changes and initializes components.
+### 📄 `utils/sanitizer.js`
+**Description**: Sanitizes input strings to protect against code injection.
 **Functions**:
-- `constructor()`: Initializes state and observers.
-- `init()`: Sets up URL observation and initial page detection.
-- `_handleUrlChange(url)`: Routes to appropriate handler based on URL.
-- `_handleJobSearchPage()`: Initializes `JobSearchHandler`.
-- `_handleJobDetailsPage()`: Initializes `JobDetailsHandler`.
-- `_cleanup()`: Cleans up current handlers.
+- `sanitizeHTML(html)`: Standardizes safe attributes and DOM elements.
 
-### `content-scripts/linkedin/config/selectors.js`
-**Description**: CSS selectors specific to LinkedIn's DOM structure.
+### 📄 `utils/input-validator.js`
+**Description**: Validates format parameters before transmission.
 **Functions**:
-- (Exports `SELECTORS` object. No functions.)
+- `validateResume(file)`: Ensures size, type, and contents meet upload criteria.
 
-### `content-scripts/linkedin/components/right-sidebar.js`
-**Description**: Manages the injected sidebar UI on LinkedIn.
+### 📄 `utils/request-validator.js`
+**Description**: Validates runtime message signatures.
 **Functions**:
-- `constructor()`: Initializes sidebar state.
-- `mount()`: Creates and injects the sidebar into the DOM.
-- `unmount()`: Removes the sidebar.
-- `updateJobData(jobData)`: Updates the sidebar with new job information.
-- `_createSidebarHTML()`: Generates the sidebar HTML structure.
-- `_attachEventListeners()`: Sets up sidebar interactions.
-- `_handleTailorClick()`: Handles "Tailor Resume" button click.
-- `_storeTailoredResume(resumeJSON, isAuto)`: Stores the tailored resume.
-- `_getStoredTailoredResume()`: Retrieves stored tailored resume.
-- `_toggleDownloadButtons(show)`: Shows/hides download options.
-- `_downloadResume(format)`: Handles resume download.
-- `_downloadAsText(resumeJSON, filename)`: Downloads as text.
-- `_downloadAsPdf(resumeJSON, filename)`: Downloads as PDF (or fallback).
-- `_downloadAsDocx(resumeJSON, filename)`: Downloads as DOCX (or fallback).
-- `_generateAndDownloadPdf(resumeJSON, filename)`: Internal PDF generation.
+- `validateRequest(request, schema)`: Asserts message parameters.
 
-### `content-scripts/linkedin/components/job-insights-manager.js`
-**Description**: Manages the display of job insights within the sidebar.
+### 📄 `utils/script-injector.js`
+**Description**: Safely appends stylesheet rules and JS modules to active pages.
 **Functions**:
-- `constructor(container)`: Initializes with container element.
-- `update(jobData)`: Fetches and displays insights for the job.
-- `_renderInsights(insights)`: Renders the insights UI.
-- `_fetchInsights(jobData)`: Calls background script to get AI insights.
+- `injectCSS(file)`, `injectScript(file)`: Appends styling or script elements directly to DOM headers.
 
-### `content-scripts/linkedin/components/salary-badge.js`
-**Description**: Renders salary estimate badges on job cards.
+### 📄 `utils/resume-cache-optimizer.js`
+**Description**: Helper containing caching rules and storage weight checks.
+
+### 📄 `utils/shared-utilities.js`
+**Description**: Core shared helpers. Includes functions: `debounce(func, wait)`, `throttle(func, limit)`, `delay(ms)`.
+
+---
+
+## 📂 Backend Server (`backend/`)
+
+### 📄 `backend/resumehub_api.py`
+**Description**: Python Flask API microservice coordinating AI estimation prompts, token aggregation, and database caches.
 **Functions**:
-- `constructor(container, jobUrl)`: Initializes with container and job URL.
-- `create()`: Creates the badge element.
-- `showLoading()`: Updates badge to loading state.
-- `showSalary(salaryData)`: Updates badge with salary estimate.
-- `showError(message)`: Updates badge with error state.
-- `_createBadgeHTML()`: Generates badge HTML.
-
-### `content-scripts/linkedin/pages/job-details-handler.js`
-**Description**: Handles logic for the Job Details page.
-**Functions**:
-- `constructor(controller)`: Initializes with parent controller.
-- `handle()`: Main entry point for page handling.
-- `_extractJobData()`: Extracts job details from the DOM.
-- `_injectSidebar(jobData)`: Mounts the sidebar.
-
-### `content-scripts/linkedin/pages/job-search-handler.js`
-**Description**: Handles logic for the Job Search page (list view).
-**Functions**:
-- `constructor(controller)`: Initializes with parent controller.
-- `handle()`: Main entry point for page handling.
-- `_observeJobCards()`: Sets up observer for job card loading.
-- `_processJobCard(card)`: Extracts data from a job card and injects salary badge.
-- `_extractJobDataFromCard(card)`: Helper to extract data from a single card.
-- `createSalaryBadge(jobData, card)`: Creates a salary badge instance.
-- `updateBadgesWithEstimates(estimates)`: Updates badges with batch API results.
-- `updateBadgesWithError(jobs, message)`: Updates badges with error.
-- `retryFailedJobs()`: Retries estimation for failed badges.
-- `_normalizeJobUrl(url)`: Standardizes job URLs.
-
+- `get_db_connection()`: Provides thread-safe SQLite connection handles.
+- `init_db()`: Initializes SQL schema databases.
+- `query_cache(job_title, location, company_name)`: Fetches cached salaries.
+- `cache_result(job_title, location, company_name, min_sal, max_sal, currency)`: Writes calculated ranges.
+- `query_llm(...)`: Contacts Gemini or Groq model services to predict salary brackets from details context.
+- `/api/salary-estimate` [POST]: Primary entry point returning predicted brackets for single or batched lists.
+- `/api/get-ai-response` [POST]: Proxy endpoint routing client-side resume tailoring prompts.
+- `/api/salary-estimate/report` [POST]: Allows client instances to write validated API estimate fallbacks back into database.

@@ -1,0 +1,63 @@
+server {
+    server_name resumehub.duckdns.org;
+
+    # Serve static landing page
+    location / {
+        root /var/www/resumehub;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Serve static privacy policy page
+    location = /privacy-policy {
+        root /var/www/resumehub;
+        try_files /privacy-policy.html =404;
+    }
+
+    # Proxy API endpoints to the Gunicorn Flask backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:5060/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Proxy admin page to Gunicorn Flask backend
+    location /admin {
+        proxy_pass http://127.0.0.1:5060/admin;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Proxy health checks
+    location /health {
+        proxy_pass http://127.0.0.1:5060/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/resumehub.duckdns.org/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/resumehub.duckdns.org/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+server {
+    if ($host = resumehub.duckdns.org) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    server_name resumehub.duckdns.org;
+
+    listen 80;
+    return 404; # managed by Certbot
+
+
+}

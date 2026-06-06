@@ -25,8 +25,10 @@ export class SalaryBadge {
         style.id = 'resumehub-salary-badge-styles';
         style.textContent = `
             .${SELECTORS.SALARY_BADGE.container} {
-                margin-top: 4px;
+                margin-top: 8px;
                 margin-bottom: 4px;
+                width: 100% !important;
+                flex-basis: 100% !important;
             }
             
             .${SELECTORS.SALARY_BADGE.badge} {

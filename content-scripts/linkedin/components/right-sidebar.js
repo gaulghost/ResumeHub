@@ -1885,7 +1885,7 @@ export class ResumeHubSidebar {
         }
 
         // Extract comprehensive job details
-        const jobDetails = this._extractJobDetails();
+        const jobDetails = this._extractJobDetails(company);
         salary = jobDetails.salary;
         applicants = jobDetails.applicants;
         companySize = jobDetails.companySize;
@@ -2044,35 +2044,57 @@ export class ResumeHubSidebar {
             displayLocation = primaryLocEl.textContent.trim();
         }
 
-        // Strategy B: New UI - Location in paragraph with "·" and time (e.g. "Gurgaon, Haryana, India · 2 weeks ago")
+        // Strategy B: Try searching by obfuscated class names within the job details container
         if (!displayLocation || displayLocation === '—') {
-             // Find the paragraph that contains the location. It usually follows the company name/title.
-             // We look for a paragraph with a span that has the location text.
-             const jobDetailsContainer = document.querySelector('div[data-view-name="job-detail-page"]');
+            const detailsContainer = this._findInJobDetails(['.scaffold-layout__detail', '[data-testid="lazy-column"]', '[data-component-type="LazyColumn"]']) || document;
+            const locClasses = ['_354585b3', '_78ccd462', '_3d2f5c77'];
+            for (const cls of locClasses) {
+                const elements = detailsContainer.querySelectorAll(`span.${cls}, p.${cls}`);
+                for (const el of elements) {
+                    const trimmed = el.textContent.trim();
+                    if (trimmed && 
+                        !trimmed.includes('·') &&
+                        !trimmed.includes('ago') && 
+                        !trimmed.includes('posted') && 
+                        !trimmed.includes('apply') && 
+                        !trimmed.includes('people') &&
+                        !trimmed.includes('clicked') &&
+                        !trimmed.includes('followers') &&
+                        trimmed !== displayCompany && 
+                        trimmed.length < 100 &&
+                        trimmed.length > 2) {
+                        displayLocation = trimmed;
+                        break;
+                    }
+                }
+                if (displayLocation && displayLocation !== '—') break;
+            }
+        }
+
+        // Strategy C: New UI - Location in paragraph with "·" and time (e.g. "Gurgaon, Haryana, India · 2 weeks ago")
+        if (!displayLocation || displayLocation === '—') {
+             const jobDetailsContainer = this._findInJobDetails(['.scaffold-layout__detail', '[data-testid="lazy-column"]', '[data-component-type="LazyColumn"]']) || document;
              if (jobDetailsContainer) {
-                 // The location is often in a paragraph with multiple spans separated by "·"
-                 const paragraphs = jobDetailsContainer.querySelectorAll('p');
-                 for (const p of paragraphs) {
-                     const text = p.textContent.trim();
-                     // Check for pattern "Location · Time" or just "Location" if it's the primary description
-                     // The new HTML shows: <p><span>Gurugram...</span><span>·</span><span>1 day ago...</span></p>
-                     if (text.includes('·') && (text.includes('ago') || text.includes('posted') || text.includes('apply') || text.includes('people'))) {
-                         const parts = text.split('·');
-                         if (parts.length > 0) {
-                             // Sometimes the first part is the location
-                             let loc = parts[0].trim();
-                             // Verify it's not the company name (simple check)
-                             if (loc !== displayCompany && loc.length < 100) {
-                                 displayLocation = loc;
-                                 break;
-                             }
-                         }
-                     }
-                 }
+                  // The location is often in a paragraph with multiple spans separated by "·"
+                  const paragraphs = jobDetailsContainer.querySelectorAll('p');
+                  for (const p of paragraphs) {
+                      const text = p.textContent.trim();
+                      if (text.includes('·') && (text.includes('ago') || text.includes('posted') || text.includes('apply') || text.includes('people') || text.includes('clicked'))) {
+                          const parts = text.split('·');
+                          if (parts.length > 0) {
+                              let loc = parts[0].trim();
+                              loc = loc.replace(/^[·•| -]+|[·•| -]+$/g, '').trim();
+                              if (loc && loc !== displayCompany && loc.length < 100 && loc.length > 2) {
+                                  displayLocation = loc;
+                                  break;
+                              }
+                          }
+                      }
+                  }
              }
         }
 
-        // Strategy C: Sticky header (e.g. "Autodesk · Bengaluru, Karnataka, India (Hybrid)")
+        // Strategy D: Sticky header (e.g. "Autodesk · Bengaluru, Karnataka, India (Hybrid)")
         if (!displayLocation || displayLocation === '—') {
             const stickyHeaderEl = document.querySelector('.job-details-jobs-unified-top-card__title-container .t-14');
             if (stickyHeaderEl) {
@@ -2090,7 +2112,7 @@ export class ResumeHubSidebar {
         }
     }
     
-    // Strategy C: Left Sidebar (Active Job Card) for Location
+    // Strategy E: Left Sidebar (Active Job Card) for Location
     if (!displayLocation || displayLocation === '—' || displayLocation === '-') {
          const activeCard = this._getActiveJobCard();
          if (activeCard) {
@@ -2174,7 +2196,7 @@ export class ResumeHubSidebar {
     this._wireActions();
   }
 
-  _extractJobDetails() {
+  _extractJobDetails(companyName = '') {
     const details = {
       salary: '',
       applicants: '',
@@ -2218,69 +2240,101 @@ export class ResumeHubSidebar {
       }
 
       // Extract company information
-      const companySection = document.querySelector('.jobs-company, .job-details-about-company-module, .jobs-company__box, [data-test-id="about-us"]');
+      const companySection = document.querySelector('.jobs-company, .job-details-about-company-module, .jobs-company__box, [data-test-id="about-us"], [componentkey^="JobDetails_AboutTheCompany"], [data-sdui-component*="aboutTheCompany"]');
       if (companySection) {
+        // Extract all text elements (both p and span)
+        const textElements = Array.from(companySection.querySelectorAll('p, span'))
+          .map(el => el.textContent.trim())
+          .filter(Boolean);
+        
+        const companyNameLower = (companyName || this._lastJobCompany || '').toLowerCase();
+
+        // Filter out headers, buttons, follow/follower text, and other boilerplate
+        const cleanElements = textElements.map(txt => {
+          // Clean up bullets and separators
+          return txt.replace(/^[•·\s\-\|]+|[•·\s\-\|]+$/g, '').trim();
+        }).filter(txt => {
+          if (!txt || txt.length < 2 || txt.length > 100) return false;
+          const lower = txt.toLowerCase();
+          // Exclusions
+          if (lower.includes('about the company') || 
+              lower === 'follow' || 
+              lower.includes('follower') || 
+              lower === 'more' || 
+              lower === 'show more' || 
+              lower === 'see all' || 
+              lower === 'view website') {
+            return false;
+          }
+          // Exclude company name variations
+          if (companyNameLower && (lower === companyNameLower || companyNameLower.includes(lower) || lower.includes(companyNameLower))) {
+            return false;
+          }
+          return true;
+        });
+
+        // 1. Company Size
+        const sizeEl = cleanElements.find(txt => /\b\d+.*\s*employees?\b/i.test(txt));
+        if (sizeEl) {
+          details.companySize = sizeEl;
+        }
+
+        // 2. LinkedIn Employees
+        const liEl = cleanElements.find(txt => /on\s+LinkedIn/i.test(txt));
+        if (liEl) {
+          details.linkedinEmployees = liEl;
+        }
+
+        // 3. Industry
+        // Industry is typically the element that remains (does not contain employees, LinkedIn, or digits)
+        const indEl = cleanElements.find(txt => 
+          !/\b\d+.*\s*employees?\b/i.test(txt) && 
+          !/on\s+LinkedIn/i.test(txt) &&
+          !/^[0-9,\+\s]+$/.test(txt)
+        );
+        if (indEl) {
+          details.industry = indEl;
+        }
+
+        // Fallbacks using companyText if elements are not found via cleanElements
         const companyText = companySection.textContent;
-        
-        // Company size - improved regex to capture numbers with commas (e.g., "10,001+ employees")
-        // Try multiple patterns to catch different formats
-        const sizePatterns = [
-          /(\d{1,3}(?:,\d{3})+\+?)\s*employees?/i,  // Matches "10,001+ employees" or "10,001 employees"
-          /(\d{4,}\+?)\s*employees?/i,              // Matches "10001+ employees" (no comma, 4+ digits)
-          /(\d+[,-]\d+\+?)\s*employees?/i,          // Matches "10-001+ employees" or "10,001+ employees"
-          /(\d+\+?)\s*employees?/i                   // Fallback: any number
-        ];
-        
-        for (const pattern of sizePatterns) {
-          const sizeMatch = companyText.match(pattern);
-        if (sizeMatch) {
-            // Ensure we capture the full number, not just "001+"
-            const fullMatch = companyText.match(new RegExp(`(${sizeMatch[1].replace(/[+()]/g, '\\$&')}\\+?)\\s*employees?`, 'i'));
-            if (fullMatch) {
-              details.companySize = fullMatch[0].trim();
-              break;
-            }
-          }
-        }
-
-        // LinkedIn employees - improved regex to capture full number with commas (e.g., "95,264 on LinkedIn")
-        // Find the number immediately before "on LinkedIn"
-        const linkedinIndex = companyText.toLowerCase().indexOf('on linkedin');
-        if (linkedinIndex > 0) {
-          // Extract text before "on LinkedIn" and find the last number in that text
-          const beforeLinkedIn = companyText.substring(0, linkedinIndex);
-          // Try patterns from most specific to least specific
-          const linkedinPatterns = [
-            /\b(\d{1,3}(?:,\d{3})+)\s*on\s+LinkedIn/i,  // Matches "95,264 on LinkedIn" (with word boundary)
-            /(\d{1,3}(?:,\d{3})+)\s*on\s+LinkedIn/i,   // Matches "95,264 on LinkedIn"
-            /(\d{4,})\s*on\s+LinkedIn/i,                 // Matches "95264 on LinkedIn" (no comma, 4+ digits)
+        if (!details.companySize) {
+          const sizePatterns = [
+            /(\d{1,3}(?:,\d{3})+\+?)\s*employees?/i,
+            /(\d{4,}\+?)\s*employees?/i,
+            /(\d+[,-]\d+\+?)\s*employees?/i,
+            /(\d+\+?)\s*employees?/i
           ];
-          
-          let found = false;
-          for (const pattern of linkedinPatterns) {
-            const linkedinMatch = companyText.match(pattern);
-        if (linkedinMatch) {
-              details.linkedinEmployees = `${linkedinMatch[1]} on LinkedIn`;
-              found = true;
+          for (const pattern of sizePatterns) {
+            const sizeMatch = companyText.match(pattern);
+            if (sizeMatch) {
+              details.companySize = sizeMatch[0].trim();
               break;
-            }
-          }
-          
-          // If no match, try to find the largest number before "on LinkedIn"
-          if (!found) {
-            const allNumbers = beforeLinkedIn.match(/\d{1,3}(?:,\d{3})+|\d{4,}/g) || [];
-            if (allNumbers.length > 0) {
-              // Get the number closest to "on LinkedIn" (last one in the text before it)
-              const lastNumber = allNumbers[allNumbers.length - 1];
-              details.linkedinEmployees = `${lastNumber} on LinkedIn`;
             }
           }
         }
 
-        // Industry
-        const industryMatch = companyText.match(/^([^\n•·]+)(?:\s*•|\n|$)/);
-        if (industryMatch && !industryMatch[1].includes('employee')) {
-          details.industry = industryMatch[1].trim();
+        if (!details.linkedinEmployees) {
+          const linkedinIndex = companyText.toLowerCase().indexOf('on linkedin');
+          if (linkedinIndex > 0) {
+            const beforeLinkedIn = companyText.substring(0, linkedinIndex);
+            const linkedinMatch = companyText.match(/(\d{1,3}(?:,\d{3})+|\d{4,})\s*on\s+LinkedIn/i);
+            if (linkedinMatch) {
+              details.linkedinEmployees = `${linkedinMatch[1]} on LinkedIn`;
+            } else {
+              const allNumbers = beforeLinkedIn.match(/\d{1,3}(?:,\d{3})+|\d{4,}/g) || [];
+              if (allNumbers.length > 0) {
+                details.linkedinEmployees = `${allNumbers[allNumbers.length - 1]} on LinkedIn`;
+              }
+            }
+          }
+        }
+
+        if (!details.industry && !companyText.includes('About the company')) {
+          const industryMatch = companyText.match(/^([^\n•·]+)(?:\s*•|\n|$)/);
+          if (industryMatch && !industryMatch[1].includes('employee')) {
+            details.industry = industryMatch[1].trim();
+          }
         }
       }
 
@@ -2336,7 +2390,7 @@ export class ResumeHubSidebar {
 
     try {
       // First get basic details from page
-      const jobDetails = this._extractJobDetails();
+      const jobDetails = this._extractJobDetails(companyName);
       const companySize = jobDetails.companySize;
       const industry = jobDetails.industry;
       const linkedinEmployees = jobDetails.linkedinEmployees;
@@ -2382,7 +2436,7 @@ ${jobDescription.substring(0, 3000)}`;
       this._updateCompanyDetailsSection(companySize, industry, linkedinEmployees);
     } catch (e) {
       console.warn('[ResumeHub] Error fetching company details:', e);
-      const jobDetails = this._extractJobDetails();
+      const jobDetails = this._extractJobDetails(companyName);
       this._updateCompanyDetailsSection(jobDetails.companySize, jobDetails.industry, jobDetails.linkedinEmployees);
     }
   }

@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "ResumeHub AI – Smart Resume & Job Form Assistant",
-    "version": "1.8",
-    "description": "AI-powered resume tailoring and job form auto-filling based on job descriptions with real-time customization.",
+    "name": "ResumeHub AI: Smart Resume Tailoring & Job Auto-Fill",
+    "version": "1.9",
+    "description": "Instantly tailor your resume to match job descriptions, auto-fill application forms, and view LinkedIn salary estimations.",
     "author": "Pradhuman Singh",
     "homepage_url": "https://github.com/gaulghost",
     "permissions": [

@@ -11,6 +11,9 @@ export const SELECTORS = {
         ],
         jobTitle: [
             // New UI selectors (prioritized)
+            "p[style*='--_714e7ac9'] span[aria-hidden='true']",
+            "p._38a45f7f span[aria-hidden='true']",
+            "p._09b65e6e span[aria-hidden='true']",
             "span._028ae6a1", // Obfuscated class for verified job title in new UI
             ".artdeco-entity-lockup__title strong",
             ".job-card-job-posting-card-wrapper__title strong",
@@ -24,6 +27,7 @@ export const SELECTORS = {
         ],
         companyName: [
             // New UI selectors (prioritized)
+            "p.bec82545", // Obfuscated class for company name in new UI
             "div._3d2f5c77 p", // Obfuscated layout for company name in new UI
             ".artdeco-entity-lockup__subtitle div",
             ".artdeco-entity-lockup__subtitle",
@@ -35,6 +39,8 @@ export const SELECTORS = {
         ],
         location: [
             // New UI selectors (prioritized)
+            "p._354585b3", // Obfuscated class for location in new UI
+            "p._78ccd462", // Obfuscated class for location in new UI
             "p._3d2f5c77", // Obfuscated class for location in new UI
             ".artdeco-entity-lockup__caption div",
             ".artdeco-entity-lockup__caption",

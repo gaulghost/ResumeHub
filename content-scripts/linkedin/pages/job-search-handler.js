@@ -495,6 +495,15 @@ export class JobSearchHandler {
             }
         }
         
+        // Fallback: use location element's parent container to prevent layout shifts/flex squeezing
+        if (!targetContainer) {
+            const locationEl = findElement(SELECTORS.JOB_SEARCH_PAGE.location);
+            if (locationEl && locationEl.parentElement) {
+                targetContainer = locationEl.parentElement;
+                console.log('[ResumeHub] Using location element parent as target container');
+            }
+        }
+        
         if (targetContainer) {
             if (targetContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`)) {
                 return; // Badge already exists
