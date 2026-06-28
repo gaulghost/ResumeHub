@@ -24,34 +24,61 @@
       --font-body: 'Plus Jakarta Sans', sans-serif;
     }
 
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg-dark: #f8fafc;
-        --bg-card: rgba(255, 255, 255, 0.85);
-        --border-card: rgba(0, 0, 0, 0.06);
-        --text-primary: #0f172a;
-        --text-secondary: #475569;
-        --primary: #7c3aed;
-        --primary-hover: #6d28d9;
-        --accent: #2563eb;
-        --accent-green: #047857;
-        --accent-orange: #d97706;
-      }
-      
-      header {
-        background-color: rgba(248, 250, 252, 0.8) !important;
-      }
-      .btn-header {
-        background-color: #0f172a !important;
-        color: #f8fafc !important;
-      }
-      .btn-header:hover {
-        background-color: #1e293b !important;
-      }
-      .feature-card {
-        background-color: #ffffff !important;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.03) !important;
-      }
+    body.light-theme {
+      --bg-dark: #f8fafc;
+      --bg-card: rgba(255, 255, 255, 0.85);
+      --border-card: rgba(0, 0, 0, 0.06);
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --primary: #7c3aed;
+      --primary-hover: #6d28d9;
+      --accent: #2563eb;
+      --accent-green: #047857;
+      --accent-orange: #d97706;
+    }
+    
+    body.light-theme header {
+      background-color: rgba(248, 250, 252, 0.8) !important;
+    }
+    body.light-theme .btn-header {
+      background-color: #0f172a !important;
+      color: #f8fafc !important;
+    }
+    body.light-theme .btn-header:hover {
+      background-color: #1e293b !important;
+    }
+    body.light-theme .feature-card {
+      background-color: #ffffff !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03) !important;
+    }
+
+    .theme-toggle-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-card);
+      color: var(--text-primary);
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background 0.2s, border-color 0.2s, transform 0.2s;
+    }
+    .theme-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.10);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: scale(1.05);
+    }
+    body.light-theme .theme-toggle-btn {
+      background: rgba(0, 0, 0, 0.03);
+      border-color: rgba(0, 0, 0, 0.08);
+      color: var(--text-primary);
+    }
+    body.light-theme .theme-toggle-btn:hover {
+      background: rgba(0, 0, 0, 0.06);
+      border-color: rgba(0, 0, 0, 0.12);
     }
 
     * {
@@ -702,10 +729,13 @@
         <a href="#how-it-works">How It Works</a>
         <a href="https://seekerhub.duckdns.org" target="_blank" rel="noopener noreferrer">SeekerHub</a>
       </nav>
-      <a href="https://chromewebstore.google.com/detail/resumehub-ai-%E2%80%93-smart-resu/fdnmioajkghmdabdaheehoojnfchabpf" class="btn-header" target="_blank" rel="noopener noreferrer">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-        Add to Chrome
-      </a>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle Light/Dark Theme">☀️</button>
+        <a href="https://chromewebstore.google.com/detail/resumehub-ai-%E2%80%93-smart-resu/fdnmioajkghmdabdaheehoojnfchabpf" class="btn-header" target="_blank" rel="noopener noreferrer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+          Add to Chrome
+        </a>
+      </div>
     </div>
   </header>
 
@@ -912,5 +942,29 @@
     </div>
   </footer>
 
+  <script>
+    function toggleTheme() {
+      const isLight = document.body.classList.toggle('light-theme');
+      localStorage.setItem('theme', isLight ? 'light' : 'dark');
+      updateThemeIcon(isLight);
+    }
+    
+    function updateThemeIcon(isLight) {
+      const btn = document.getElementById('theme-toggle-btn');
+      if (btn) {
+        btn.innerHTML = isLight ? '🌙' : '☀️';
+      }
+    }
+    
+    (function initTheme() {
+      const saved = localStorage.getItem('theme');
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      const isLight = saved === 'light' || (!saved && prefersLight);
+      if (isLight) {
+        document.body.classList.add('light-theme');
+      }
+      updateThemeIcon(isLight);
+    })();
+  </script>
 </body>
 </html>
