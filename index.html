@@ -24,6 +24,36 @@
       --font-body: 'Plus Jakarta Sans', sans-serif;
     }
 
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg-dark: #f8fafc;
+        --bg-card: rgba(255, 255, 255, 0.85);
+        --border-card: rgba(0, 0, 0, 0.06);
+        --text-primary: #0f172a;
+        --text-secondary: #475569;
+        --primary: #7c3aed;
+        --primary-hover: #6d28d9;
+        --accent: #2563eb;
+        --accent-green: #047857;
+        --accent-orange: #d97706;
+      }
+      
+      header {
+        background-color: rgba(248, 250, 252, 0.8) !important;
+      }
+      .btn-header {
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+      }
+      .btn-header:hover {
+        background-color: #1e293b !important;
+      }
+      .feature-card {
+        background-color: #ffffff !important;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03) !important;
+      }
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -31,12 +61,16 @@
       scroll-behavior: smooth;
     }
 
+    html, body {
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+
     body {
       background-color: var(--bg-dark);
       color: var(--text-primary);
       font-family: var(--font-body);
       line-height: 1.6;
-      overflow-x: hidden;
       position: relative;
     }
 
@@ -608,7 +642,23 @@
       100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
     }
 
+    @media (max-width: 960px) {
+      .preview-mock-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 768px) {
+      .nav-container {
+        padding: 12px 16px;
+      }
+      .logo-text {
+        font-size: 18px;
+      }
+      .btn-header {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
       h1 {
         font-size: 40px;
         letter-spacing: -1px;
