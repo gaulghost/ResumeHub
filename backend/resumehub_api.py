@@ -24,48 +24,96 @@ CORS(app, resources={r"/api/*": {"origins": "*"},
                      r"/health": {"origins": "*"}})
 
 # Config
-GROQ_API_KEY      = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY_1    = os.environ.get("GROQ_API_KEY_1", "")
+GROQ_API_KEY_2    = os.environ.get("GROQ_API_KEY_2", "")
+GEMINI_API_KEY_3  = os.environ.get("GEMINI_API_KEY_3", "")
+GEMINI_API_KEY_4  = os.environ.get("GEMINI_API_KEY_4", "")
+
+EGRESS_IP_1       = os.environ.get("EGRESS_IP_1", "")
+EGRESS_IP_2       = os.environ.get("EGRESS_IP_2", "")
+
 DB_PATH           = os.environ.get("DB_PATH", "resumehub.db")
 ADMIN_SECRET      = os.environ.get("ADMIN_SECRET", "")
 FREE_MODE         = os.environ.get("FREE_MODE", "true").lower() == "true"
 
-gemini_keys_raw   = os.environ.get("GEMINI_API_KEYS", "")
-if gemini_keys_raw:
-    GEMINI_API_KEYS = [k.strip() for k in gemini_keys_raw.split(",") if k.strip()]
-else:
-    legacy_key = os.environ.get("GEMINI_API_KEY", "")
-    GEMINI_API_KEYS = [legacy_key] if legacy_key else []
+# ── Multi-IP Requests Adapter ──────────────────────────────────────────────
+from requests.adapters import HTTPAdapter
+class SourceIPAdapter(HTTPAdapter):
+    def __init__(self, source_ip, **kwargs):
+        self.source_ip = source_ip
+        super().__init__(**kwargs)
 
-# Fallback chain for salary estimation
-SALARY_AI_MODELS = []
-for i in range(len(GEMINI_API_KEYS)):
-    SALARY_AI_MODELS.append({"id": "gemini-flash-latest", "provider": "gemini", "key_index": i})
-for i in range(len(GEMINI_API_KEYS)):
-    SALARY_AI_MODELS.append({"id": "gemini-flash-lite-latest", "provider": "gemini", "key_index": i})
-for i in range(len(GEMINI_API_KEYS)):
-    SALARY_AI_MODELS.append({"id": "gemini-3-flash-preview", "provider": "gemini", "key_index": i})
-SALARY_AI_MODELS.extend([
-    {"id": "llama-3.3-70b-versatile",                   "provider": "groq"},
-    {"id": "qwen/qwen3-32b",                            "provider": "groq"},
-    {"id": "llama-3.1-8b-instant",                      "provider": "groq"},
-])
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_connections):
+        pool_connections['source_address'] = (self.source_ip, 0)
+        return super().init_poolmanager(connections, maxsize, block, **pool_connections)
+
+session_ip1 = requests.Session()
+if EGRESS_IP_1:
+    adapter = SourceIPAdapter(EGRESS_IP_1)
+    session_ip1.mount("https://", adapter)
+    session_ip1.mount("http://", adapter)
+
+session_ip2 = requests.Session()
+if EGRESS_IP_2:
+    adapter = SourceIPAdapter(EGRESS_IP_2)
+    session_ip2.mount("https://", adapter)
+    session_ip2.mount("http://", adapter)
+
+# ── AI Model fallback chains ───────────────────────────────────────────────
+PARSE_MODELS = [
+    {"id": "gemini-flash-latest",      "provider": "gemini", "use_key": 3, "session": session_ip1},
+    {"id": "gemini-flash-latest",      "provider": "gemini", "use_key": 4, "session": session_ip2},
+    {"id": "gemini-3-flash-preview",    "provider": "gemini", "use_key": 3, "session": session_ip1},
+    {"id": "gemini-3-flash-preview",    "provider": "gemini", "use_key": 4, "session": session_ip2},
+    {"id": "gemini-flash-lite-latest",  "provider": "gemini", "use_key": 3, "session": session_ip1},
+    {"id": "gemini-flash-lite-latest",  "provider": "gemini", "use_key": 4, "session": session_ip2},
+    {"id": "gemini-2.5-flash",          "provider": "gemini", "use_key": 3, "session": session_ip1},
+    {"id": "gemini-2.5-flash",          "provider": "gemini", "use_key": 4, "session": session_ip2},
+    {"id": "gemini-2.5-flash-lite",     "provider": "gemini", "use_key": 3, "session": session_ip1},
+    {"id": "gemini-2.5-flash-lite",     "provider": "gemini", "use_key": 4, "session": session_ip2},
+]
+
+REWRITE_MODELS = [
+    {"id": "openai/gpt-oss-120b",             "provider": "groq",   "use_key": 2, "session": session_ip2},
+    {"id": "gemma-4-31b-it",                   "provider": "gemini", "use_key": 3, "session": session_ip1},
+    {"id": "gemma-4-31b-it",                   "provider": "gemini", "use_key": 4, "session": session_ip2},
+]
+
+SALARY_MODELS = [
+    {"id": "groq/compound",            "provider": "groq", "use_key": 1, "session": session_ip1},
+    {"id": "groq/compound",            "provider": "groq", "use_key": 2, "session": session_ip2},
+    {"id": "groq/compound-mini",       "provider": "groq", "use_key": 1, "session": session_ip1},
+    {"id": "groq/compound-mini",       "provider": "groq", "use_key": 2, "session": session_ip2},
+    {"id": "openai/gpt-oss-120b",      "provider": "groq", "use_key": 2, "session": session_ip2},
+    {"id": "llama-3.3-70b-versatile",   "provider": "groq", "use_key": 1, "session": session_ip1},
+]
 
 import sys
 sys.path.append("/home/ubuntu/oracle_common")
 import oracle_ai
 
 
+def _exhaustion_key(model_cfg: dict) -> str:
+    """Return a per-key compound exhaustion ID so that key-1 and key-2
+    of the same model are tracked independently in the DB."""
+    return f"{model_cfg['id']}::key{model_cfg.get('use_key', 1)}"
+
+
 def call_model(model_cfg: dict, messages: list, max_tokens: int, temperature: float, response_format: dict = None) -> str:
+    """Single model call. Raises RateLimitError on 429, Exception on other failures."""
+    use_key = model_cfg.get("use_key", 1)
+    session = model_cfg.get("session")
+
     if model_cfg["provider"] == "groq":
-        if not GROQ_API_KEY:
-            raise Exception("GROQ_API_KEY not configured")
+        key = GROQ_API_KEY_1 if use_key == 1 else GROQ_API_KEY_2
+        if not key:
+            raise Exception(f"Groq API key ({use_key}) not configured")
         url  = "https://api.groq.com/openai/v1/chat/completions"
-        auth = f"Bearer {GROQ_API_KEY}"
+        auth = f"Bearer {key}"
     elif model_cfg["provider"] == "gemini":
-        key_idx = model_cfg.get("key_index", 0)
-        if not GEMINI_API_KEYS or key_idx >= len(GEMINI_API_KEYS):
-            raise Exception(f"Gemini API key at index {key_idx} not configured")
-        key = GEMINI_API_KEYS[key_idx]
+        key = GEMINI_API_KEY_3 if use_key == 3 else GEMINI_API_KEY_4
+        if not key:
+            raise Exception(f"Gemini API key ({use_key}) not configured")
         url  = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
         auth = f"Bearer {key}"
     else:
@@ -80,46 +128,77 @@ def call_model(model_cfg: dict, messages: list, max_tokens: int, temperature: fl
     if response_format:
         json_payload["response_format"] = response_format
 
-    resp = requests.post(
+    post_fn = session.post if session is not None else requests.post
+    resp = post_fn(
         url,
         headers={"Authorization": auth, "Content-Type": "application/json"},
         json=json_payload,
-        timeout=30,
+        timeout=60,
     )
     if resp.status_code == 429:
         retry_after = 60
+        reason = "RPM"
         try:
-            val = resp.headers.get("Retry-After")
-            if val:
-                retry_after = int(float(val))
+            err_data = resp.json()
+            err_msg = err_data.get("error", {}).get("message", "")
+            err_msg_lower = err_msg.lower()
+            if "tokens per minute" in err_msg_lower or "tpm" in err_msg_lower:
+                reason = "TPM"
+            elif "tokens per day" in err_msg_lower or "tpd" in err_msg_lower:
+                reason = "TPD"
+            elif "requests per day" in err_msg_lower or "rpd" in err_msg_lower:
+                reason = "RPD"
+            elif "requests per minute" in err_msg_lower or "rpm" in err_msg_lower:
+                reason = "RPM"
+            elif "tokens" in err_msg_lower:
+                reason = "TPM"
+            elif "requests" in err_msg_lower:
+                reason = "RPM"
+
+            if ("limit_value" in err_msg and ('"0"' in err_msg or " 0 " in err_msg or ": 0" in err_msg)) or "Request limit per minute for a region" in err_msg or "Generate Content API requests" in err_msg:
+                retry_after = 24 * 3600
+                if "request" in err_msg_lower:
+                    reason = "RPD"
+                elif "token" in err_msg_lower:
+                    reason = "TPD"
+            else:
+                val = resp.headers.get("Retry-After")
+                if val:
+                    retry_after = int(float(val))
         except Exception:
             pass
-        raise oracle_ai.RateLimitError(f"{model_cfg['id']} rate limited", retry_after=retry_after)
+        raise oracle_ai.RateLimitError(_exhaustion_key(model_cfg) + " rate limited", retry_after=retry_after, reason=reason)
+
+    if model_cfg["provider"] == "gemini" and resp.status_code in [400, 403]:
+        raise oracle_ai.RateLimitError(f"{model_cfg['id']} key disabled/forbidden", retry_after=24 * 3600, reason="RPD")
+
     resp.raise_for_status()
 
     # Log Groq headers to shared DB
     if model_cfg["provider"] == "groq":
         try:
-            oracle_ai.update_groq_limits(model_cfg["id"], resp.headers)
+            key_slot = f"key{model_cfg.get('use_key', 1)}"
+            oracle_ai.update_groq_limits(model_cfg["id"], resp.headers, key_slot)
         except Exception as e:
             print(f"[LIMIT LOG ERROR] {e}")
 
     content = resp.json()["choices"][0]["message"]["content"] or ""
     content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    content = re.sub(r"<thought>.*?</thought>", "", content, flags=re.DOTALL).strip()
+    content = re.sub(r"<think>.*$", "", content, flags=re.DOTALL).strip()
+    content = re.sub(r"<thought>.*$", "", content, flags=re.DOTALL).strip()
     return content
 
 
 def call_with_fallback_salary(messages: list, max_tokens: int = 2048, temperature: float = 0.3, response_format: dict = None):
-    for model_cfg in SALARY_AI_MODELS:
+    for model_cfg in SALARY_MODELS:
         if model_cfg["provider"] == "gemini":
-            key_idx = model_cfg.get("key_index", 0)
-            if key_idx >= len(GEMINI_API_KEYS):
-                continue
-            key = GEMINI_API_KEYS[key_idx]
-            if not oracle_ai.can_use_gemini_key(key, model_cfg["id"]):
+            use_key = model_cfg.get("use_key", 3)
+            key = GEMINI_API_KEY_3 if use_key == 3 else GEMINI_API_KEY_4
+            if not key or not oracle_ai.can_use_gemini_key(key, model_cfg["id"]):
                 continue
         else:
-            if oracle_ai.is_model_exhausted(model_cfg["id"]):
+            if oracle_ai.is_model_exhausted(_exhaustion_key(model_cfg)):
                 continue
         try:
             answer = call_model(model_cfg, messages, max_tokens, temperature, response_format)
@@ -142,13 +221,13 @@ def call_with_fallback_salary(messages: list, max_tokens: int = 2048, temperatur
                 raise Exception("Model returned empty results list")
 
             if model_cfg["provider"] == "gemini":
-                oracle_ai.record_gemini_call(GEMINI_API_KEYS[model_cfg.get("key_index", 0)], model_cfg["id"])
+                oracle_ai.record_gemini_call(key, model_cfg["id"])
             return parsed, model_cfg["id"]
         except oracle_ai.RateLimitError as rle:
             if model_cfg["provider"] == "gemini":
-                oracle_ai.mark_gemini_key_exhausted(GEMINI_API_KEYS[model_cfg.get("key_index", 0)], rle.retry_after)
+                oracle_ai.mark_gemini_key_exhausted(key, rle.retry_after)
             else:
-                oracle_ai.mark_model_exhausted(model_cfg["id"], rle.retry_after)
+                oracle_ai.mark_model_exhausted(_exhaustion_key(model_cfg), rle.retry_after)
             continue
         except Exception as e:
             print(f"[SALARY MODEL ERROR] {model_cfg['id']} failed during execution or JSON parse: {e}")
@@ -157,16 +236,14 @@ def call_with_fallback_salary(messages: list, max_tokens: int = 2048, temperatur
 
 
 def call_with_fallback_ai(messages: list, max_tokens: int = 4096, temperature: float = 0.3, response_format: dict = None):
-    for model_cfg in SALARY_AI_MODELS:
+    for model_cfg in REWRITE_MODELS:
         if model_cfg["provider"] == "gemini":
-            key_idx = model_cfg.get("key_index", 0)
-            if key_idx >= len(GEMINI_API_KEYS):
-                continue
-            key = GEMINI_API_KEYS[key_idx]
-            if not oracle_ai.can_use_gemini_key(key, model_cfg["id"]):
+            use_key = model_cfg.get("use_key", 3)
+            key = GEMINI_API_KEY_3 if use_key == 3 else GEMINI_API_KEY_4
+            if not key or not oracle_ai.can_use_gemini_key(key, model_cfg["id"]):
                 continue
         else:
-            if oracle_ai.is_model_exhausted(model_cfg["id"]):
+            if oracle_ai.is_model_exhausted(_exhaustion_key(model_cfg)):
                 continue
         try:
             answer = call_model(model_cfg, messages, max_tokens, temperature, response_format)
@@ -179,13 +256,13 @@ def call_with_fallback_ai(messages: list, max_tokens: int = 4096, temperature: f
                 answer = json.dumps(parsed)
 
             if model_cfg["provider"] == "gemini":
-                oracle_ai.record_gemini_call(GEMINI_API_KEYS[model_cfg.get("key_index", 0)], model_cfg["id"])
+                oracle_ai.record_gemini_call(key, model_cfg["id"])
             return answer, model_cfg["id"]
         except oracle_ai.RateLimitError as rle:
             if model_cfg["provider"] == "gemini":
-                oracle_ai.mark_gemini_key_exhausted(GEMINI_API_KEYS[model_cfg.get("key_index", 0)], rle.retry_after)
+                oracle_ai.mark_gemini_key_exhausted(key, rle.retry_after)
             else:
-                oracle_ai.mark_model_exhausted(model_cfg["id"], rle.retry_after)
+                oracle_ai.mark_model_exhausted(_exhaustion_key(model_cfg), rle.retry_after)
             continue
         except Exception as e:
             print(f"[AI MODEL ERROR] {model_cfg['id']} failed during execution: {e}")
@@ -318,7 +395,7 @@ def get_country_from_ip(ip: str):
 
 # ── Native Gemini Client for File parsing ────────────────────────────────────
 
-def call_gemini_native(model_id: str, key: str, prompt: str, file_content_b64: str = None, mime_type: str = None) -> str:
+def call_gemini_native(model_id: str, key: str, prompt: str, file_content_b64: str = None, mime_type: str = None, session = None) -> str:
     """Calls native Gemini generateContent API (supports inline document parsing)."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={key}"
     
@@ -340,10 +417,23 @@ def call_gemini_native(model_id: str, key: str, prompt: str, file_content_b64: s
     }
     
     headers = {"Content-Type": "application/json"}
-    resp = requests.post(url, headers=headers, json=payload, timeout=45)
+    post_fn = session.post if session is not None else requests.post
+    resp = post_fn(url, headers=headers, json=payload, timeout=45)
     
     if resp.status_code == 429:
-        raise RateLimitError(f"Gemini API limit hit on model {model_id}")
+        retry_after = 60
+        try:
+            err_data = resp.json()
+            err_msg = err_data.get("error", {}).get("message", "")
+            if "Request limit per minute for a region" in err_msg or "Generate Content API requests" in err_msg:
+                retry_after = 24 * 3600
+        except Exception:
+            pass
+        raise oracle_ai.RateLimitError(f"Gemini API limit hit on model {model_id}", retry_after=retry_after)
+        
+    if resp.status_code in [400, 403]:
+        raise oracle_ai.RateLimitError(f"Gemini API key disabled on model {model_id}", retry_after=24 * 3600)
+        
     resp.raise_for_status()
     
     resp_json = resp.json()
@@ -387,16 +477,14 @@ Parse the attached file and generate the JSON output."""
 
 def parse_resume_with_fallback(file_content_b64: str, mime_type: str):
     """Fallback loop across configured Gemini keys for parsing resume."""
-    for model_cfg in SALARY_AI_MODELS:
+    for model_cfg in PARSE_MODELS:
         if model_cfg["provider"] == "gemini":
-            key_idx = model_cfg.get("key_index", 0)
-            if not GEMINI_API_KEYS or key_idx >= len(GEMINI_API_KEYS):
-                continue
-            key = GEMINI_API_KEYS[key_idx]
-            if not oracle_ai.can_use_gemini_key(key, model_cfg["id"]):
+            use_key = model_cfg.get("use_key", 3)
+            key = GEMINI_API_KEY_3 if use_key == 3 else GEMINI_API_KEY_4
+            if not key or not oracle_ai.can_use_gemini_key(key, model_cfg["id"]):
                 continue
             try:
-                answer = call_gemini_native(model_cfg["id"], key, PARSE_PROMPT, file_content_b64, mime_type)
+                answer = call_gemini_native(model_cfg["id"], key, PARSE_PROMPT, file_content_b64, mime_type, model_cfg.get("session"))
                 if not answer:
                     continue
 
@@ -755,7 +843,11 @@ def admin_dashboard():
     except Exception as e:
         print(f"[ERR] Failed to get suspensions: {e}")
     exhausted_display = ", ".join(suspended) or "none"
-    model_chain = " → ".join(m["id"].split("/")[-1] for m in SALARY_AI_MODELS)
+    model_chain = (
+        "<b>Salary:</b> " + " &rarr; ".join(m["id"].split("/")[-1] for m in SALARY_MODELS) + "<br>" +
+        "<b>Rewrite:</b> " + " &rarr; ".join(m["id"].split("/")[-1] for m in REWRITE_MODELS) + "<br>" +
+        "<b>Parser:</b> " + " &rarr; ".join(m["id"].split("/")[-1] for m in PARSE_MODELS)
+    )
     free_mode_display = "✓ ON — all users pro" if FREE_MODE else "✗ OFF — gating active"
 
     html = f"""<!DOCTYPE html>
@@ -1114,7 +1206,7 @@ def api_salary_estimate():
     results = []
     jobs_to_estimate = []
     
-    seven_days_ago = (datetime.datetime.utcnow() - datetime.timedelta(days=7)).isoformat()
+    thirty_days_ago = (datetime.datetime.utcnow() - datetime.timedelta(days=30)).isoformat()
 
     try:
         with get_db() as db:
@@ -1131,7 +1223,7 @@ def api_salary_estimate():
                 
                 cached = db.execute(
                     "SELECT * FROM salary_cache WHERE job_key = ? AND last_updated > ?",
-                    (job_key, seven_days_ago)
+                    (job_key, thirty_days_ago)
                 ).fetchone()
 
                 if cached and cached["tc"] and cached["tc"] != "N/A" and cached["tc"] != "None":
@@ -1257,7 +1349,7 @@ JSON Schema:
                 print(f"[SALARY CACHE WRITE ERROR] {cache_write_err}")
 
             for ai_res in ai_results:
-                if ai_res.get("jobUrl"):
+                if ai_res.get("jobUrl") is not None:
                     results.append({
                         "jobUrl": ai_res.get("jobUrl"),
                         "totalCompensation": ai_res.get("totalCompensation"),
@@ -1269,7 +1361,7 @@ JSON Schema:
                     })
 
             for job in jobs_to_estimate:
-                if not any(r.get("jobUrl") == job.get("jobUrl") for r in results):
+                if not any((r.get("jobUrl") or "") == (job.get("jobUrl") or "") for r in results):
                     results.append({
                         "jobUrl": job.get("jobUrl"),
                         "error": "Estimation failed"
@@ -1396,7 +1488,7 @@ def api_get_ai_response():
 @app.route("/api/ai-quota", methods=["GET"])
 def api_ai_quota():
     try:
-        quotas = oracle_ai.get_ai_quotas(GEMINI_API_KEYS)
+        quotas = oracle_ai.get_ai_quotas([GEMINI_API_KEY_3, GEMINI_API_KEY_4])
         return jsonify(quotas), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
