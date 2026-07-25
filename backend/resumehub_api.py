@@ -724,10 +724,36 @@ def admin_dashboard():
                FROM ai_usage GROUP BY user_id ORDER BY total DESC LIMIT 10"""
         ).fetchall()
 
-        # Telemetry Type Breakdown
-        telem_breakdown = db.execute(
+        # Telemetry Type Breakdown (Multi-period)
+        telem_7d = db.execute(
+            """SELECT event_type, COUNT(*) as cnt
+               FROM telemetry WHERE timestamp > datetime('now','-7 days')
+               GROUP BY event_type ORDER BY cnt DESC"""
+        ).fetchall()
+
+        telem_30d = db.execute(
+            """SELECT event_type, COUNT(*) as cnt
+               FROM telemetry WHERE timestamp > datetime('now','-30 days')
+               GROUP BY event_type ORDER BY cnt DESC"""
+        ).fetchall()
+
+        telem_90d = db.execute(
+            """SELECT event_type, COUNT(*) as cnt
+               FROM telemetry WHERE timestamp > datetime('now','-90 days')
+               GROUP BY event_type ORDER BY cnt DESC"""
+        ).fetchall()
+
+        telem_all = db.execute(
             """SELECT event_type, COUNT(*) as cnt
                FROM telemetry GROUP BY event_type ORDER BY cnt DESC"""
+        ).fetchall()
+
+        telem_daily_events_90d = db.execute(
+            """SELECT date(timestamp) as day, event_type, COUNT(*) as cnt
+               FROM telemetry
+               WHERE timestamp > datetime('now','-90 days')
+               GROUP BY day, event_type
+               ORDER BY day ASC"""
         ).fetchall()
 
         # Recent Users list
@@ -767,13 +793,17 @@ def admin_dashboard():
     res_labels    = [r["day"] for r in resumes_14d]
     res_data      = [r["cnt"] for r in resumes_14d]
 
-    # Pre-build HTML table rows to avoid nested f-string syntax issues in Python < 3.12
-    html_telem_breakdown = ""
-    if telem_breakdown:
-        for r in telem_breakdown:
-            html_telem_breakdown += f"<tr><td><span class='badge bp'>{r['event_type']}</span></td><td><b>{r['cnt']}</b></td></tr>"
-    else:
-        html_telem_breakdown = "<tr><td colspan='2' class='empty'>No telemetry recorded</td></tr>"
+    # Prep JSON datasets for client-side multi-period telemetry analytics
+    telem_periods_json = json.dumps({
+        "7d": [{"event_type": r["event_type"], "cnt": r["cnt"]} for r in telem_7d],
+        "30d": [{"event_type": r["event_type"], "cnt": r["cnt"]} for r in telem_30d],
+        "90d": [{"event_type": r["event_type"], "cnt": r["cnt"]} for r in telem_90d],
+        "all": [{"event_type": r["event_type"], "cnt": r["cnt"]} for r in telem_all]
+    })
+    telem_daily_json = json.dumps([
+        {"day": r["day"], "event_type": r["event_type"], "cnt": r["cnt"]}
+        for r in telem_daily_events_90d
+    ])
 
     html_top_ai_users = ""
     if top_ai_users:
@@ -913,6 +943,10 @@ def admin_dashboard():
   .infobar{{background:#1e2d40;border:1px solid var(--border);border-radius:8px;
             padding:9px 14px;font-size:11px;color:var(--muted);margin-bottom:18px;word-break:break-all;}}
   .infobar b{{color:var(--text);}}
+  .btn-group {{display:inline-flex;gap:4px;background:rgba(255,255,255,0.03);border:1px solid var(--border);padding:3px;border-radius:6px;}}
+  .btn-tab {{background:transparent;border:none;color:var(--muted);padding:4px 10px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;transition:all 0.2s ease;}}
+  .btn-tab.active {{background:var(--accent);color:#fff;}}
+  .badge-red {{background:rgba(239, 68, 68, 0.2);color:#fca5a5;border:1px solid rgba(239, 68, 68, 0.4);}}
 </style>
 </head>
 <body>
@@ -977,7 +1011,15 @@ def admin_dashboard():
  
 <div class="g2">
   <div class="section">
-    <div class="section-title">Telemetry Breakdown</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div class="section-title" style="margin-bottom:0">Telemetry Event Breakdown <span id="telemPeriodBadge" class="badge bp">7 Days</span></div>
+      <div class="btn-group">
+        <button class="btn-tab active" onclick="setTelemPeriod('7d', this)">7 Days</button>
+        <button class="btn-tab" onclick="setTelemPeriod('30d', this)">30 Days</button>
+        <button class="btn-tab" onclick="setTelemPeriod('90d', this)">90 Days</button>
+        <button class="btn-tab" onclick="setTelemPeriod('all', this)">All Time</button>
+      </div>
+    </div>
     <div class="tw">
       <table>
         <thead>
@@ -986,8 +1028,7 @@ def admin_dashboard():
             <th>Count</th>
           </tr>
         </thead>
-        <tbody>
-          {html_telem_breakdown}
+        <tbody id="telemBreakdownBody">
         </tbody>
       </table>
     </div>
@@ -1093,6 +1134,42 @@ def admin_dashboard():
 </div>
  
 <script>
+  const telemPeriods = {telem_periods_json};
+  const telemDaily = {telem_daily_json};
+
+  function renderTelemBreakdown(periodKey) {{
+    const tbody = document.getElementById('telemBreakdownBody');
+    const badge = document.getElementById('telemPeriodBadge');
+    if (!tbody) return;
+
+    const labels = {{ '7d': '7 Days', '30d': '30 Days', '90d': '90 Days', 'all': 'All Time' }};
+    if (badge) badge.textContent = labels[periodKey] || periodKey;
+
+    const items = telemPeriods[periodKey] || [];
+    if (items.length === 0) {{
+      tbody.innerHTML = "<tr><td colspan='2' class='empty'>No telemetry recorded for this period</td></tr>";
+      return;
+    }}
+
+    let html = "";
+    items.forEach(r => {{
+      const isError = r.event_type.includes('fail') || r.event_type.includes('error');
+      const badgeClass = isError ? 'badge badge-red' : 'badge bp';
+      html += `<tr><td><span class="${{badgeClass}}">${{r.event_type}}</span></td><td><b>${{r.cnt.toLocaleString()}}</b></td></tr>`;
+    }});
+    tbody.innerHTML = html;
+  }}
+
+  function setTelemPeriod(periodKey, btnEl) {{
+    if (btnEl && btnEl.parentElement) {{
+      btnEl.parentElement.querySelectorAll('.btn-tab').forEach(b => b.classList.remove('active'));
+      btnEl.classList.add('active');
+    }}
+    renderTelemBreakdown(periodKey);
+  }}
+
+  setTimeout(() => renderTelemBreakdown('7d'), 50);
+
   function openJsonModal(title, jsonText) {{
     document.getElementById('lhModalLabel').textContent = title;
     try {{
