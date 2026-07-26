@@ -63,25 +63,6 @@ export class StorageManager {
     });
   }
 
-  static async clear(area = 'local') {
-    return new Promise((resolve, reject) => {
-      // Check if chrome.storage is available
-      if (!chrome || !chrome.storage || !chrome.storage[area]) {
-        console.warn('[ResumeHub] Chrome storage not available, skipping clear operation');
-        resolve();
-        return;
-      }
-      
-      chrome.storage[area].clear(() => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve();
-        }
-      });
-    });
-  }
-
   // Resume-specific methods
   static async getResume() {
     try {
@@ -162,23 +143,12 @@ export class StorageManager {
       const data = await this.get(['theme', 'extractionMethod', 'sidebarEnabled'], 'sync');
       return {
         theme: data.theme || 'light',
-        extractionMethod: data.extractionMethod || 'standard',
+        extractionMethod: data.extractionMethod || 'ai',
         sidebarEnabled: data.sidebarEnabled !== false // default to true
       };
     } catch (error) {
       console.error('Error getting settings from storage:', error);
-      return { theme: 'light', extractionMethod: 'standard' };
-    }
-  }
-
-  static async setSettings(settings) {
-    try {
-      await this.set(settings, 'sync');
-      console.log('Settings saved to storage:', settings);
-      return true;
-    } catch (error) {
-      console.error('Error saving settings to storage:', error);
-      return false;
+      return { theme: 'light', extractionMethod: 'ai', sidebarEnabled: true };
     }
   }
 
@@ -257,19 +227,6 @@ export class StorageManager {
       console.error(`Error clearing cache ${key}:`, error);
       return false;
     }
-  }
-
-  // Utility method to get storage usage
-  static async getStorageUsage(area = 'local') {
-    return new Promise((resolve, reject) => {
-      chrome.storage[area].getBytesInUse(null, (bytesInUse) => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve(bytesInUse);
-        }
-      });
-    });
   }
 
   // Get or generate unique user ID for tracking

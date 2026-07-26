@@ -3,31 +3,33 @@ node_modules/
 *.log
 *.tmp
 
-# Build directories and files
+# Build outputs (script + artifacts live under .build/)
 build_resumehub/
 temp_build/
 .dist/
+dist/
+.build/extension/
+.build/resumehub-extension/
+.build/*.zip
 *.zip
 
 # npm lock file
 package-lock.json
 
-# Documentation (not required for runtime)
-.docs/
-
-# Temporary and build folders
+# Temporary and IDE folders
 .model_context/
 .temp/
 .tests/
 .kiro/
 .vscode/
-.build/
+.build/.DS_Store
 
-# Python cache files
+# Python cache / local envs / local DBs
 __pycache__/
 *.pyc
-
 venv
 .env
 *.env
-dist/
+*.db
+*.db-wal
+*.db-shm

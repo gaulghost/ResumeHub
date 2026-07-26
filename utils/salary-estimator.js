@@ -20,6 +20,8 @@ export class SalaryEstimator {
 
     /**
      * Estimates salaries for a batch of jobs, utilizing a cache first and AI batch processing.
+     * Content scripts send the full list to the background in one message.
+     * Background processes backend-sized chunks in parallel (not sequential waits).
      * @param {Array<Object>} jobs - An array of job objects.
      * @param {Object} options - Optional options for batch estimation
      * @returns {Object} - A map of jobUrl to salary data.
@@ -29,9 +31,13 @@ export class SalaryEstimator {
         const results = {};
         const jobsToFetch = [];
 
-        // 1. Check persistent and session cache for each job
-        for (const job of jobs) {
-            const cached = ignoreCache ? null : await this._checkCache(job);
+        // Parallel cache lookups (avoid serial await per job)
+        const cacheChecks = await Promise.all(jobs.map(async (job) => ({
+            job,
+            cached: ignoreCache ? null : await this._checkCache(job),
+        })));
+
+        for (const { job, cached } of cacheChecks) {
             if (cached) {
                 results[job.jobUrl] = { ...cached, jobUrl: job.jobUrl, location: job.location };
             } else {
@@ -39,101 +45,232 @@ export class SalaryEstimator {
             }
         }
 
-        // 2. Use AI batch processing (chunked) for jobs that weren't in the cache
-        if (jobsToFetch.length > 0) {
-            const CHUNK_SIZE = 5;
-            const chunks = [];
-            for (let i = 0; i < jobsToFetch.length; i += CHUNK_SIZE) {
-                chunks.push(jobsToFetch.slice(i, i + CHUNK_SIZE));
-            }
+        if (jobsToFetch.length === 0) {
+            return results;
+        }
 
-            for (const chunk of chunks) {
-                try {
-                    let estimates;
-                    if (this.isContentScript) {
-                        // Content script delegates to background which returns already-processed results.
-                        // Background's batchEstimate already validates, caches, and formats everything —
-                        // we must NOT re-validate here, just pass the results through.
-                        estimates = await this._batchAIEstimateViaMessage(chunk);
-                        for (const job of chunk) {
-                            const est = estimates[job.jobUrl];
-                            if (est) {
-                                results[job.jobUrl] = { ...est, jobUrl: job.jobUrl };
-                            } else {
-                                results[job.jobUrl] = { error: 'No data' };
-                            }
-                        }
-                        continue; // skip the else branch below
+        // Content script: one round-trip; background owns chunking + parallelism
+        if (this.isContentScript) {
+            try {
+                const estimates = await this._batchAIEstimateViaMessage(jobsToFetch);
+                for (const job of jobsToFetch) {
+                    const est = estimates?.[job.jobUrl];
+                    if (est) {
+                        results[job.jobUrl] = { ...est, jobUrl: job.jobUrl };
                     } else {
-                        // Background can call API directly in batch
-                        estimates = await this._batchAIEstimate(chunk);
-                    }
-
-                    for (const job of chunk) {
-                        const est = estimates[job.jobUrl];
-                        if (est && !est.error && est.totalCompensation && est.totalCompensation !== 'N/A') {
-                            results[job.jobUrl] = { ...est, jobUrl: job.jobUrl, location: job.location };
-                            await this._cacheResult(job, est);
-                        } else if (est && (est.error === 'API_KEY_MISSING' || est.error === 'No Api Key')) {
-                            results[job.jobUrl] = { error: 'No Api Key', retry: true };
-                        } else {
-                            results[job.jobUrl] = { error: 'No data' };
-                        }
-                    }
-                } catch (chunkErr) {
-                    const errorMsg = chunkErr.message || '';
-                    // If the error is due to missing API key, mark entire chunk accordingly
-                    if (errorMsg.includes('API_KEY_MISSING') || errorMsg.includes('No Api Key') || (!this.isContentScript && !this.apiClient)) {
-                        for (const job of chunk) {
-                            results[job.jobUrl] = { error: 'No Api Key', retry: true };
-                        }
-                        continue;
-                    }
-                    
-                    // If the error is due to a backend service/server error, map it to Server Error
-                    if (errorMsg.includes('BACKEND_SERVICE_ERROR') || errorMsg.includes('502') || errorMsg.includes('500')) {
-                        for (const job of chunk) {
-                            results[job.jobUrl] = { error: 'Server Error', retry: true };
-                        }
-                        continue;
-                    }
-
-                    // Fallback: estimate each job individually
-                    for (const job of chunk) {
-                        try {
-                            let singleEst;
-                            if (this.isContentScript) {
-                                singleEst = await this._batchAIEstimateViaMessage([job]);
-                                singleEst = singleEst[job.jobUrl];
-                            } else {
-                                singleEst = await this.estimate(job.jobTitle, job.location, job.companyName, job.jobUrl);
-                            }
-
-                            if (singleEst && !singleEst.error && singleEst.totalCompensation && singleEst.totalCompensation !== 'N/A') {
-                                results[job.jobUrl] = { ...singleEst, jobUrl: job.jobUrl, location: job.location };
-                                await this._cacheResult(job, singleEst);
-                            } else if (singleEst && (singleEst.error === 'API_KEY_MISSING' || singleEst.error === 'No Api Key')) {
-                                results[job.jobUrl] = { error: 'No Api Key', retry: true };
-                            } else if (singleEst && (singleEst.error === 'Server Error' || (typeof singleEst.error === 'string' && singleEst.error.includes('BACKEND_SERVICE_ERROR')))) {
-                                results[job.jobUrl] = { error: 'Server Error', retry: true };
-                            } else {
-                                results[job.jobUrl] = { error: 'No data' };
-                            }
-                        } catch (singleErr) {
-                            const singleMsg = singleErr.message || '';
-                            if (singleMsg.includes('API_KEY_MISSING') || singleMsg.includes('No Api Key') || (!this.isContentScript && !this.apiClient)) {
-                                results[job.jobUrl] = { error: 'No Api Key', retry: true };
-                            } else if (singleMsg.includes('BACKEND_SERVICE_ERROR') || singleMsg.includes('502') || singleMsg.includes('500')) {
-                                results[job.jobUrl] = { error: 'Server Error', retry: true };
-                            } else {
-                                results[job.jobUrl] = { error: 'No data' };
-                            }
-                        }
+                        results[job.jobUrl] = { error: 'No data', retry: true };
                     }
                 }
+            } catch (error) {
+                const errorMsg = error.message || '';
+                const mapped = this._mapBatchError(errorMsg);
+                for (const job of jobsToFetch) {
+                    results[job.jobUrl] = { ...mapped };
+                }
+            }
+            return results;
+        }
+
+        // Background: backend accepts ≤20 jobs per request. Fire up to 2 batches in parallel
+        // so large pages don't wait serially; avoid unbounded parallelism (5xx overload).
+        const BACKEND_MAX = 20;
+        const PARALLEL_BATCHES = 2;
+        const chunks = [];
+        for (let i = 0; i < jobsToFetch.length; i += BACKEND_MAX) {
+            chunks.push(jobsToFetch.slice(i, i + BACKEND_MAX));
+        }
+
+        for (let i = 0; i < chunks.length; i += PARALLEL_BATCHES) {
+            const wave = chunks.slice(i, i + PARALLEL_BATCHES);
+            const waveMaps = await Promise.all(wave.map((chunk) => this._estimateChunkWithRetry(chunk)));
+            for (const chunkMap of waveMaps) {
+                Object.assign(results, chunkMap);
             }
         }
-        
+
+        return results;
+    }
+
+    /**
+     * Map thrown batch errors to badge-friendly payloads.
+     */
+    _mapBatchError(errorMsg = '') {
+        if (errorMsg.includes('API_KEY_MISSING') || errorMsg.includes('No Api Key')) {
+            return { error: 'No Api Key', retry: true };
+        }
+        if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
+            return { error: 'Rate Limited', retry: true };
+        }
+        if (
+            errorMsg.includes('BACKEND_SERVICE_ERROR')
+            || errorMsg.includes('502')
+            || errorMsg.includes('500')
+            || errorMsg.includes('503')
+            || errorMsg.toLowerCase().includes('exhausted')
+            || errorMsg.toLowerCase().includes('ai busy')
+            || errorMsg.toLowerCase().includes('fetch')
+            || errorMsg.toLowerCase().includes('network')
+            || errorMsg.toLowerCase().includes('failed to fetch')
+        ) {
+            if (errorMsg.toLowerCase().includes('exhausted') || errorMsg.toLowerCase().includes('ai busy')) {
+                return { error: 'AI busy', retry: true };
+            }
+            return { error: 'Server Error', retry: true };
+        }
+        return { error: 'No data', retry: true };
+    }
+
+    /**
+     * Estimate one chunk with one automatic retry on transient server failures.
+     */
+    async _estimateChunkWithRetry(chunk, maxAttempts = 2) {
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const estimates = await this._batchAIEstimate(chunk);
+                const results = {};
+                for (const job of chunk) {
+                    const est = estimates[job.jobUrl];
+                    if (est && !est.error && est.totalCompensation && est.totalCompensation !== 'N/A') {
+                        results[job.jobUrl] = { ...est, jobUrl: job.jobUrl, location: job.location };
+                        await this._cacheResult(job, est);
+                    } else if (est && (est.error === 'API_KEY_MISSING' || est.error === 'No Api Key')) {
+                        results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                    } else if (est && (est.error === 'Server Error' || String(est.error || '').includes('BACKEND_SERVICE_ERROR'))) {
+                        results[job.jobUrl] = { error: 'Server Error', retry: true };
+                    } else if (est?.error === 'Estimation failed' || est?.error === 'Rate Limited' || est?.error === 'AI busy') {
+                        results[job.jobUrl] = { error: est.error, retry: true };
+                    } else if (est?.error && /exhaust/i.test(String(est.error))) {
+                        results[job.jobUrl] = { error: 'AI busy', retry: true };
+                    } else {
+                        results[job.jobUrl] = { error: est?.error || 'No data', retry: true };
+                    }
+                }
+
+                // Soft-fail batch where every job failed with exhaustion — do not hammer singles.
+                const values = Object.values(results);
+                const allExhausted = values.length > 0 && values.every((r) =>
+                    r.error === 'Estimation failed'
+                    || r.error === 'AI busy'
+                    || /exhaust/i.test(String(r.error || ''))
+                );
+                if (allExhausted && estimates.__warning && /exhaust/i.test(estimates.__warning)) {
+                    for (const job of chunk) {
+                        results[job.jobUrl] = { error: 'AI busy', retry: true };
+                    }
+                }
+
+                return results;
+            } catch (chunkErr) {
+                lastError = chunkErr;
+                const errorMsg = chunkErr.message || '';
+                const transient =
+                    errorMsg.includes('BACKEND_SERVICE_ERROR')
+                    || errorMsg.includes('502')
+                    || errorMsg.includes('500')
+                    || errorMsg.includes('503')
+                    || errorMsg.includes('429')
+                    || errorMsg.includes('Network')
+                    || errorMsg.includes('fetch');
+
+                if (transient && attempt < maxAttempts) {
+                    console.warn(`[ResumeHub] Batch chunk retry ${attempt}/${maxAttempts}:`, errorMsg);
+                    await new Promise((r) => setTimeout(r, 700 * attempt));
+                    continue;
+                }
+
+                // Non-retryable or exhausted: map error, optionally try singles once
+                if (
+                    errorMsg.includes('API_KEY_MISSING')
+                    || errorMsg.includes('No Api Key')
+                    || !this.apiClient
+                ) {
+                    const results = {};
+                    for (const job of chunk) {
+                        results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                    }
+                    return results;
+                }
+
+                // Transient batch failure: retry jobs one-by-one (smaller AI prompts recover more often)
+                // Skip when the whole backend AI pool is exhausted — singles will fail the same way.
+                if (transient && chunk.length > 1 && !/exhaust/i.test(errorMsg)) {
+                    console.warn('[ResumeHub] Batch failed; falling back to single-job estimates');
+                    return this._estimateJobsIndividually(chunk);
+                }
+
+                if (transient || /exhaust/i.test(errorMsg)) {
+                    const results = {};
+                    const mapped = /exhaust/i.test(errorMsg)
+                        ? { error: 'AI busy', retry: true }
+                        : { error: 'Server Error', retry: true };
+                    for (const job of chunk) {
+                        results[job.jobUrl] = { ...mapped };
+                    }
+                    return results;
+                }
+
+                return this._estimateJobsIndividually(chunk);
+            }
+        }
+
+        const mapped = this._mapBatchError(lastError?.message || '');
+        const results = {};
+        for (const job of chunk) {
+            results[job.jobUrl] = { ...mapped };
+        }
+        return results;
+    }
+
+    /**
+     * Estimate jobs with limited concurrency (not fully serial).
+     * Used when a multi-job batch returns 5xx — skipped when AI pool is exhausted.
+     */
+    async _estimateJobsIndividually(jobs) {
+        const results = {};
+        const CONCURRENCY = 3;
+        for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+            const slice = jobs.slice(i, i + CONCURRENCY);
+            await Promise.all(slice.map(async (job) => {
+            try {
+                // Prefer a direct 1-job backend batch (bypasses content-script path)
+                const singleMap = await this._batchAIEstimate([job]);
+                const singleEst = singleMap[job.jobUrl];
+                if (singleEst && !singleEst.error && singleEst.totalCompensation && singleEst.totalCompensation !== 'N/A') {
+                    results[job.jobUrl] = { ...singleEst, jobUrl: job.jobUrl, location: job.location };
+                    await this._cacheResult(job, singleEst);
+                    return;
+                }
+                if (singleEst?.error === 'API_KEY_MISSING' || singleEst?.error === 'No Api Key') {
+                    results[job.jobUrl] = { error: 'No Api Key', retry: true };
+                } else if (
+                    singleEst?.error === 'Server Error'
+                    || String(singleEst?.error || '').includes('BACKEND_SERVICE_ERROR')
+                ) {
+                    results[job.jobUrl] = { error: 'Server Error', retry: true };
+                } else if (singleEst?.error && /exhaust/i.test(String(singleEst.error))) {
+                    results[job.jobUrl] = { error: 'AI busy', retry: true };
+                } else if (singleEst?.error) {
+                    results[job.jobUrl] = { error: singleEst.error, retry: true };
+                } else {
+                    results[job.jobUrl] = { error: 'No data', retry: true };
+                }
+            } catch (err) {
+                results[job.jobUrl] = this._mapBatchError(err.message || '');
+            }
+            }));
+            // If this wave is fully exhausted, stop — further singles won't help.
+            const waveFailed = slice.every((j) => {
+                const r = results[j.jobUrl];
+                return r && (r.error === 'AI busy' || r.error === 'Estimation failed' || /exhaust/i.test(String(r.error || '')));
+            });
+            if (waveFailed) {
+                for (const job of jobs.slice(i + CONCURRENCY)) {
+                    results[job.jobUrl] = { error: 'AI busy', retry: true };
+                }
+                break;
+            }
+        }
         return results;
     }
 
@@ -148,6 +285,23 @@ export class SalaryEstimator {
      */
     async estimate(jobTitle, location, companyName, jobUrl, jobDescription = '') {
         try {
+            const job = { jobTitle, location, companyName, jobUrl };
+
+            // Content scripts have no API client — route through background messaging
+            if (this.isContentScript) {
+                const cached = await this._checkCache(job);
+                if (cached) {
+                    return { ...cached, jobUrl, location };
+                }
+
+                if (jobDescription) {
+                    return await this._estimateWithJDViaMessage(jobTitle, location, companyName, jobUrl, jobDescription);
+                }
+
+                const results = await this._batchAIEstimateViaMessage([job]);
+                return results[jobUrl] || { error: 'No data', retry: true };
+            }
+
             if (!this.apiClient) {
                 console.warn('[ResumeHub BG] API client not available for salary estimation – API key missing.');
                 return { error: 'API_KEY_MISSING', retry: true };
@@ -224,6 +378,30 @@ export class SalaryEstimator {
     }
 
     /**
+     * Single-job salary estimate with JD via background (content-script safe).
+     */
+    async _estimateWithJDViaMessage(jobTitle, location, companyName, jobUrl, jobDescription) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+                action: 'estimateSalaryWithJD',
+                data: { jobTitle, companyName, location, jobUrl, jobDescription }
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error('Background script communication failed'));
+                    return;
+                }
+                if (response?.success && response.salary && !response.salary.error) {
+                    resolve(response.salary);
+                } else if (response?.salary?.error) {
+                    resolve({ error: response.salary.error, retry: true });
+                } else {
+                    resolve({ error: response?.error || 'No data', retry: true });
+                }
+            });
+        });
+    }
+
+    /**
      * Performs batch AI estimation for multiple jobs in a single request.
      * @param {Array<Object>} jobs - Array of job objects with jobTitle, companyName, location, jobUrl
      * @returns {Object} - Map of jobUrl to salary data
@@ -249,23 +427,24 @@ export class SalaryEstimator {
         };
 
         try {
-            let response;
-            if (this.rateLimiter) {
-                response = await this.rateLimiter.queueRequest(
-                    () => this.apiClient.batchEstimateSalary(batchRequest),
-                    'batch salary estimation'
-                );
-            } else {
-                response = await this.apiClient.batchEstimateSalary(batchRequest);
-            }
+            // Backend salary calls must NOT go through the Gemini rate limiter —
+            // that limiter is for local Gemini RPM and was causing backend batches
+            // to queue/contend incorrectly. Local Gemini fallback inside api-client
+            // has its own slot tracking.
+            const response = await this.apiClient.batchEstimateSalary(batchRequest);
             
             // Transform AI response to our format
             const results = {};
+            if (response.warning) {
+                results.__warning = String(response.warning);
+            }
+            const exhaustedPool = /exhaust/i.test(String(response.warning || ''));
             for (const jobResult of response.results || []) {
                 if (jobResult.error) {
-                    results[jobResult.jobUrl] = {
-                        error: jobResult.error
-                    };
+                    const err = exhaustedPool && jobResult.error === 'Estimation failed'
+                        ? 'AI busy'
+                        : jobResult.error;
+                    results[jobResult.jobUrl] = { error: err };
                 } else {
                     results[jobResult.jobUrl] = {
                         totalCompensation: jobResult.totalCompensation,

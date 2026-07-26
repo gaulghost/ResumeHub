@@ -4,26 +4,38 @@
 import { StorageManager } from './utils/storage-manager.js';
 import { GeminiAPIClient } from './utils/api-client.js';
 import { SalaryEstimator } from './utils/salary-estimator.js';
-import { UnifiedErrorHandler } from './utils/unified-error-handler.js';
 import { SimpleRateLimiter } from './utils/simple-rate-limiter.js';
 import { ScriptInjector } from './utils/script-injector.js';
 import { ParallelProcessor } from './utils/parallel-processor.js';
 import { ResumeCacheOptimizer } from './utils/resume-cache-optimizer.js';
 import { generateResumeHash } from './utils/shared-utilities.js';
+import { getBackendBase, getBackendHeaders } from './utils/backend-client.js';
+import { extractContactValues, buildCompactResumeContext } from './utils/form-autofill.js';
 
 console.log('[ResumeHub BG] Service worker started, modules loaded.');
 
 // --- Backend Configuration & Telemetry ---
-const BACKEND_BASE = 'https://resumehub.duckdns.org';
+const BACKEND_BASE = getBackendBase();
+const reportedFailures = new Set();
 
 async function sendTelemetry(eventType, metadata = {}) {
     try {
+        if (eventType === 'ui_extraction_failed') {
+            const htmlHint = (metadata.cardHtml || '').slice(0, 80);
+            const key = `${metadata.domain || ''}:${metadata.url || ''}:${metadata.source || ''}:${metadata.extractedTitle || ''}:${metadata.extractedCompany || ''}:${metadata.detail || ''}:${htmlHint}`;
+            if (reportedFailures.has(key)) return;
+            reportedFailures.add(key);
+            if (reportedFailures.size > 200) {
+                const firstKey = reportedFailures.values().next().value;
+                reportedFailures.delete(firstKey);
+            }
+        }
         const userId = await StorageManager.getUserId();
         const telemetryURL = `${BACKEND_BASE}/api/telemetry`;
         
         fetch(telemetryURL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getBackendHeaders(),
             body: JSON.stringify({
                 user_id: userId,
                 event_type: eventType,
@@ -54,7 +66,7 @@ async function uploadResumeToBackend(filename, content, mimeType, parsedJson = n
         
         const resp = await fetch(uploadURL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getBackendHeaders(),
             body: JSON.stringify(payload)
         });
         
@@ -374,7 +386,7 @@ async function handleCreateTailoredResume(request, sendResponse) {
                 
                 const resp = await fetch(uploadURL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getBackendHeaders(),
                     body: JSON.stringify(payload)
                 });
                 
@@ -620,11 +632,269 @@ const ACTION_HANDLERS = {
     'autoFillForm': async (request, sendResponse) => {
         try {
             sendTelemetry('autofill_requested');
-            sendTelemetry('autofill_completed', { success: true });
-            sendResponse({ success: true, fieldsFound: 0, fieldsFilled: 0 });
+
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab?.id) {
+                sendTelemetry('autofill_failed', { error: 'no_active_tab' });
+                sendResponse({ success: false, error: 'No active tab found.', fieldsFound: 0, fieldsFilled: 0 });
+                return;
+            }
+
+            const resumeData = await StorageManager.getResume();
+            if (!resumeData?.content) {
+                sendTelemetry('autofill_failed', { error: 'no_resume' });
+                sendResponse({ success: false, error: 'Upload a resume first.', fieldsFound: 0, fieldsFilled: 0 });
+                return;
+            }
+
+            let resumeJSON = null;
+            const resumeHash = generateResumeHash(resumeData);
+            const cacheKey = `optimized_resume_json_${resumeHash}`;
+            const cached = await StorageManager.getValidCache(cacheKey);
+            if (cached?.resumeJSON) {
+                resumeJSON = cached.resumeJSON;
+            } else if (resumeParseCache.has(resumeHash)) {
+                const mem = resumeParseCache.get(resumeHash);
+                if (Date.now() - mem.timestamp < CACHE_TTL) resumeJSON = mem.resumeJSON;
+            }
+
+            if (!resumeJSON) {
+                try {
+                    if (apiClient?.apiKeys?.length) {
+                        const optimizer = new ResumeCacheOptimizer(apiClient);
+                        const result = await optimizer.getOptimizedResumeJSON(resumeData);
+                        resumeJSON = result?.resumeJSON || null;
+                        if (resumeJSON) {
+                            resumeParseCache.set(resumeHash, { resumeJSON, timestamp: Date.now() });
+                        }
+                    }
+                } catch (parseErr) {
+                    console.warn('[ResumeHub BG] Autofill resume parse failed:', parseErr);
+                }
+            }
+
+            if (!resumeJSON?.contact) {
+                sendTelemetry('autofill_failed', { error: 'resume_not_parsed' });
+                sendResponse({
+                    success: false,
+                    error: 'Could not read contact fields from your resume. Generate a tailored resume once first, then retry auto-fill.',
+                    fieldsFound: 0,
+                    fieldsFilled: 0
+                });
+                return;
+            }
+
+            const heuristicValues = extractContactValues(resumeJSON);
+
+            // Pass 1: heuristic fill + collect remaining empty fields for optional AI
+            const pass1 = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: (values) => {
+                    const setNativeValue = (el, value) => {
+                        if (value == null || value === '') return false;
+                        const proto = el.tagName === 'TEXTAREA'
+                            ? window.HTMLTextAreaElement.prototype
+                            : window.HTMLInputElement.prototype;
+                        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+                        if (descriptor && descriptor.set) descriptor.set.call(el, value);
+                        else el.value = value;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    };
+                    const fieldMeta = (el) => {
+                        let labelText = '';
+                        try {
+                            if (el.id) {
+                                const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+                                if (label) labelText = label.textContent || '';
+                            }
+                            if (!labelText && el.closest) {
+                                const wrap = el.closest('label');
+                                if (wrap) labelText = wrap.textContent || '';
+                            }
+                        } catch (_) {}
+                        return {
+                            name: el.name || '',
+                            id: el.id || '',
+                            placeholder: el.placeholder || '',
+                            ariaLabel: el.getAttribute('aria-label') || '',
+                            autocomplete: el.getAttribute('autocomplete') || '',
+                            testId: el.getAttribute('data-testid') || '',
+                            type: el.type || el.tagName.toLowerCase(),
+                            label: (labelText || '').trim().slice(0, 120),
+                            tag: el.tagName.toLowerCase(),
+                        };
+                    };
+                    const classify = (meta) => {
+                        const type = String(meta.type || '').toLowerCase();
+                        if (['hidden', 'submit', 'button', 'checkbox', 'radio', 'file', 'image', 'reset'].includes(type)) return null;
+                        const hay = [meta.name, meta.id, meta.placeholder, meta.ariaLabel, meta.autocomplete, meta.testId, meta.label]
+                            .filter(Boolean).join(' ').toLowerCase();
+                        if (/e-?mail|emailaddress/.test(hay) || type === 'email') return 'email';
+                        if (/phone|mobile|tel|cellphone|contact.?number/.test(hay) || type === 'tel') return 'phone';
+                        if (/linked\s*in|linkedin/.test(hay)) return 'linkedin';
+                        if (/github/.test(hay)) return 'github';
+                        if (/portfolio|website|personal.?site/.test(hay) && !/linkedin|github/.test(hay)) return 'portfolio';
+                        if (/first.?name|given.?name|fname/.test(hay)) return 'firstName';
+                        if (/last.?name|surname|family.?name|lname/.test(hay)) return 'lastName';
+                        if (/full.?name|(^|[^a-z])name([^a-z]|$)|applicant.?name|candidate.?name/.test(hay)) return 'fullName';
+                        if (/city|location|address|reside|current.?city/.test(hay)) return 'location';
+                        if (/current.?company|employer|company.?name|organization/.test(hay)) return 'currentCompany';
+                        if (/current.?title|job.?title|designation|role|position/.test(hay) && !/description/.test(hay)) return 'currentTitle';
+                        if (/years?.?(of)?.?exp|total.?exp|experience.?years|exp\.?\s*years/.test(hay)) return 'yearsExperience';
+                        if (/education|degree|university|college|qualification/.test(hay)) return 'highestEducation';
+                        if (/skills|technologies|tech.?stack/.test(hay)) return 'skills';
+                        if (/summary|cover.?letter|about.?me|additional.?info|objective/.test(hay)) return 'summary';
+                        return null;
+                    };
+
+                    const nodes = Array.from(document.querySelectorAll('input, textarea, select'));
+                    let fieldsFound = 0;
+                    let fieldsFilled = 0;
+                    const filled = [];
+                    const usedKeys = new Set();
+                    const unmapped = [];
+
+                    nodes.forEach((el, index) => {
+                        try {
+                            const style = window.getComputedStyle(el);
+                            if (style.display === 'none' || style.visibility === 'hidden') return;
+                        } catch (_) {}
+
+                        if (el.disabled || el.readOnly) return;
+                        if (el.value && String(el.value).trim().length > 0) return;
+
+                        const meta = fieldMeta(el);
+                        const key = classify(meta);
+                        if (key) {
+                            fieldsFound += 1;
+                            const exclusive = !['firstName', 'lastName', 'fullName'].includes(key);
+                            if (exclusive && usedKeys.has(key)) return;
+                            const value = values[key];
+                            if (!value) return;
+                            if (el.tagName === 'SELECT') {
+                                const opt = Array.from(el.options || []).find(o =>
+                                    o.value === value || o.textContent.trim().toLowerCase() === String(value).toLowerCase()
+                                );
+                                if (opt) {
+                                    el.value = opt.value;
+                                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                                    fieldsFilled += 1;
+                                    filled.push(key);
+                                    usedKeys.add(key);
+                                }
+                            } else if (setNativeValue(el, value)) {
+                                fieldsFilled += 1;
+                                filled.push(key);
+                                usedKeys.add(key);
+                            }
+                            return;
+                        }
+
+                        // Candidate for AI mapping
+                        if (unmapped.length < 8 && (meta.name || meta.id || meta.label || meta.placeholder)) {
+                            const rhId = `rh-af-${index}`;
+                            el.setAttribute('data-rh-autofill-id', rhId);
+                            unmapped.push({ rhId, ...meta });
+                            fieldsFound += 1;
+                        }
+                    });
+
+                    return { fieldsFound, fieldsFilled, filled, unmapped };
+                },
+                args: [heuristicValues]
+            });
+
+            let result = pass1?.[0]?.result || { fieldsFound: 0, fieldsFilled: 0, filled: [], unmapped: [] };
+            let aiFilled = 0;
+
+            // Pass 2: optional AI mapping for remaining empty fields (requires local Gemini key)
+            if (apiClient?.apiKeys?.length && Array.isArray(result.unmapped) && result.unmapped.length > 0) {
+                try {
+                    const compact = buildCompactResumeContext(resumeJSON);
+                    const prompt = `Map these application form fields to values from the resume.
+Return ONLY valid JSON object: { "<rhId>": "<value or empty string>" }.
+Do not invent employers/emails not present in the resume. Use empty string when unsure.
+
+Resume:
+${JSON.stringify(compact)}
+
+Fields:
+${JSON.stringify(result.unmapped)}`;
+
+                    const aiResp = await apiClient.callAPI(
+                        apiClient.defaultModel || apiClient.models?.[0] || 'gemini-flash-latest',
+                        prompt,
+                        {
+                            temperature: 0.1,
+                            maxOutputTokens: 800,
+                            responseMimeType: 'application/json',
+                            thinking: false
+                        },
+                        'autofill field mapping'
+                    );
+                    const text = aiResp.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+                    let mapping = {};
+                    try {
+                        mapping = JSON.parse(text);
+                    } catch (_) {
+                        const start = text.indexOf('{');
+                        const end = text.lastIndexOf('}');
+                        if (start >= 0 && end > start) mapping = JSON.parse(text.slice(start, end + 1));
+                    }
+
+                    const entries = Object.entries(mapping || {})
+                        .filter(([k, v]) => k && v != null && String(v).trim() !== '')
+                        .slice(0, 8);
+
+                    if (entries.length > 0) {
+                        const pass2 = await chrome.scripting.executeScript({
+                            target: { tabId: tab.id },
+                            func: (pairs) => {
+                                let filled = 0;
+                                for (const [rhId, value] of pairs) {
+                                    const el = document.querySelector(`[data-rh-autofill-id="${rhId}"]`);
+                                    if (!el || (el.value && String(el.value).trim())) continue;
+                                    const proto = el.tagName === 'TEXTAREA'
+                                        ? window.HTMLTextAreaElement.prototype
+                                        : window.HTMLInputElement.prototype;
+                                    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+                                    if (descriptor && descriptor.set) descriptor.set.call(el, String(value));
+                                    else el.value = String(value);
+                                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                                    filled += 1;
+                                }
+                                return filled;
+                            },
+                            args: [entries]
+                        });
+                        aiFilled = pass2?.[0]?.result || 0;
+                        result.fieldsFilled += aiFilled;
+                    }
+                } catch (aiErr) {
+                    console.warn('[ResumeHub BG] Autofill AI mapping skipped:', aiErr.message || aiErr);
+                }
+            }
+
+            sendTelemetry('autofill_completed', {
+                success: true,
+                fieldsFound: result.fieldsFound,
+                fieldsFilled: result.fieldsFilled,
+                aiFilled
+            });
+            sendResponse({
+                success: true,
+                fieldsFound: result.fieldsFound,
+                fieldsFilled: result.fieldsFilled,
+                filled: result.filled || [],
+                aiFilled
+            });
         } catch (error) {
             sendTelemetry('autofill_failed', { error: error.message });
-            sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message, fieldsFound: 0, fieldsFilled: 0 });
         }
     },
     'clearResume': async (request, sendResponse) => {

@@ -1,5 +1,6 @@
 import { SELECTORS } from '../config/selectors.js';
 import { SalaryBadge } from '../components/salary-badge.js';
+import { observeJobList } from '../../shared/observe-job-list.js';
 
 export class JobSearchHandler {
     constructor(salaryEstimator) {
@@ -22,6 +23,8 @@ export class JobSearchHandler {
         document.addEventListener('click', this.retryClickListener, true);
         
         this.observer = null;
+        this.isProcessingJobs = false;
+        this._pendingJobs = []; // jobData queued for AI while a batch is in flight
         console.log('[ResumeHub] Naukri JobSearchHandler constructed.');
     }
 
@@ -39,13 +42,52 @@ export class JobSearchHandler {
             this.intersectionObserver.disconnect();
         }
         document.removeEventListener('click', this.retryClickListener, true);
-        
+
+        try {
+            for (const card of this._queryJobCards()) {
+                card.removeAttribute('data-rh-inspected');
+                card.removeAttribute('data-rh-fail-count');
+            }
+        } catch (_) { /* ignore */ }
+
         this.badgeInstances.forEach(badge => badge.remove());
         this.badgeInstances.clear();
         this.processedJobIds.clear();
         this.failedJobIds.clear();
         this.jobDataMap.clear();
+        this._pendingJobs = [];
+        this.isProcessingJobs = false;
         console.log('[ResumeHub] Naukri JobSearchHandler destroyed.');
+    }
+
+    _queryJobCards() {
+        const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem)
+            ? SELECTORS.JOB_SEARCH_PAGE.jobListItem
+            : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
+
+        const seen = new Set();
+        const cards = [];
+        for (const selector of jobListSelectors) {
+            let nodes;
+            try {
+                nodes = document.querySelectorAll(selector);
+            } catch (_) {
+                continue;
+            }
+            for (const node of nodes) {
+                if (seen.has(node)) continue;
+                if (cards.some((c) => c.contains(node))) continue;
+                for (let i = cards.length - 1; i >= 0; i--) {
+                    if (node.contains(cards[i])) {
+                        seen.delete(cards[i]);
+                        cards.splice(i, 1);
+                    }
+                }
+                seen.add(node);
+                cards.push(node);
+            }
+        }
+        return cards;
     }
 
     initialize() {
@@ -53,26 +95,25 @@ export class JobSearchHandler {
         
         this.processAllVisibleJobs();
 
-        this.observer = new MutationObserver((mutations) => {
-            const hasJobCardMutations = mutations.some(mutation => {
+        this.observer = observeJobList({
+            containerSelectors: [
+                '.styles_jlc__list__',
+                '.list',
+                '#list-container',
+                '[class*="jobTuple"]',
+                'main',
+                '#root',
+            ],
+            shouldProcess: (mutations) => mutations.some(mutation => {
                 return Array.from(mutation.addedNodes).some(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        return SELECTORS.JOB_SEARCH_PAGE.jobListItem.some(selector => 
-                            node.matches(selector) || (node.querySelector && node.querySelector(selector))
-                        );
-                    }
-                    return false;
+                    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+                    return SELECTORS.JOB_SEARCH_PAGE.jobListItem.some(selector =>
+                        node.matches?.(selector) || node.querySelector?.(selector)
+                    );
                 });
-            });
-            
-            if (hasJobCardMutations) {
-                setTimeout(() => this.processAllVisibleJobs(), 500);
-            }
-        });
-
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
+            }),
+            onUpdate: () => this.processAllVisibleJobs(),
+            delay: 500,
         });
 
         this.scrollListener = () => {
@@ -101,88 +142,125 @@ export class JobSearchHandler {
             threshold: 0.1
         });
 
-        let jobCards = [];
-        for (const selector of SELECTORS.JOB_SEARCH_PAGE.jobListItem) {
-            const cards = document.querySelectorAll(selector);
-            if (cards.length > 0) {
-                jobCards = Array.from(cards);
-                break;
-            }
-        }
-        
+        const jobCards = this._queryJobCards();
         if (jobCards.length > 5) {
             this.intersectionObserver.observe(jobCards[jobCards.length - 5]);
         }
     }
 
     processAllVisibleJobs() {
-        let jobCards = [];
-        for (const selector of SELECTORS.JOB_SEARCH_PAGE.jobListItem) {
-            const cards = document.querySelectorAll(selector);
-            if (cards.length > 0) {
-                jobCards = Array.from(cards);
-                break;
-            }
-        }
-        
-        const newJobCards = [];
+        const jobCards = this._queryJobCards();
+        const newJobs = [];
+
         jobCards.forEach(card => {
+            if (!card || card.getAttribute('data-rh-inspected') === 'true') return;
+            if (this._shouldSkipCard(card)) return;
+
             const jobData = this.extractJobData(card);
             if (jobData && jobData.jobUrl) {
                 const jobId = this._normalizeJobUrl(jobData.jobUrl);
-                if (!this.processedJobIds.has(jobId)) {
-                    newJobCards.push(card);
+                if (this.processedJobIds.has(jobId) || this.badgeInstances.has(jobId)) {
+                    card.setAttribute('data-rh-inspected', 'true');
+                    return;
                 }
+                // Mount loading badge immediately — do not wait for AI / in-flight batch
+                this.createSalaryBadge(jobData, card);
+                if (!this.badgeInstances.has(jobId)) return;
+                this.processedJobIds.add(jobId);
+                card.setAttribute('data-rh-inspected', 'true');
+                newJobs.push(jobData);
+            } else {
+                const fails = Number(card.getAttribute('data-rh-fail-count') || '0') + 1;
+                card.setAttribute('data-rh-fail-count', String(fails));
+                if (fails >= 8) card.setAttribute('data-rh-inspected', 'true');
             }
         });
-        
-        if (newJobCards.length > 0) {
-            this.processJobCards(newJobCards);
+
+        if (newJobs.length > 0) {
+            this._estimateJobs(newJobs);
         }
     }
 
-    async processJobCards(jobCards) {
-        if (!jobCards || jobCards.length === 0) return;
+    _shouldSkipCard(card) {
+        const cls = `${card.className || ''}`.toString().toLowerCase();
+        const skipTokens = ['skeleton', 'loading', 'placeholder', 'shimmer', 'ghost', 'promo', 'advert', 'ad-banner', 'ads-', 'sponsored'];
+        if (skipTokens.some((t) => cls.includes(t))) return true;
+        try {
+            if (card.matches?.('[data-ad], [data-promoted], .adList, .naukri-jd-ad')) return true;
+        } catch (_) { /* ignore */ }
+        if ((card.textContent || '').trim().length < 5) return true;
+        return false;
+    }
 
-        const jobsNeedingEstimation = [];
-        for (const card of jobCards) {
-            const jobData = this.extractJobData(card);
-            if (!jobData || !jobData.jobUrl) {
-                console.warn('[ResumeHub][Naukri] extractJobData returned null/no jobUrl for card:', card?.className || card);
-                continue;
-            }
+    /**
+     * Run cache + AI for jobs that already have loading badges mounted.
+     * If a batch is in flight, queue jobData (UI already shows Estimating…).
+     */
+    async _estimateJobs(jobDataList) {
+        if (!jobDataList || jobDataList.length === 0) return;
 
-
-            const jobId = this._normalizeJobUrl(jobData.jobUrl);
-            if (this.processedJobIds.has(jobId)) continue;
-
-            this.processedJobIds.add(jobId);
-            this.createSalaryBadge(jobData, card);
-
-            const cached = await this.salaryEstimator.getCachedEstimate(jobData);
-            if (cached) {
-                const badge = this.badgeInstances.get(jobId);
-                if (badge) badge.showSalary(cached);
-                continue;
-            }
-
-            jobsNeedingEstimation.push(jobData);
-        }
-
-        if (jobsNeedingEstimation.length === 0) {
-            console.warn('[ResumeHub][Naukri] No jobs to estimate — all cards had N/A data or were already processed.');
+        if (this.isProcessingJobs) {
+            this._pendingJobs.push(...jobDataList);
+            console.log(`[ResumeHub][Naukri] AI in flight — queued ${jobDataList.length} more jobs (${this._pendingJobs.length} pending).`);
             return;
         }
-
-        console.log('[ResumeHub][Naukri] Sending to backend:', jobsNeedingEstimation.map(j => `${j.companyName} / ${j.jobTitle}`));
+        this.isProcessingJobs = true;
 
         try {
-            const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);
-            this.updateBadgesWithEstimates(estimates);
-        } catch (error) {
-            console.error('[ResumeHub] Error during Naukri batch salary estimation:', error);
-            this.updateBadgesWithError(jobsNeedingEstimation, error.message);
+            const cacheChecks = await Promise.all(jobDataList.map(async (jobData) => ({
+                jobData,
+                cached: await this.salaryEstimator.getCachedEstimate(jobData),
+            })));
+
+            const jobsNeedingEstimation = [];
+            for (const { jobData, cached } of cacheChecks) {
+                const jobId = this._normalizeJobUrl(jobData.jobUrl);
+                const badge = this.badgeInstances.get(jobId);
+                if (cached) {
+                    if (badge) badge.showSalary(cached);
+                } else {
+                    if (badge?.showLoading) badge.showLoading();
+                    jobsNeedingEstimation.push(jobData);
+                }
+            }
+
+            if (jobsNeedingEstimation.length === 0) return;
+
+            console.log('[ResumeHub][Naukri] Sending to backend:', jobsNeedingEstimation.map(j => `${j.companyName} / ${j.jobTitle}`));
+
+            try {
+                const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);
+                this.updateBadgesWithEstimates(estimates);
+            } catch (error) {
+                console.error('[ResumeHub] Error during Naukri batch salary estimation:', error);
+                this.updateBadgesWithError(jobsNeedingEstimation, error.message);
+            }
+        } finally {
+            this.isProcessingJobs = false;
+            if (this._pendingJobs.length > 0) {
+                const pending = this._pendingJobs.splice(0);
+                await this._estimateJobs(pending);
+            }
         }
+    }
+
+    /** @deprecated use _estimateJobs — kept for callers that still pass DOM cards */
+    async processJobCards(jobCards) {
+        if (!jobCards || jobCards.length === 0) return;
+        const mounted = [];
+        for (const card of jobCards) {
+            const jobData = this.extractJobData(card);
+            if (!jobData?.jobUrl) continue;
+            const jobId = this._normalizeJobUrl(jobData.jobUrl);
+            if (!this.processedJobIds.has(jobId)) {
+                this.createSalaryBadge(jobData, card);
+                if (!this.badgeInstances.has(jobId)) continue;
+                this.processedJobIds.add(jobId);
+                card.setAttribute('data-rh-inspected', 'true');
+            }
+            if (this.badgeInstances.has(jobId)) mounted.push(jobData);
+        }
+        await this._estimateJobs(mounted);
     }
 
     extractJobData(jobCard) {
@@ -265,10 +343,18 @@ export class JobSearchHandler {
             }
 
             if (jobTitle === 'N/A' || companyName === 'N/A') {
+                const cardHtml = (jobCard.outerHTML || '').substring(0, 1500);
                 chrome.runtime.sendMessage({
                     action: 'telemetry',
                     eventType: 'ui_extraction_failed',
-                    metadata: { domain: 'naukri.com', url: window.location.href, source: 'job_search', extractedTitle: jobTitle, extractedCompany: companyName }
+                    metadata: { 
+                        domain: 'naukri.com', 
+                        url: window.location.href, 
+                        source: 'job_search', 
+                        extractedTitle: jobTitle, 
+                        extractedCompany: companyName,
+                        cardHtml: cardHtml
+                    }
                 });
             }
 
@@ -299,9 +385,11 @@ export class JobSearchHandler {
         }
         
         const jobId = this._normalizeJobUrl(jobData.jobUrl);
-        if (targetContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`)) {
+        const existing = targetContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`);
+        if (existing && this.badgeInstances.has(jobId)) {
             return;
         }
+        if (existing) existing.remove();
 
         const badge = new SalaryBadge(targetContainer, jobData.jobUrl);
         this.jobDataMap.set(jobId, jobData);
@@ -313,11 +401,12 @@ export class JobSearchHandler {
         if (!estimates) return;
 
         for (const [jobUrl, salaryData] of Object.entries(estimates)) {
+            if (jobUrl === '__warning' || !salaryData || typeof salaryData !== 'object') continue;
             const jobId = this._normalizeJobUrl(jobUrl);
             const badge = this.badgeInstances.get(jobId);
             if (!badge) continue;
 
-            if (salaryData && !salaryData.error) {
+            if (!salaryData.error) {
                 badge.showSalary(salaryData);
                 this.failedJobIds.delete(jobId);
             } else {

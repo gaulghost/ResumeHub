@@ -4,7 +4,7 @@
   "description": "Build tools for ResumeHub extension",
   "private": true,
   "scripts": {
-    "build": ".build/build.sh",
+    "build": "bash .build/build.sh",
     "install-deps": "npm install -g terser clean-css-cli",
     "test": "jest",
     "test-build": "node -e \"console.log('Build tools check:', process.version)\""

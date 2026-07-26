@@ -10,9 +10,7 @@ export class ParallelProcessor {
     this.apiClient = apiClient;
     this.maxConcurrency = 3; // Fixed at 3, rate limiter handles the rest
     this.batchDelay = 500; // ms between batches
-    // Removed retryAttempts - rate limiter handles all retries now
     this.activeRequests = new Set();
-    this.requestQueue = [];
     this.results = new Map();
   }
 
@@ -131,7 +129,6 @@ export class ParallelProcessor {
     this.activeRequests.add(requestId);
 
     try {
-      // No retry loop needed - SimpleRateLimiter handles all retries with proper count tracking
       const result = await this.apiClient.tailorSection(
         task.jobDescription,
         task.data,
@@ -163,27 +160,6 @@ export class ParallelProcessor {
    */
   delay(ms) {
     return delay(ms);
-  }
-
-  /**
-   * Cancel all active requests
-   */
-  cancelAllRequests() {
-    console.log(`🛑 Cancelling ${this.activeRequests.size} active requests`);
-    this.activeRequests.clear();
-    this.requestQueue = [];
-  }
-
-  /**
-   * Get processing statistics
-   */
-  getStats() {
-    return {
-      activeRequests: this.activeRequests.size,
-      queuedRequests: this.requestQueue.length,
-      maxConcurrency: this.maxConcurrency,
-      retryHandling: 'Handled by SimpleRateLimiter'
-    };
   }
 
   /**
@@ -224,10 +200,3 @@ export class ParallelProcessor {
     return tailoredResumeJSON;
   }
 }
-
-// Make ParallelProcessor available globally
-/*
-if (typeof window !== 'undefined') {
-  window.ParallelProcessor = ParallelProcessor;
-} 
-*/ 

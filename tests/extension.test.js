@@ -289,9 +289,30 @@ describe('ResumeHub Right Sidebar Unit/Integration Tests', () => {
     const sidebarPath = path.resolve(__dirname, '../content-scripts/linkedin/components/right-sidebar.js');
     let sidebarCode = fs.readFileSync(sidebarPath, 'utf8');
     
-    // Strip static imports, change export class, redirect location.href, and mock dynamic imports
+    // Load real sidebar CSS/HTML helpers (ESM → plain functions)
+    const templatePath = path.resolve(__dirname, '../content-scripts/linkedin/components/sidebar-template.js');
+    let templateCode = fs.readFileSync(templatePath, 'utf8')
+      .replace(/export\s+function\s+/g, 'function ');
+    templateCode += `
+      globalThis.getSidebarCss = getSidebarCss;
+      globalThis.getSidebarHtml = getSidebarHtml;
+    `;
+    new Function(templateCode)();
+
+    // Strip static imports → inject test doubles, change export class, mock dynamic imports
     sidebarCode = sidebarCode
-      .replace("import { JobInsightsManager } from './job-insights-manager.js';", '')
+      .replace(
+        /import\s+\{\s*JobInsightsManager\s*\}\s+from\s+['"]\.\/job-insights-manager\.js['"];?/,
+        'const JobInsightsManager = globalThis.JobInsightsManager;'
+      )
+      .replace(
+        /import\s+\{\s*getSidebarCss\s*,\s*getSidebarHtml\s*\}\s+from\s+['"]\.\/sidebar-template\.js['"];?/,
+        'const getSidebarCss = globalThis.getSidebarCss;\nconst getSidebarHtml = globalThis.getSidebarHtml;'
+      )
+      .replace(
+        /import\s+\{\s*Sanitizer\s*\}\s+from\s+['"][^'"]+sanitizer\.js['"];?/,
+        'const Sanitizer = globalThis.Sanitizer;'
+      )
       .replace(/export\s+class\s+ResumeHubSidebar/g, 'class ResumeHubSidebar')
       .replace(/await\s+import\(chrome\.runtime\.getURL\([^)]+\)\)/g, '({ SELECTORS: {} })')
       .replace(/await\s+import\(src\)/g, '({ SELECTORS: {} })')
@@ -300,7 +321,7 @@ describe('ResumeHub Right Sidebar Unit/Integration Tests', () => {
     // Explicitly attach class to window so it is accessible as a constructor globally
     sidebarCode += '\nwindow.ResumeHubSidebar = ResumeHubSidebar;';
 
-    // Define dummy JobInsightsManager on window/global
+    // Define dummy JobInsightsManager / Sanitizer for stripped imports
     global.JobInsightsManager = class {
       constructor() {
         this.loadInsights = jest.fn().mockResolvedValue();
@@ -308,6 +329,11 @@ describe('ResumeHub Right Sidebar Unit/Integration Tests', () => {
       }
     };
     window.JobInsightsManager = global.JobInsightsManager;
+    global.Sanitizer = {
+      sanitizeHTML: (s) => String(s ?? ''),
+      sanitizeURL: (u) => String(u ?? ''),
+    };
+    window.Sanitizer = global.Sanitizer;
 
     const fn = new Function(sidebarCode);
     fn();

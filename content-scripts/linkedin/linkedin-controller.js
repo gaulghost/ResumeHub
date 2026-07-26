@@ -9,70 +9,46 @@ import { JobSearchHandler } from './pages/job-search-handler.js';
 import { JobDetailsHandler } from './pages/job-details-handler.js';
 import '../../core/config/app-config.js';
 import { ResumeHubSidebar } from './components/right-sidebar.js';
+import { SpaPageController } from '../shared/spa-navigation.js';
 
-class LinkedInController {
+class LinkedInController extends SpaPageController {
     constructor(salaryEstimator, JobSearchHandler, JobDetailsHandler, sidebar) {
+        super();
         this.salaryEstimator = salaryEstimator;
         this.JobSearchHandler = JobSearchHandler;
         this.JobDetailsHandler = JobDetailsHandler;
         this.sidebar = sidebar || null;
-        this.pageHandler = null;
-        this.currentPageType = null;
-        this.currentUrl = window.location.href; 
-        this.mutationObserver = null;
-        this.initializationTimeout = null;
         this.isInitializing = false;
         console.log('[ResumeHub] LinkedInController constructed');
-        this.setupEventListeners();
-        this.setupMutationObserver();
-    }
-
-    setupEventListeners() {
-        const handleUrlChange = this.handleUrlChange.bind(this);
-        window.addEventListener("popstate", handleUrlChange);
-        window.addEventListener("hashchange", handleUrlChange);
-        document.addEventListener("click", handleUrlChange, true);
-
-        // ── Intercept history.pushState / replaceState ──────────────────────────
-        // LinkedIn's SPA router uses pushState internally. The native `popstate`
-        // event does NOT fire for pushState calls, so we must patch these methods
-        // to detect in-app navigation (e.g. clicking a job card in search results).
-        const patchHistory = (method) => {
-            const original = history[method];
-            history[method] = (...args) => {
-                original.apply(history, args);
-                window.dispatchEvent(new Event('locationchange'));
-            };
-        };
-        // Only patch once (guard against multiple controller instances)
-        if (!window.__rhHistoryPatched) {
-            patchHistory('pushState');
-            patchHistory('replaceState');
-            window.__rhHistoryPatched = true;
-        }
-        window.addEventListener('locationchange', handleUrlChange);
-    }
-
-    /**
-     * Sets up mutation observer to watch for DOM changes
-     */
-    setupMutationObserver() {
-        // Simple mutation observer for URL changes
-        this.mutationObserver = new MutationObserver(() => {
-            // Check for URL changes
-            if (window.location.href !== this.currentUrl) {
-                this.currentUrl = window.location.href;
-                this.debouncedInitialize();
+        // Shared SPA navigation (history patch + poll). No body MutationObserver for URL.
+        this.setupSpaNavigation({
+            includeClicks: false,
+            useDomObserver: false,
+            onUrlChange: () => {
                 if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
                     this.sidebar.onNavigate();
                 }
             }
         });
+    }
 
-        this.mutationObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+    /**
+     * Identity of the jobs *list* (filters/pagination), ignoring selection/tracking params.
+     * Clicking a job only changes currentJobId — that must NOT remount badges / re-estimate.
+     */
+    _jobsListKey(url) {
+        try {
+            const u = new URL(url);
+            const params = new URLSearchParams(u.search);
+            for (const key of [...params.keys()]) {
+                if (/^(currentJobId|eBP|refId|trackingId|trk|lipi|originToLandingJobPostings)$/i.test(key)) {
+                    params.delete(key);
+                }
+            }
+            return `${u.pathname}?${params.toString()}`;
+        } catch (_) {
+            return String(url || '');
+        }
     }
 
     /**
@@ -88,23 +64,34 @@ class LinkedInController {
             newPageType = 'search';
         }
 
-        // ── Same-page-type guard (revised) ─────────────────────────────────────
-        // For the SEARCH page we must NOT skip re-initialization when navigating
-        // between jobs (URL stays under /jobs/ but the job panel changes).
-        // We only skip if:
-        //   • The page TYPE changed to the same non-null type AND
-        //   • The JobDetailsHandler already processed the exact same URL.
-        // For the search handler we always let it run — it internally deduplicates
-        // by job ID and will only add new badges.
         if (this.currentPageType === newPageType && newPageType === 'details' && this.pageHandler) {
-            // Allow the existing details handler to re-check (it dedupes internally)
+            this.pageHandler.initialize();
+            return;
+        }
+
+        // Same search result set (only selected job / tracking changed) — keep badges.
+        if (this.currentPageType === 'search' && newPageType === 'search' && this.pageHandler) {
+            const listKey = this._jobsListKey(this.currentUrl);
+            if (this._lastJobsListKey === listKey) {
+                return;
+            }
+            // Pagination / filters changed — remount so loading badges appear for the new page.
+            this._lastJobsListKey = listKey;
+            if (typeof this.pageHandler.destroy === 'function') {
+                this.pageHandler.destroy();
+            }
+            this.pageHandler = new this.JobSearchHandler(this.salaryEstimator);
             this.pageHandler.initialize();
             return;
         }
 
         this.currentPageType = newPageType;
+        if (newPageType === 'search') {
+            this._lastJobsListKey = this._jobsListKey(this.currentUrl);
+        } else {
+            this._lastJobsListKey = null;
+        }
 
-        // Clean up any existing handler
         if (this.pageHandler && typeof this.pageHandler.destroy === 'function') {
             this.pageHandler.destroy();
         }
@@ -126,65 +113,13 @@ class LinkedInController {
         }
     }
 
-    /**
-     * Debounced initialize to prevent thrashing during rapid SPA updates
-     */
-    debouncedInitialize() {
-        if (this.initializationTimeout) {
-            clearTimeout(this.initializationTimeout);
-        }
-        // 800ms gives LinkedIn's React router time to settle the DOM
-        // after a pushState / replaceState call before we start querying selectors.
-        this.initializationTimeout = setTimeout(() => this.initialize(), 800);
-    }
-
-
-
-    /**
-     * Handles single-page application navigation changes.
-     * We use a short delay to allow the DOM to update after a navigation event.
-     */
-    handleUrlChange() {
-        // For 'locationchange' (our pushState patch) the URL is already updated;
-        // schedule initialize immediately via the debounce so we don't miss it.
-        const newUrl = window.location.href;
-        if (newUrl !== this.currentUrl) {
-            console.log('[ResumeHub] URL change detected, re-initializing controller.');
-            this.currentUrl = newUrl;
-            this.debouncedInitialize();
-            if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
-                this.sidebar.onNavigate();
-            }
-            return;
-        }
-
-        // For click / popstate events the URL may not have changed yet; wait a bit.
-        setTimeout(() => {
-            const laterUrl = window.location.href;
-            if (laterUrl !== this.currentUrl) {
-                console.log('[ResumeHub] URL change detected (delayed), re-initializing controller.');
-                this.currentUrl = laterUrl;
-                this.debouncedInitialize();
-                if (this.sidebar && typeof this.sidebar.onNavigate === 'function') {
-                    this.sidebar.onNavigate();
-                }
-            }
-        }, 800);
-    }
-
-    /**
-     * Cleanup method
-     */
     destroy() {
-        if (this.mutationObserver) {
-            this.mutationObserver.disconnect();
-        }
-        if (this.initializationTimeout) {
-            clearTimeout(this.initializationTimeout);
-        }
-        if (this.pageHandler && typeof this.pageHandler.destroy === 'function') {
-            this.pageHandler.destroy();
-        }
+        this.destroySpaNavigation();
+    }
+
+    // LinkedIn's React router needs a longer settle time than other sites
+    debouncedInitialize(delay = 800) {
+        super.debouncedInitialize(delay);
     }
 }
 
@@ -234,7 +169,8 @@ class LinkedInController {
                             domain: 'linkedin.com',
                             url: window.location.href,
                             source: 'sidebar_mount',
-                            detail: `Sidebar mount failed: ${e.message || e}`
+                            detail: `Sidebar mount failed: ${e.message || e}`,
+                            cardHtml: (document.querySelector('main')?.outerHTML || document.body?.outerHTML || '').substring(0, 1500)
                         }
                     });
                 } catch (err) {
@@ -255,6 +191,23 @@ class LinkedInController {
         console.log("[ResumeHub] LinkedInController initialized.");
 
         controller.initialize();
+
+        // Apply sidebar toggle without requiring a full page reload
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area !== 'sync' || !changes.sidebarEnabled) return;
+            const enabled = changes.sidebarEnabled.newValue !== false;
+            if (!enabled && controller.sidebar) {
+                try {
+                    if (typeof controller.sidebar.destroy === 'function') {
+                        controller.sidebar.destroy();
+                    }
+                } catch (_) { /* ignore */ }
+                controller.sidebar = null;
+            } else if (enabled && !controller.sidebar) {
+                // Remount requires a refresh for a clean Shadow DOM lifecycle
+                console.log('[ResumeHub] Sidebar enabled — reload the page to show it.');
+            }
+        });
 
         console.log("[ResumeHub] Controller initialization complete.");
     } catch (error) {

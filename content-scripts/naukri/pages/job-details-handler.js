@@ -1,5 +1,6 @@
 import { SELECTORS } from '../config/selectors.js';
 import { SalaryBadge } from '../components/salary-badge.js';
+import { fetchAndShowDetailsEstimate } from '../../shared/details-salary.js';
 
 export class JobDetailsHandler {
     constructor(salaryEstimator) {
@@ -37,10 +38,17 @@ export class JobDetailsHandler {
         
         if (!jobData) {
             console.warn('[ResumeHub] Could not extract job data from Naukri details page');
+            const panel = document.querySelector('.styles_jhc__header__, .jd-header, main') || document.body;
             chrome.runtime.sendMessage({
                 action: 'telemetry',
                 eventType: 'ui_extraction_failed',
-                metadata: { domain: 'naukri.com', url: window.location.href, source: 'job_details', detail: 'Could not extract jobData (title/company)' }
+                metadata: {
+                    domain: 'naukri.com',
+                    url: window.location.href,
+                    source: 'job_details',
+                    detail: 'Could not extract jobData (title/company)',
+                    cardHtml: (panel?.outerHTML || '').substring(0, 1500)
+                }
             });
             return;
         }
@@ -48,33 +56,30 @@ export class JobDetailsHandler {
         const badge = this.createSalaryBadge();
         if (!badge) {
             console.warn('[ResumeHub] Could not create salary badge on Naukri details page');
+            const panel = document.querySelector('.styles_jhc__header__, .jd-header, main') || document.body;
             chrome.runtime.sendMessage({
                 action: 'telemetry',
                 eventType: 'ui_extraction_failed',
-                metadata: { domain: 'naukri.com', url: window.location.href, source: 'job_details', detail: 'Could not create salary badge container' }
+                metadata: {
+                    domain: 'naukri.com',
+                    url: window.location.href,
+                    source: 'job_details',
+                    detail: 'Could not create salary badge container',
+                    cardHtml: (panel?.outerHTML || '').substring(0, 1500)
+                }
             });
             return;
         }
 
         this.currentBadge = badge;
-        
-        try {
-            const estimate = await this.salaryEstimator.estimate(
-                jobData.jobTitle, 
-                jobData.location, 
-                jobData.companyName, 
-                this.processedJobUrl
-            );
-            
-            if (estimate.error) {
-                badge.showError(estimate.error);
-            } else {
-                badge.showSalary(estimate);
-            }
-        } catch (error) {
-            console.error('[ResumeHub] Error estimating salary on Naukri:', error);
-            badge.showError('API Error');
-        }
+        await fetchAndShowDetailsEstimate({
+            salaryEstimator: this.salaryEstimator,
+            badge,
+            jobData,
+            jobUrl: this.processedJobUrl,
+            retryBtnClass: SELECTORS.SALARY_BADGE.retryBtn,
+            logPrefix: '[ResumeHub][Naukri]',
+        });
     }
 
     async waitForJobData(maxAttempts = 3, delay = 1000) {

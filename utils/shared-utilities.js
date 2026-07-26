@@ -53,17 +53,6 @@ export function getFileExtension(filename) {
 }
 
 /**
- * Generate unique ID
- * @param {string} prefix - Optional prefix for the ID
- * @returns {string} Unique ID
- */
-export function generateUniqueId(prefix = 'id') {
-  const timestamp = Date.now().toString(36);
-  const randomStr = Math.random().toString(36).substr(2, 5);
-  return `${prefix}_${timestamp}_${randomStr}`;
-}
-
-/**
  * Convert JSON resume data to formatted text
  * @param {Object} jsonData - Resume JSON data
  * @returns {string} Formatted text representation
@@ -159,81 +148,6 @@ export function convertJSONToText(jsonData) {
 }
 
 /**
- * Truncate text to specified length with ellipsis
- * @param {string} text - Text to truncate
- * @param {number} maxLength - Maximum length
- * @returns {string} Truncated text
- */
-export function truncateText(text, maxLength = 100) {
-  if (!text || text.length <= maxLength) return text;
-  return text.substring(0, maxLength - 3) + '...';
-}
-
-/**
- * Capitalize first letter of each word
- * @param {string} text - Text to capitalize
- * @returns {string} Capitalized text
- */
-export function capitalizeWords(text) {
-  if (!text) return '';
-  return text.replace(/\w\S*/g, (txt) => 
-    txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
-  );
-}
-
-/**
- * Clean and normalize text
- * @param {string} text - Text to clean
- * @returns {string} Cleaned text
- */
-export function cleanText(text) {
-  if (!text) return '';
-  return text
-    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-    .replace(/\n+/g, '\n') // Replace multiple newlines with single newline
-    .trim();
-}
-
-/**
- * Check if object is empty
- * @param {Object} obj - Object to check
- * @returns {boolean} True if object is empty
- */
-export function isEmptyObject(obj) {
-  return !obj || Object.keys(obj).length === 0;
-}
-
-/**
- * Deep clone an object
- * @param {Object} obj - Object to clone
- * @returns {Object} Cloned object
- */
-export function deepClone(obj) {
-  if (!obj) return obj;
-  return JSON.parse(JSON.stringify(obj));
-}
-
-/**
- * Count words in text
- * @param {string} text - Text to count words in
- * @returns {number} Word count
- */
-export function countWords(text) {
-  if (!text) return 0;
-  return text.trim().split(/\s+/).filter(word => word.length > 0).length;
-}
-
-/**
- * Count characters in text (excluding whitespace)
- * @param {string} text - Text to count characters in
- * @returns {number} Character count
- */
-export function countCharacters(text) {
-  if (!text) return 0;
-  return text.replace(/\s/g, '').length;
-}
-
-/**
  * Generate filename with timestamp
  * @param {string} baseName - Base name for the file
  * @param {string} extension - File extension
@@ -246,64 +160,6 @@ export function generateTimestampedFilename(baseName = 'resume', extension = 'tx
     .replace('T', '_')
     .substring(0, 19);
   return `${baseName}_${timestamp}.${extension}`;
-}
-
-/**
- * Validate email format
- * @param {string} email - Email to validate
- * @returns {boolean} True if email is valid
- */
-export function isValidEmail(email) {
-  if (!email) return false;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-/**
- * Validate phone number format
- * @param {string} phone - Phone number to validate
- * @returns {boolean} True if phone is valid
- */
-export function isValidPhone(phone) {
-  if (!phone) return false;
-  const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-  return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
-}
-
-/**
- * Validate URL format
- * @param {string} url - URL to validate
- * @returns {boolean} True if URL is valid
- */
-export function isValidUrl(url) {
-  if (!url) return false;
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Get current timestamp in ISO format
- * @returns {string} ISO timestamp
- */
-export function getCurrentTimestamp() {
-  return new Date().toISOString();
-}
-
-/**
- * Check if timestamp is expired
- * @param {number} timestamp - Timestamp to check
- * @param {number} expiryHours - Hours until expiry
- * @returns {boolean} True if expired
- */
-export function isTimestampExpired(timestamp, expiryHours = 24) {
-  if (!timestamp) return true;
-  const now = Date.now();
-  const expiryMs = expiryHours * 60 * 60 * 1000;
-  return (now - timestamp) > expiryMs;
 }
 
 /**
@@ -342,35 +198,19 @@ export function generateResumeHash(resumeData) {
   }
 }
 
-// Create a namespace object for backward compatibility with legacy global usage
+// Namespace for non-module popup / sidebar scripts
 export const SharedUtilities = {
   delay,
   formatFileSize,
   validateFileType,
   getFileExtension,
-  generateUniqueId,
   convertJSONToText,
-  truncateText,
-  capitalizeWords,
-  cleanText,
-  isEmptyObject,
-  deepClone,
-  countWords,
-  countCharacters,
   generateTimestampedFilename,
-  isValidEmail,
-  isValidPhone,
-  isValidUrl,
-  getCurrentTimestamp,
-  isTimestampExpired,
   generateResumeHash
 };
 
-// Expose globally so non-module popup scripts can access it
 if (typeof window !== 'undefined') {
   window.SharedUtilities = SharedUtilities;
 } else if (typeof self !== 'undefined') {
   self.SharedUtilities = SharedUtilities;
-} else if (typeof global !== 'undefined') {
-  global.SharedUtilities = SharedUtilities;
-} 
+}

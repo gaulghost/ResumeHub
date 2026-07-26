@@ -132,17 +132,8 @@ class ResumeProcessor {
    * Handle generation error
    */
   handleGenerationError(error) {
-    // Use enhanced error display if available
-    if (error.title && error.message && error.action) {
+    if (error.title && error.message) {
       this.uiManager.updateStatus(`${error.title}: ${error.message}`, 'error');
-      
-      // Add suggestions if available
-              if (window.UnifiedErrorHandler && error.errorType) {
-            const suggestions = UnifiedErrorHandler.getErrorSuggestions(error.errorType);
-        if (suggestions.length > 0) {
-          console.log('💡 Suggestions:', suggestions);
-        }
-      }
     } else {
       this.uiManager.updateStatus(`Error: ${error.message || error.toString()}`, 'error');
     }
@@ -234,44 +225,31 @@ class ResumeProcessor {
   }
 
   /**
-   * Auto-fill form
+   * Auto-fill form using parsed resume contact fields
    */
   async autoFillForm() {
     try {
-      console.log('🤖 User clicked auto-fill form');
-      
-      // Validate state
-      const validation = this.stateManager.validateForAutoFill();
-      if (!validation.isValid) {
-        this.uiManager.updateAutoFillStatus(`❌ Error: ${validation.errors[0]}`, 'error');
+      const validation = this.stateManager.validateForAutoFill
+        ? this.stateManager.validateForAutoFill()
+        : { isValid: true };
+      if (validation && validation.isValid === false) {
+        this.uiManager.updateAutoFillStatus(`Error: ${validation.errors?.[0] || 'Not ready'}`, 'error');
         return;
       }
 
-      // Set loading state
       this.uiManager.setButtonLoading(
         this.uiManager.elements.autoFillBtn,
         true,
-        'Processing...'
+        'Filling...'
       );
+      this.uiManager.updateAutoFillStatus('Scanning the current page for form fields...', 'processing');
 
-      // Update auto-fill status in its local area
-      this.uiManager.updateAutoFillStatus('🔄 Analyzing form fields and filling data...', 'processing');
-
-      // Send message to background script
-      const response = await this.sendBackgroundMessage({
-        action: "autoFillForm",
-        resumeData: this.stateManager.getResume(),
-        apiToken: this.stateManager.getApiToken()
-      });
-
-      // Handle response
+      const response = await this.sendBackgroundMessage({ action: 'autoFillForm' });
       this.handleAutoFillResponse(response);
-
     } catch (error) {
-      console.error(`❌ Auto-fill failed: ${error.message}`);
+      console.error(`Auto-fill failed: ${error.message}`);
       this.handleAutoFillError(error);
     } finally {
-      // Reset loading state
       this.uiManager.setButtonLoading(
         this.uiManager.elements.autoFillBtn,
         false
@@ -295,8 +273,10 @@ class ResumeProcessor {
       
       console.log('✅ Auto form filling completed');
       
-      const message = `✅ Form auto-filled successfully! ${response.fieldsFound || 0} fields detected, ${response.fieldsFilled || 0} fields filled.`;
-      this.uiManager.updateAutoFillStatus(message, 'success');
+      const message = response.fieldsFilled > 0
+        ? `Filled ${response.fieldsFilled} field(s)${response.aiFilled ? ` (${response.aiFilled} via AI)` : ''} from ${response.fieldsFound || 0} matched.`
+        : `Found ${response.fieldsFound || 0} matching field(s), but none needed filling (empty resume values or already filled).`;
+      this.uiManager.updateAutoFillStatus(message, response.fieldsFilled > 0 ? 'success' : 'info');
       
     } else if (response && response.error) {
       throw new Error(response.error);

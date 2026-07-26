@@ -1,91 +1,95 @@
-# ResumeHub Architecture & Complete System Design
+# ResumeHub Architecture (v1.10)
 
-This document details the actual system architecture, design patterns, data flows, and caching strategies of the ResumeHub extension.
-
----
-
-## 1. Architectural Overview
-
-ResumeHub is built using a decoupled **MVVM (Model-View-ViewModel)** UI structure on the presentation layer, communicating with a **Service Worker (Background)** mediator via Chrome's messaging API, which interacts with a **Self-Hosted Flask Backend** or direct client-side fallback AI models.
-
-```
-                  ┌───────────────────────────────┐
-                  │      PRESENTATION LAYER       │
-                  │  (Popup UI / Content Scripts) │
-                  └──────────────┬────────────────┘
-                                 │
-                     Chrome message passing
-                                 │
-                                 ↓
-                  ┌───────────────────────────────┐
-                  │       BACKGROUND LAYER        │
-                  │   (Service Worker Mediator)   │
-                  └──────────────┬────────────────┘
-                                 │
-                        HTTPS / Rest calls
-                                 │
-                                 ↓
-                  ┌───────────────────────────────┐
-                  │         BACKEND LAYER         │
-                  │  (Flask Server / SQLite Cache)│
-                  └───────────────────────────────┘
-```
+System design for the Chrome MV3 extension + Flask backend.
 
 ---
 
-## 2. System Modules & Layer Isolation
+## 1. Overview
 
-The application isolates responsibilities across three core layers:
+```
+Popup / Content Scripts  ──chrome.runtime──►  background.js (service worker)
+                                                    │
+                                         optional X-ResumeHub-Key
+                                                    │
+                                                    ▼
+                              https://resumehub.duckdns.org  (Flask + SQLite)
+                                                    │
+                                         Groq / Gemini fallback chains
+```
 
-### A. Presentation Layer (Extension Frontend & DOM Injections)
-* **Extension Popup UI (`/popup`)**: The user dashboard allowing base resume uploads, API key configurations, settings management, and manually triggered tailoring previews. Built on an MVVM setup:
-  * **View (HTML/CSS)**: Renders popup controls.
-  * **ViewModel (`popup/state-manager.js`, `popup/ui-manager.js`)**: Coordinates state subscriptions and updates view elements in response to mutations.
-  * **Controller (`popup/app-controller.js`)**: Bootstraps elements and routes events to correct modules.
-* **Content Scripts (`/content-scripts`)**: Context-isolated frontend elements injected into job portals (LinkedIn, Naukri, Instahyre).
-  * **Controllers (e.g. `linkedin-controller.js`)**: Coordinates mutation observers, listens to SPA URL updates, and coordinates page handlers.
-  * **Page Handlers (e.g. `pages/job-details-handler.js`)**: Extracts details from DOM and coordinates UI badge placement.
-  * **Salary Badges & Sidebars**: Dynamic DOM elements injected directly into target pages.
-
-### B. Background Layer (Extension Service Worker)
-* **Background Mediator (`background.js`)**: Orchestrates network payloads, reads local storage indices, intercepts and updates background proxies, and processes runtime message communications from the popup and content scripts.
-* **Utilities (`/utils`)**: Stateless library functions providing rate limiting, data parsing, PDF generation, sanitizer controls, storage management, and logging.
-
-### C. Backend Layer (Python Flask Microservice)
-* **Flask API Server (`/backend`)**: Manages AI proxies, coordinates heavy LLM calls, caches market salary values in a local SQLite database, and handles client estimation telemetry reports.
+- **FREE_MODE=true (default):** API endpoints stay open (existing clients keep working).
+- **FREE_MODE=false:** requires `X-ResumeHub-Key` matching `RESUMEHUB_API_SECRET`.
+- AI **model fallback order is fixed** in `backend/resumehub_api.py` (`PARSE_MODELS`, `SALARY_MODELS`, `REWRITE_MODELS`).
 
 ---
 
-## 3. Communication & Data Flows
+## 2. Layers
 
-### A. Real-Time Resume Tailoring Flow
-```
-1. User uploads resume in Popup -> reads file -> updates StorageManager.
-2. User views LinkedIn job post -> JobDetailsHandler extracts Job Title & Description.
-3. User clicks "Tailor" in Sidebar -> posts `createTailoredResume` message to background.js.
-4. background.js routes request through ApiClient to Backend API /api/get-ai-response (or client-side fallback).
-5. AI digests resume + JD context -> responds with JSON structure.
-6. Sidebar parses matching JSON -> shows match score -> activates download formats (PDF/Text/Docx).
-```
+### Presentation
+| Surface | Role |
+|--------|------|
+| `popup/` + `popup.html` | Upload resume, theme, extraction method, tailor, autofill, downloads |
+| `content-scripts/linkedin/` | SPA controller, salary badges, right sidebar + insights |
+| `content-scripts/naukri/` / `instahyre/` | SPA controller + salary badges |
+| `content-scripts/shared/` | Shared SPA navigation, job-list observers, salary badge base, details estimate helper |
 
-### B. Salary Estimation Flow (Dual-Tier Caching & Fallback)
-```
-1. Page Handler detects job cards or detail views -> extracts Job Title, Company, and Location.
-2. Senders query SalaryEstimator -> runs _checkCache() locally (24-hour TTL) -> if hit, returns immediately.
-3. If miss, calls duckdns Flask Backend API /api/salary-estimate:
-   a. Backend checks SQLite cache -> returns range if found.
-   b. Backend cache miss -> queries LLM (Groq / Gemini) -> caches result in SQLite -> returns estimate.
-4. If backend fails (network error, API timeout), client triggers local direct fallback:
-   a. Client queries direct client-side Gemini LLM using user's local API keys.
-   b. Reports estimate back to server cache via POST /api/salary-estimate/report.
-5. Injects SalaryBadge into target DOM container.
-```
+### Background
+| Module | Role |
+|--------|------|
+| `background.js` | Message hub: salary batch, tailor, JD extract, telemetry, autofill, AI proxy |
+| `utils/*` | API client, salary estimator, storage, sanitizer, PDF/DOCX, form-autofill, backend headers |
+
+### Backend
+| Module | Role |
+|--------|------|
+| `resumehub_api.py` | Flask routes, AI model chains, resume/salary/telemetry handlers |
+| `rh_security.py` | Rate limits + optional API auth (`FREE_MODE`) |
+| `rh_db.py` | SQLite connect (WAL) + indexes |
+| `rh_admin.py` | `/admin` analytics dashboard |
 
 ---
 
-## 4. Key Design Patterns Implemented
+## 3. Key flows
 
-1. **Mediator Pattern**: `background.js` acts as a central message mediator between components.
-2. **Adapter Pattern**: `popup/storage-adapter.js` abstracts message details into storage methods.
-3. **Factory Pattern**: Core content pages use custom detectors to instantiate correct target handlers.
-4. **Strategy Pattern**: Fallback mechanisms switch from server-side AI processing to direct client-side LLM calls when network issues occur.
+### Salary estimation
+1. Search/details handler extracts title/company/location/URL.
+2. Content-script `SalaryEstimator` uses cache, then `batchEstimate` → background → backend `/api/salary-estimate`.
+3. Backend: SQLite cache → AI salary chain → store result.
+4. On backend failure, client may fall back to local Gemini (if key set) and `POST /api/salary-estimate/report`.
+
+### Resume tailor
+1. Sidebar or popup sends JD + resume to background.
+2. Background uses backend `/api/get-ai-response` and/or local Gemini.
+3. Structured JSON resume returned for preview / PDF / DOCX / TXT.
+
+### Autofill
+1. Popup → `autoFillForm` → background loads parsed resume JSON.
+2. Heuristic fill (name, email, phone, company, title, YOE, skills, …).
+3. If Gemini key present, up to 8 remaining empty fields mapped in one AI call.
+4. Never overwrites non-empty inputs.
+
+---
+
+## 4. Build / load
+
+```bash
+npm run build
+```
+
+Outputs (only under `.build/`):
+
+| Path | Use |
+|------|-----|
+| `.build/extension/` | Chrome → Load unpacked |
+| `.build/resumehub-extension.zip` | Distribution zip |
+
+There is **no** root `dist/` folder. Source tree is what you edit; `.build/extension` is the packed copy.
+
+---
+
+## 5. Patterns
+
+- **Mediator:** `background.js` between popup, content scripts, and network.
+- **Shared SPA base:** `SpaPageController` + history patch + URL poll (avoids body-wide MutationObservers for URL).
+- **Strategy fallback:** backend AI → client Gemini when keys exist.
+- **Sanitization:** badges/insights use DOM text APIs / `Sanitizer` for AI strings.

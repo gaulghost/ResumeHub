@@ -1,4 +1,5 @@
 import { generateResumeHash } from './shared-utilities.js';
+import { StorageManager } from './storage-manager.js';
 
 /**
  * Resume Cache Optimizer
@@ -9,7 +10,6 @@ export class ResumeCacheOptimizer {
   constructor(apiClient) {
     this.apiClient = apiClient;
     this.cacheKey = 'optimized_resume_json';
-    this.maxCacheAge = 24 * 60 * 60 * 1000; // 24 hours
   }
 
   /**
@@ -359,79 +359,5 @@ ${JSON.stringify(json, null, 2)}
   generateResumeHash(resumeData) {
     return generateResumeHash(resumeData);
   }
-
-  /**
-   * Invalidate cached resume JSON
-   */
-  async invalidateResumeCache(resumeData = null) {
-    console.log('🗑️ Invalidating resume JSON cache...');
-    
-    if (resumeData) {
-      // Invalidate specific resume cache
-      const resumeHash = this.generateResumeHash(resumeData);
-      const cacheKey = `${this.cacheKey}_${resumeHash}`;
-      await StorageManager.clearCache(cacheKey);
-      console.log(`✅ Invalidated cache for specific resume: ${cacheKey}`);
-    } else {
-      // Invalidate all resume caches
-      const allKeys = await this.getAllCacheKeys();
-      const resumeCacheKeys = allKeys.filter(key => key.startsWith(this.cacheKey));
-      
-      for (const key of resumeCacheKeys) {
-        await StorageManager.clearCache(key);
-      }
-      
-      console.log(`✅ Invalidated ${resumeCacheKeys.length} resume cache entries`);
-    }
-  }
-
-  /**
-   * Get all cache keys (helper method)
-   */
-  async getAllCacheKeys() {
-    try {
-      const storage = await chrome.storage.local.get(null);
-      return Object.keys(storage);
-    } catch (error) {
-      console.error('Failed to get cache keys:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get cache statistics
-   */
-  async getCacheStats() {
-    const allKeys = await this.getAllCacheKeys();
-    const resumeCacheKeys = allKeys.filter(key => key.startsWith(this.cacheKey));
-    
-    let totalSize = 0;
-    let validCaches = 0;
-    
-    for (const key of resumeCacheKeys) {
-      const cached = await StorageManager.getCache(key);
-      if (cached) {
-        totalSize += JSON.stringify(cached).length;
-        
-        // Check if cache is still valid
-        if (await StorageManager.getValidCache(key)) {
-          validCaches++;
-        }
-      }
-    }
-    
-    return {
-      totalEntries: resumeCacheKeys.length,
-      validEntries: validCaches,
-      totalSizeBytes: totalSize,
-      averageSizeBytes: resumeCacheKeys.length > 0 ? Math.round(totalSize / resumeCacheKeys.length) : 0
-    };
-  }
 }
-
-// Make ResumeCacheOptimizer available globally
-/*
-if (typeof window !== 'undefined') {
-  window.ResumeCacheOptimizer = ResumeCacheOptimizer;
-} 
-*/ 
+ 

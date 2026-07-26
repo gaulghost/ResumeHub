@@ -116,19 +116,18 @@
 
             <section class="card auto-fill-section">
                 <div class="card-header">
-                    <h2>🤖 Auto-Fill Forms</h2>
+                    <h2>Auto-Fill Forms</h2>
                 </div>
                 <div class="card-content">
-                    <p class="help-text">Automatically fill job application forms on the current page using your resume
-                        data.</p>
-                    <button id="auto-fill-btn" class="button button-secondary">🤖 Auto-Fill Current Form</button>
-                    <div id="auto-fill-status" class="status-message"></div>
+                    <p class="help-text">Fills common application fields from your parsed resume (name, email, phone, company, title, skills, etc.). With a Gemini API key configured, unmatched fields can also be mapped by AI. Never overwrites non-empty fields.</p>
+                    <button id="auto-fill-btn" class="button button-secondary">Auto-Fill Current Form</button>
+                    <div id="auto-fill-status" class="status-message" role="status" aria-live="polite"></div>
                 </div>
             </section>
 
             <section class="generate-section">
                 <button id="create-resume-btn" class="button button-primary">Generate Tailored Resume</button>
-                <div id="status-message" class="status-message"></div>
+                <div id="status-message" class="status-message" role="status" aria-live="polite"></div>
                 <!-- Download buttons container -->
                 <div id="download-buttons-container" style="display: none; margin-top: 10px;">
                     <span style="margin-right: 10px;">Download Resume:</span>

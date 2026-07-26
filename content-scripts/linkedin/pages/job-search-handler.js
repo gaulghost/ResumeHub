@@ -1,5 +1,6 @@
 import { SELECTORS } from '../config/selectors.js';
 import { SalaryBadge } from '../components/salary-badge.js';
+import { observeJobList } from '../../shared/observe-job-list.js';
 
 export class JobSearchHandler {
     constructor(salaryEstimator) {
@@ -25,6 +26,8 @@ export class JobSearchHandler {
         document.addEventListener('click', this.retryClickListener, true);
         
         this.observer = null;
+        this.isProcessingJobs = false;
+        this._pendingJobs = []; // jobData queued for AI while a batch is in flight
         console.log('[ResumeHub] JobSearchHandler constructed.');
     }
 
@@ -55,92 +58,152 @@ export class JobSearchHandler {
         document.removeEventListener('click', this.retryClickListener, true);
         
         // Clear badges
+        // Strip inspect marks so a remount (pagination/filters) can re-process
+        // recycled LinkedIn list nodes that keep the same DOM attributes.
+        try {
+            for (const card of this._queryJobCards()) {
+                card.removeAttribute('data-rh-inspected');
+                card.removeAttribute('data-rh-fail-count');
+            }
+        } catch (_) { /* ignore */ }
+
         this.badgeInstances.forEach(badge => badge.remove());
         this.badgeInstances.clear();
         this.processedJobIds.clear();
         this.failedJobIds.clear();
         this.jobDataMap.clear();
+        this._pendingJobs = [];
+        this.isProcessingJobs = false;
         console.log('[ResumeHub] JobSearchHandler destroyed and cleaned up.');
     }
 
     initialize() {
         console.log('[ResumeHub] Initializing JobSearchHandler with MutationObserver strategy.');
         
-        // Initial scan for jobs already on the page
+        // LinkedIn SPA pagination often paints cards after the URL settles —
+        // wait briefly so loading badges appear for the new page immediately.
+        this._bootSequence();
+    }
+
+    async _bootSequence() {
+        await this._waitForJobCards(10, 350);
         this.processAllVisibleJobs();
+        this._attachObservers();
+        // Second pass after LinkedIn finishes hydration / virtualization
+        setTimeout(() => this.processAllVisibleJobs(), 900);
+        setTimeout(() => this.processAllVisibleJobs(), 2000);
+    }
 
-        // Use a MutationObserver to detect when new job cards are added to the DOM (e.g., on scroll).
-        // We observe the body, as it's a reliable parent element. A more specific container
-        // could be used if a stable selector is identified, which would improve performance.
-        this.observer = new MutationObserver((mutations) => {
-            // Check if any mutations actually added job cards
-            const hasJobCardMutations = mutations.some(mutation => {
-                return Array.from(mutation.addedNodes).some(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        // Check if the added node is a job card or contains job cards (both old and new UI)
-                        const jobCardSelectors = [
-                            'li[data-occludable-job-id]', // Old UI
-                            'li.semantic-search-results-list__list-item', // New UI
-                            'li.scaffold-layout__list-item', // Alternative new UI
-                            'div[data-job-id]' // New UI with data-job-id
-                        ];
-                        
-                        return node.matches && jobCardSelectors.some(selector => 
-                            node.matches(selector) || 
-                            (node.querySelector && node.querySelector(selector))
-                        );
-                    }
-                    return false;
-                });
-            });
-            
-            if (hasJobCardMutations) {
-                // A small delay helps ensure that the new elements are fully rendered.
-                setTimeout(() => this.processAllVisibleJobs(), 500);
+    async _waitForJobCards(maxAttempts = 10, delayMs = 350) {
+        for (let i = 0; i < maxAttempts; i++) {
+            if (this._queryJobCards().length > 0) return true;
+            await new Promise((r) => setTimeout(r, delayMs));
+        }
+        return false;
+    }
+
+    _queryJobCards() {
+        const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem)
+            ? SELECTORS.JOB_SEARCH_PAGE.jobListItem
+            : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
+
+        // Union ALL selectors — do NOT return on the first hit.
+        // LinkedIn mixes old/new card markup; the first selector often matches
+        // only 1 leftover `data-occludable-job-id` card and skips the rest.
+        const seen = new Set();
+        const cards = [];
+        for (const selector of jobListSelectors) {
+            let nodes;
+            try {
+                nodes = document.querySelectorAll(selector);
+            } catch (_) {
+                continue;
             }
-        });
-
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        // Add scroll listener as a backup for detecting new jobs
-        this.scrollTimeout = null;
-        this.lastJobCount = 0;
-        this.scrollListener = () => {
-            if (this.scrollTimeout) {
-                clearTimeout(this.scrollTimeout);
-            }
-            this.scrollTimeout = setTimeout(() => {
-                // Check if new jobs have been added using multiple selectors
-                let currentJobCount = 0;
-                const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem) 
-                    ? SELECTORS.JOB_SEARCH_PAGE.jobListItem 
-                    : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
-                
-                for (const selector of jobListSelectors) {
-                    const count = document.querySelectorAll(selector).length;
-                    if (count > 0) {
-                        currentJobCount = count;
-                        break;
+            for (const node of nodes) {
+                if (seen.has(node)) continue;
+                // Prefer the outermost list item when both parent+child match
+                if (cards.some((c) => c.contains(node))) continue;
+                // Drop previously collected nested matches inside this node
+                for (let i = cards.length - 1; i >= 0; i--) {
+                    if (node.contains(cards[i])) {
+                        seen.delete(cards[i]);
+                        cards.splice(i, 1);
                     }
                 }
-                
-                if (currentJobCount > this.lastJobCount) {
-                    console.log(`[ResumeHub] Scroll detected new jobs: ${currentJobCount} (was ${this.lastJobCount})`);
-                    this.lastJobCount = currentJobCount;
+                seen.add(node);
+                cards.push(node);
+            }
+        }
+        return cards;
+    }
+
+    _attachObservers() {
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+
+        this.observer = observeJobList({
+            containerSelectors: [
+                '.scaffold-layout__list',
+                '.jobs-search-results-list',
+                '.semantic-search-results-list',
+                'div.jobs-search-results-list',
+                'ul.scaffold-layout__list-container',
+                'main',
+            ],
+            shouldProcess: (mutations) => mutations.some(mutation => {
+                return Array.from(mutation.addedNodes).some(node => {
+                    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+                    const jobCardSelectors = [
+                        'li[data-occludable-job-id]',
+                        'li.semantic-search-results-list__list-item',
+                        'li.scaffold-layout__list-item',
+                        'div[data-job-id]'
+                    ];
+                    return node.matches && jobCardSelectors.some(selector =>
+                        node.matches(selector) ||
+                        (node.querySelector && node.querySelector(selector))
+                    );
+                });
+            }),
+            onUpdate: () => this.processAllVisibleJobs(),
+            delay: 400,
+        });
+
+        if (this.scrollListener) {
+            window.removeEventListener('scroll', this.scrollListener);
+        }
+        this.scrollTimeout = null;
+        this.lastJobSignature = this._jobListSignature();
+        this.scrollListener = () => {
+            if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
+            this.scrollTimeout = setTimeout(() => {
+                const sig = this._jobListSignature();
+                if (sig !== this.lastJobSignature) {
+                    console.log('[ResumeHub] Job list changed (scroll/pagination).');
+                    this.lastJobSignature = sig;
                     this.processAllVisibleJobs();
                 }
-            }, 500); // Reduced delay for more responsive detection
+            }, 400);
         };
-        
         window.addEventListener('scroll', this.scrollListener, { passive: true });
-        
-        // Also add intersection observer for better scroll detection
-        this.setupIntersectionObserver();
 
+        if (this.intersectionObserver) {
+            this.intersectionObserver.disconnect();
+        }
+        this.setupIntersectionObserver();
         console.log('[ResumeHub] MutationObserver and scroll listener are now watching for new job cards.');
+    }
+
+    _jobListSignature() {
+        const cards = this._queryJobCards();
+        const ids = cards.slice(0, 8).map((card) => {
+            return card.getAttribute('data-occludable-job-id')
+                || card.querySelector?.('[data-job-id]')?.getAttribute('data-job-id')
+                || (card.textContent || '').trim().slice(0, 40);
+        });
+        return `${cards.length}:${ids.join('|')}`;
     }
 
     setupIntersectionObserver() {
@@ -149,7 +212,7 @@ export class JobSearchHandler {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     console.log('[ResumeHub] Bottom of job list reached, checking for new jobs...');
-                    setTimeout(() => this.processAllVisibleJobs(), 1000);
+                    setTimeout(() => this.processAllVisibleJobs(), 800);
                 }
             });
         }, {
@@ -158,44 +221,15 @@ export class JobSearchHandler {
             threshold: 0.1
         });
 
-        // Find the job list container and observe the last few job cards
-        let jobCards = [];
-        const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem) 
-            ? SELECTORS.JOB_SEARCH_PAGE.jobListItem 
-            : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
-        
-        for (const selector of jobListSelectors) {
-            const cards = document.querySelectorAll(selector);
-            if (cards.length > 0) {
-                jobCards = Array.from(cards);
-                break;
-            }
-        }
-        
+        const jobCards = this._queryJobCards();
         if (jobCards.length > 5) {
-            // Observe the 5th from last job card
             this.intersectionObserver.observe(jobCards[jobCards.length - 5]);
         }
     }
 
     processAllVisibleJobs() {
-        // Try multiple selectors for job cards to handle both old and new UI
-        let jobCards = [];
-        const jobListSelectors = Array.isArray(SELECTORS.JOB_SEARCH_PAGE.jobListItem) 
-            ? SELECTORS.JOB_SEARCH_PAGE.jobListItem 
-            : [SELECTORS.JOB_SEARCH_PAGE.jobListItem];
-        
-        for (const selector of jobListSelectors) {
-            const cards = document.querySelectorAll(selector);
-            if (cards.length > 0) {
-                jobCards = Array.from(cards);
-                console.log(`[ResumeHub] Found ${jobCards.length} job cards using selector: ${selector}`);
-                break;
-            }
-        }
-        
-        // Update job count tracking
-        this.lastJobCount = jobCards.length;
+        const jobCards = this._queryJobCards();
+        this.lastJobSignature = this._jobListSignature();
         
         if (jobCards.length === 0) {
             console.warn('[ResumeHub] No job cards found. Checking DOM structure...');
@@ -215,76 +249,129 @@ export class JobSearchHandler {
             });
             return;
         }
+
+        console.log(`[ResumeHub] Found ${jobCards.length} job cards.`);
         
         // Filter out already processed job cards
         const newJobCards = [];
         let skippedCount = 0;
         
         Array.from(jobCards).forEach(card => {
+            if (!card || card.getAttribute('data-rh-inspected') === 'true') {
+                skippedCount++;
+                return;
+            }
+
+            // Skip skeleton / ad / empty nodes without permanently marking (allow retry when DOM fills in)
+            if (this._shouldSkipCard(card)) {
+                skippedCount++;
+                return;
+            }
+
             const jobData = this.extractJobData(card);
             if (jobData && jobData.jobUrl) {
                 const jobId = this._normalizeJobUrl(jobData.jobUrl);
-                if (this.processedJobIds.has(jobId)) {
+                if (this.processedJobIds.has(jobId) || this.badgeInstances.has(jobId)) {
+                    card.setAttribute('data-rh-inspected', 'true');
                     skippedCount++;
-                    return; // skip this card
+                    return;
                 }
-                newJobCards.push(card);
+                // Mount loading badge immediately — do not wait for AI / in-flight batch
+                this.createSalaryBadge(jobData, card);
+                if (!this.badgeInstances.has(jobId)) {
+                    skippedCount++;
+                    return; // injection failed — retry on next scan
+                }
+                this.processedJobIds.add(jobId);
+                card.setAttribute('data-rh-inspected', 'true');
+                newJobCards.push(jobData);
             } else {
+                // Soft-fail: keep retrying lazy cards (do not permanently inspect too early)
+                const fails = Number(card.getAttribute('data-rh-fail-count') || '0') + 1;
+                card.setAttribute('data-rh-fail-count', String(fails));
+                if (fails >= 8) card.setAttribute('data-rh-inspected', 'true');
                 skippedCount++;
-                // Debug failed extractions
-                if (skippedCount <= 3) { // Only log first 3 failures to avoid spam
-                    console.log(`[ResumeHub] Skip non-job card ${skippedCount}:`, card);
-                }
             }
         });
         
         if (skippedCount > 0) {
-            console.log(`[ResumeHub] Skipped ${skippedCount} job cards (already processed or failed extraction)`);
+            console.log(`[ResumeHub] Skipped ${skippedCount} job cards (already processed or not ready)`);
         }
         
         if (newJobCards.length > 0) {
-            console.log(`[ResumeHub] Processing ${newJobCards.length} new job cards.`);
-            this.processJobCards(newJobCards);
+            console.log(`[ResumeHub] Queued ${newJobCards.length} jobs for salary estimation (loading badges mounted).`);
+            this._estimateJobs(newJobCards);
         } else {
             console.log('[ResumeHub] No new job cards to process.');
         }
     }
 
-    async processJobCards(jobCards) {
-        if (!jobCards || jobCards.length === 0) return;
+    /**
+     * Run cache + AI for jobs that already have loading badges mounted.
+     * If a batch is in flight, queue jobData (UI already shows Estimating…).
+     */
+    async _estimateJobs(jobDataList) {
+        if (!jobDataList || jobDataList.length === 0) return;
 
-        const jobsNeedingEstimation = [];
-        for (const card of jobCards) {
-            const jobData = this.extractJobData(card);
-            if (!jobData || !jobData.jobUrl) continue;
-
-            const jobId = this._normalizeJobUrl(jobData.jobUrl);
-            if (this.processedJobIds.has(jobId)) continue;
-
-            this.processedJobIds.add(jobId);
-            this.createSalaryBadge(jobData, card);
-
-            // Try cache first
-            const cached = await this.salaryEstimator.getCachedEstimate(jobData);
-            if (cached) {
-                // Show salary immediately
-                const badge = this.badgeInstances.get(jobId);
-                if (badge) badge.showSalary(cached);
-                continue; // No need to fetch
-            }
-
-            jobsNeedingEstimation.push(jobData);
+        if (this.isProcessingJobs) {
+            this._pendingJobs.push(...jobDataList);
+            console.log(`[ResumeHub] AI in flight — queued ${jobDataList.length} more jobs (${this._pendingJobs.length} pending).`);
+            return;
         }
-
-        if (jobsNeedingEstimation.length === 0) return;
+        this.isProcessingJobs = true;
 
         try {
-            const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);
-            this.updateBadgesWithEstimates(estimates);
-        } catch (error) {
-            console.error('[ResumeHub] Error during batch salary estimation:', error);
-            this.updateBadgesWithError(jobsNeedingEstimation, error.message);
+            const cacheChecks = await Promise.all(jobDataList.map(async (jobData) => ({
+                jobData,
+                cached: await this.salaryEstimator.getCachedEstimate(jobData),
+            })));
+
+            const jobsNeedingEstimation = [];
+            for (const { jobData, cached } of cacheChecks) {
+                const jobId = this._normalizeJobUrl(jobData.jobUrl);
+                const badge = this.badgeInstances.get(jobId);
+                if (cached) {
+                    if (badge) badge.showSalary(cached);
+                } else {
+                    if (badge?.showLoading) badge.showLoading();
+                    jobsNeedingEstimation.push(jobData);
+                }
+            }
+
+            if (jobsNeedingEstimation.length === 0) return;
+
+            try {
+                const estimates = await this.salaryEstimator.batchEstimate(jobsNeedingEstimation);
+                this.updateBadgesWithEstimates(estimates);
+            } catch (error) {
+                console.error('[ResumeHub] Error during batch salary estimation:', error);
+                this.updateBadgesWithError(jobsNeedingEstimation, error.message);
+            }
+        } finally {
+            this.isProcessingJobs = false;
+            if (this._pendingJobs.length > 0) {
+                const pending = this._pendingJobs.splice(0);
+                await this._estimateJobs(pending);
+            }
         }
+    }
+
+    /** @deprecated use _estimateJobs — kept for callers that still pass DOM cards */
+    async processJobCards(jobCards) {
+        if (!jobCards || jobCards.length === 0) return;
+        const mounted = [];
+        for (const card of jobCards) {
+            const jobData = this.extractJobData(card);
+            if (!jobData?.jobUrl) continue;
+            const jobId = this._normalizeJobUrl(jobData.jobUrl);
+            if (!this.processedJobIds.has(jobId)) {
+                this.processedJobIds.add(jobId);
+                this.createSalaryBadge(jobData, card);
+                card.setAttribute('data-rh-inspected', 'true');
+            }
+            if (this.badgeInstances.has(jobId)) mounted.push(jobData);
+        }
+        await this._estimateJobs(mounted);
     }
 
     extractJobData(jobCard) {
@@ -423,10 +510,18 @@ export class JobSearchHandler {
                 const finalTitle = alternativeTitle || jobTitle;
                 const finalCompany = alternativeCompany || companyName;
                 if (finalTitle === 'N/A' || finalCompany === 'N/A') {
+                    const cardHtml = (jobCard.outerHTML || '').substring(0, 1500);
                     chrome.runtime.sendMessage({
                         action: 'telemetry',
                         eventType: 'ui_extraction_failed',
-                        metadata: { domain: 'linkedin.com', url: window.location.href, source: 'job_search', extractedTitle: finalTitle, extractedCompany: finalCompany }
+                        metadata: { 
+                            domain: 'linkedin.com', 
+                            url: window.location.href, 
+                            source: 'job_search', 
+                            extractedTitle: finalTitle, 
+                            extractedCompany: finalCompany,
+                            cardHtml: cardHtml
+                        }
                     });
                 }
                 return {
@@ -436,23 +531,24 @@ export class JobSearchHandler {
                     jobUrl
                 };
             }
-            
-            // Only log successful extractions to reduce noise
-            if (jobTitle !== 'N/A' && companyName !== 'N/A' && location !== 'N/A') {
-                console.log('[ResumeHub] Extracted job data:', { jobTitle, companyName, location, jobUrl });
-            } else {
-                chrome.runtime.sendMessage({
-                    action: 'telemetry',
-                    eventType: 'ui_extraction_failed',
-                    metadata: { domain: 'linkedin.com', url: window.location.href, source: 'job_search', extractedTitle: jobTitle, extractedCompany: companyName }
-                });
-            }
-            
+
+            console.log('[ResumeHub] Extracted job data:', { jobTitle, companyName, location, jobUrl });
             return { jobTitle, companyName, location, jobUrl };
         } catch (error) {
             console.warn('[ResumeHub] Could not extract data from a job card.', { error: error.message });
             return null;
         }
+    }
+
+    _shouldSkipCard(card) {
+        const cls = `${card.className || ''}`.toString().toLowerCase();
+        const skipTokens = ['skeleton', 'loading', 'placeholder', 'shimmer', 'ghost', 'promo', 'advert', 'ad-banner', 'ads-', 'sponsored'];
+        if (skipTokens.some((t) => cls.includes(t))) return true;
+        try {
+            if (card.matches?.('[data-ad], [data-promoted], .ad-entity, .jobs-search-results__feedback')) return true;
+        } catch (_) { /* ignore */ }
+        if ((card.textContent || '').trim().length < 5) return true;
+        return false;
     }
     
     createSalaryBadge(jobData, card) {
@@ -505,14 +601,17 @@ export class JobSearchHandler {
         }
         
         if (targetContainer) {
-            if (targetContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`)) {
+            const existing = targetContainer.querySelector(`.${SELECTORS.SALARY_BADGE.container}`);
+            const jobId = this._normalizeJobUrl(jobData.jobUrl);
+            if (existing && this.badgeInstances.has(jobId)) {
                 return; // Badge already exists
             }
+            if (existing) existing.remove();
             console.log(`[ResumeHub] Creating salary badge for: ${jobData.jobUrl}`);
             const badge = new SalaryBadge(targetContainer, jobData.jobUrl);
-            this.jobDataMap.set(this._normalizeJobUrl(jobData.jobUrl), jobData);
+            this.jobDataMap.set(jobId, jobData);
             badge.create();
-            this.badgeInstances.set(this._normalizeJobUrl(jobData.jobUrl), badge);
+            this.badgeInstances.set(jobId, badge);
         } else {
             // Try to inject the badge in a fallback location
             const fallbackContainers = [
@@ -542,11 +641,12 @@ export class JobSearchHandler {
         if (!estimates) return;
 
         for (const [jobUrl, salaryData] of Object.entries(estimates)) {
+            if (jobUrl === '__warning' || !salaryData || typeof salaryData !== 'object') continue;
             const jobId = this._normalizeJobUrl(jobUrl);
             const badge = this.badgeInstances.get(jobId);
             if (!badge) continue;
 
-            if (salaryData && !salaryData.error) {
+            if (!salaryData.error) {
                 badge.showSalary(salaryData);
                 this.failedJobIds.delete(jobId);
             } else {

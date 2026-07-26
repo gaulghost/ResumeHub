@@ -1,4 +1,6 @@
 // Centralized API client for Google Gemini
+import { getBackendBase, getBackendHeaders } from './backend-client.js';
+
 export class GeminiAPIClient {
   constructor(apiKey) {
     // Accept a single key string, a comma-separated string, or an array
@@ -147,7 +149,7 @@ export class GeminiAPIClient {
 
   async _callAIHostProxy(prompt, config = {}, operation = 'API call') {
     console.log(`[GeminiAPIClient] Routing ${operation} to backend proxy...`);
-    const backendURL = 'https://resumehub.duckdns.org/api/get-ai-response';
+    const backendURL = `${getBackendBase()}/api/get-ai-response`;
     
     let userId = 'anonymous';
     try {
@@ -160,7 +162,7 @@ export class GeminiAPIClient {
 
     const response = await fetch(backendURL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getBackendHeaders(),
       body: JSON.stringify({
         prompt: prompt,
         response_mime_type: config.responseMimeType || 'text/plain',
@@ -546,33 +548,87 @@ ${jobDescription ? `- **Job Description:**\n\`\`\`\n${jobDescription}\n\`\`\`` :
     
     let backendFailed = false;
     let backendErrorDetail = '';
-    try {
-      const backendURL = 'https://resumehub.duckdns.org/api/salary-estimate';
-      const response = await fetch(backendURL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobs: jobs.map(j => ({
-          position: j.position,
-          company: j.company,
-          location: j.location,
-          jobUrl: j.jobUrl
-        })) })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.results) {
-          return data;
+    const maxBackendAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxBackendAttempts; attempt++) {
+      try {
+        const backendURL = `${getBackendBase()}/api/salary-estimate`;
+        const response = await fetch(backendURL, {
+          method: 'POST',
+          headers: getBackendHeaders(),
+          body: JSON.stringify({ jobs: jobs.map(j => ({
+            position: j.position,
+            company: j.company,
+            location: j.location,
+            jobUrl: j.jobUrl
+          })) })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.results)) {
+            const warning = String(data.warning || '');
+            const allFailed = data.results.length > 0
+              && data.results.every((r) => r && r.error);
+            // Only fall through when EVERY job failed — never discard partial successes
+            // just because the pool warning says "exhausted".
+            if (allFailed && this.apiKeys && this.apiKeys.length > 0) {
+              console.warn(
+                '[ResumeHub API] Backend returned all errors; falling back to client Gemini for',
+                jobs.length,
+                'jobs',
+                warning ? `(${warning})` : ''
+              );
+              backendFailed = true;
+              backendErrorDetail = warning || 'soft-fail estimation';
+              // Fall through to client-side AI below
+            } else {
+              return data;
+            }
+          } else {
+            backendErrorDetail = 'empty or invalid results payload';
+            backendFailed = true;
+          }
+        } else if (response.status === 429 || response.status >= 500) {
+          backendFailed = true;
+          let bodyDetail = '';
+          try {
+            const errBody = await response.json();
+            bodyDetail = errBody?.error ? `: ${errBody.error}` : '';
+          } catch (_) { /* ignore */ }
+          backendErrorDetail = `HTTP ${response.status}${bodyDetail}`;
+          console.warn(
+            `[ResumeHub API] Backend ${response.status} (attempt ${attempt}/${maxBackendAttempts})${bodyDetail}`
+          );
+          if (attempt < maxBackendAttempts) {
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+            continue;
+          }
+        } else {
+          // Non-retryable client errors (400/401/403/…)
+          backendFailed = true;
+          let bodyDetail = '';
+          try {
+            const errBody = await response.json();
+            bodyDetail = errBody?.error ? `: ${errBody.error}` : '';
+          } catch (_) { /* ignore */ }
+          backendErrorDetail = `HTTP ${response.status}${bodyDetail}`;
+          console.warn('[ResumeHub API] Backend returned status:', response.status, bodyDetail, '- falling back to direct client-side AI');
+          break;
         }
-      } else {
+      } catch (e) {
         backendFailed = true;
-        backendErrorDetail = `HTTP ${response.status}`;
-        console.warn('[ResumeHub API] Backend returned status:', response.status, '- falling back to direct client-side AI');
+        backendErrorDetail = e.message || 'Fetch error';
+        console.warn(
+          `[ResumeHub API] Backend request failed (attempt ${attempt}/${maxBackendAttempts}):`,
+          e
+        );
+        if (attempt < maxBackendAttempts) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
       }
-    } catch (e) {
-      backendFailed = true;
-      backendErrorDetail = e.message || 'Fetch error';
-      console.warn('[ResumeHub API] Backend request failed - falling back to direct client-side AI:', e);
+      break;
     }
 
     // 2. Direct client-side AI fallback (original logic)
@@ -652,7 +708,7 @@ ${jobsText}
         
         // Asynchronously report successful client-side estimates to the backend server to cache them
         if (parsed && parsed.results && parsed.results.length > 0) {
-          const reportURL = 'https://resumehub.duckdns.org/api/salary-estimate/report';
+          const reportURL = `${getBackendBase()}/api/salary-estimate/report`;
           const reports = parsed.results.map(res => {
             const matchedJob = jobs.find(j => j.jobUrl === res.jobUrl);
             return {
@@ -671,7 +727,7 @@ ${jobsText}
           if (reports.length > 0) {
             fetch(reportURL, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getBackendHeaders(),
               body: JSON.stringify({ reports })
             }).then(resp => {
               if (resp.ok) {

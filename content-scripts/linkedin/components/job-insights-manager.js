@@ -2,12 +2,26 @@
  * JobInsightsManager - Enterprise-grade module for managing job insights
  * Handles caching, state management, and optimized AI calls
  */
+import { Sanitizer } from '../../../utils/sanitizer.js';
+
 export class JobInsightsManager {
   constructor(sidebarInstance) {
     this.sidebar = sidebarInstance;
     this.cache = new Map(); // Cache for insights by job signature
     this.loadingState = new Set(); // Track what's currently loading
     this.jobSignature = null; // Current job signature
+    this._cacheMaxEntries = 50;
+  }
+
+  _escape(text) {
+    return Sanitizer.sanitizeHTML(String(text ?? ''));
+  }
+
+  _trimCache() {
+    while (this.cache.size > this._cacheMaxEntries) {
+      const oldest = this.cache.keys().next().value;
+      this.cache.delete(oldest);
+    }
   }
 
   /**
@@ -49,6 +63,7 @@ export class JobInsightsManager {
     const cached = this.cache.get(signature);
     Object.assign(cached.insights, insights);
     cached.loaded = true;
+    this._trimCache();
   }
 
   /**
@@ -163,7 +178,7 @@ ${jobDescription.substring(0, 3000)}`;
     });
 
     requirementsEl.innerHTML = (filtered.length > 0 ? filtered : requirements.slice(0, 7))
-      .map(req => `<div class="rh-requirement-item">• ${req.trim()}</div>`)
+      .map(req => `<div class="rh-requirement-item">• ${this._escape(req.trim())}</div>`)
       .join('');
   }
 
@@ -206,7 +221,7 @@ ${jobDescription.substring(0, 3000)}`;
     }
 
     if (details.length > 0) {
-      companyStatsEl.innerHTML = details.map(d => `<div style="margin: 4px 0;">${d}</div>`).join('');
+      companyStatsEl.innerHTML = details.map(d => `<div style="margin: 4px 0;">${this._escape(d)}</div>`).join('');
     } else {
       companyStatsEl.textContent = 'No company details available';
     }
@@ -224,7 +239,7 @@ ${jobDescription.substring(0, 3000)}`;
       .slice(0, 12);
     
     skillsEl.innerHTML = uniqueSkills.map(skill => 
-      `<span class="rh-skill-tag">${skill}</span>`
+      `<span class="rh-skill-tag">${this._escape(skill)}</span>`
     ).join('');
   }
 
@@ -237,9 +252,10 @@ ${jobDescription.substring(0, 3000)}`;
 
     const formattedQuestions = questions.slice(0, 6).map(q => {
       const icon = q.type === 'technical' ? '⚡' : '💭';
-      const question = q.question.length > 80 ? q.question.substring(0, 77) + '...' : q.question;
+      const rawQ = String(q.question || '');
+      const question = rawQ.length > 80 ? rawQ.substring(0, 77) + '...' : rawQ;
       const starNote = q.type === 'behavioral' ? ' <em>(STAR)</em>' : '';
-      return `${icon} ${question}${starNote}`;
+      return `${icon} ${this._escape(question)}${starNote}`;
     });
 
     questionsEl.innerHTML = formattedQuestions.map(q => 
@@ -259,14 +275,15 @@ ${jobDescription.substring(0, 3000)}`;
       .slice(0, 5)
       .map(r => ({
         name: r.name.length > 30 ? r.name.substring(0, 27) + '...' : r.name,
-        url: r.url.startsWith('http') ? r.url : '#'
-      }));
+        url: Sanitizer.sanitizeURL(r.url)
+      }))
+      .filter(r => r.url && r.url.startsWith('http'));
 
     if (validResources.length > 0) {
       resourcesEl.innerHTML = validResources.map(res => 
         `<div class="rh-resource-item">
           <span>🔗</span>
-          <a href="${res.url}" target="_blank" class="rh-resource-link">${res.name}</a>
+          <a href="${this._escape(res.url)}" target="_blank" rel="noopener noreferrer" class="rh-resource-link">${this._escape(res.name)}</a>
         </div>`
       ).join('');
     } else {

@@ -8,8 +8,8 @@ class AppConfig {
     this.config = {
       app: {
         name: 'ResumeHub AI',
-        version: '1.4',
-        description: 'AI-powered resume tailoring and job form auto-filling',
+        version: '1.10',
+        description: 'AI-powered resume tailoring and LinkedIn salary insights',
         author: 'Pradhuman Singh'
       },
       
@@ -78,7 +78,7 @@ class AppConfig {
       // Feature Flags
       features: {
         salaryEstimation: true,
-        autoFill: true,
+        autoFill: true, // Heuristic contact-field autofill
         aiExtraction: true,
         batchProcessing: true,
         templateSystem: false, // Future feature
